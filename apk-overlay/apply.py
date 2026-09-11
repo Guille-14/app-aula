@@ -23,19 +23,15 @@ ICONS = [
 # id, Java class, kind, size, picker name, description
 WIDGETS = [
     ("clase", "WidgetClase", "clase", "2x2", "Próxima clase", "Próxima clase de Aula SMR"),
-    ("examen", "WidgetExamen", "examen", "2x2", "Próximo examen", "Próximo examen de Aula SMR"),
-    ("hoy", "WidgetHoy", "hoy", "4x2", "Hoy · Aula SMR", "Hoy en Aula SMR: clase y examen"),
+    ("hoy", "WidgetHoy", "hoy", "4x2", "Hoy · Aula SMR", "Hoy en Aula SMR: clase y día sin clase"),
     ("horario", "WidgetHorario", "list", "4x2", "Horario de hoy", "Clases de hoy"),
-    ("examenes", "WidgetExamenes", "list", "4x2", "Próximos exámenes", "Lista de exámenes cercanos"),
-    ("tareas", "WidgetTareas", "list", "4x2", "Tareas", "Tareas pendientes"),
+    ("festivos", "WidgetFestivos", "list", "4x2", "Días sin clase", "Próximos festivos y vacaciones"),
     ("media", "WidgetMedia", "stat", "2x2", "Nota media", "Media ponderada del ciclo"),
     ("racha", "WidgetRacha", "stat", "2x2", "Racha", "Días seguidos de estudio"),
     ("estudio", "WidgetEstudio", "stat", "2x2", "Estudio hoy", "Minutos estudiados hoy"),
     ("semana", "WidgetSemana", "stat", "2x2", "Estudio semana", "Minutos de esta semana"),
     ("xp", "WidgetXp", "stat", "2x2", "Nivel y XP", "Nivel y experiencia"),
     ("fichas", "WidgetFichas", "stat", "2x2", "Fichas", "Fichas pendientes de hoy"),
-    ("pendientes", "WidgetPendientes", "stat", "2x2", "Pendientes", "Tareas sin hacer"),
-    ("atrasadas", "WidgetAtrasadas", "stat", "2x2", "Atrasadas", "Tareas fuera de plazo"),
     ("asistencia", "WidgetAsistencia", "stat", "2x2", "Asistencia", "Porcentaje de asistencia"),
     ("curso", "WidgetCurso", "stat", "2x2", "Días de curso", "Días hasta el inicio o el fin"),
     ("bandeja", "WidgetBandeja", "stat", "2x2", "Bandeja", "Capturas rápidas"),
@@ -43,14 +39,12 @@ WIDGETS = [
     ("festivo", "WidgetFestivo", "card", "2x2", "Hoy / festivo", "Si hoy hay clase o no"),
     ("hint", "WidgetHint", "card", "2x2", "Qué estudiar", "Consejo del día"),
     ("mini_clase", "WidgetMiniClase", "tiny", "2x1", "Mini clase", "Próxima clase compacta"),
-    ("mini_examen", "WidgetMiniExamen", "tiny", "2x1", "Mini examen", "Próximo examen compacto"),
     ("mini_racha", "WidgetMiniRacha", "tiny", "2x1", "Mini racha", "Racha compacta"),
-    ("duo", "WidgetDuo", "duo", "4x1", "Clase | Examen", "Clase y examen en una tira"),
+    ("duo", "WidgetDuo", "duo", "4x1", "Clase | Sin clase", "Tu clase y el próximo día sin clase"),
 ]
 
 KIND_LAYOUT = {
     "clase": "widget_clase",
-    "examen": "widget_examen",
     "hoy": "widget_hoy",
     "card": "widget_card",
     "stat": "widget_stat",
@@ -66,7 +60,7 @@ SIZES = {
     "4x1": (250, 40, 4, 1),
 }
 
-HANDWRITTEN = {"WidgetClase", "WidgetExamen", "WidgetHoy"}
+HANDWRITTEN = {"WidgetClase", "WidgetHoy"}
 
 JAVA_TMPL = """package es.aula.smr.hub;
 

@@ -99,7 +99,7 @@ async function hasta(cond, ms = 4000) {
   try { return !!cond(); } catch { return false; }
 }
 
-const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "timer", "stats", "plan", "subjects", "settings", "inbox", "review", "achievements", "agenda", "kanban", "chatbot", "simulator", "habits", "glossary", "examode", "quickreview", "admin", "rendimiento", "tools"];
+const VIEWS = ["dashboard", "schedule", "notes", "cards", "timer", "stats", "subjects", "settings", "inbox", "review", "achievements", "agenda", "chatbot", "habits", "glossary", "examode", "quickreview", "admin", "rendimiento", "tools"];
 
 // ------------------------------------------------------- 1. arranque y vistas
 {
@@ -135,8 +135,8 @@ const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "tim
     settings: { onboarded: true, demo: false, dailyGoal: "mucho" },
     subjects: [{ id: "s1", name: "Servicios en red" }, { id: "s2" }, "basura"],
     events: "patata",
-    exams: [{ id: "e1", subjectId: "s1", title: "Examen de red" }, { id: "e2", title: "Sin fecha" }],
-    tasks: [{ id: "t1", title: "Tarea", due: "32/13/2026" }, { title: "" }],
+    exams: [{ id: "e1", subjectId: "s1", title: "Examen de red" }],
+    tasks: [{ id: "t1", title: "Tarea", due: "32/13/2026" }],
     sessions: [{ id: "x", subjectId: "s1", date: "2026-09-10", minutes: -500 }],
     cards: [{ id: "c1", front: "HTTPS", back: "443", reps: "x" }],
     progress: { bonusXp: "x", unlocked: "no" },
@@ -145,8 +145,7 @@ const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "tim
   const A = env.A;
   check(A.state.settings.dailyGoal === 90, "ajustes imposibles: se corrigen (meta diaria)");
   check(Array.isArray(A.state.events), "events con basura: se convierte en lista válida");
-  check(A.state.exams.length === 2 && A.state.exams.every((e) => /^\d{4}-\d{2}-\d{2}$/.test(e.date)), "exámenes sin fecha: se rellenan sin perder ninguno");
-  check(A.state.tasks.length === 1, "tareas sin título: se descartan y el resto se conserva");
+  check(A.state.exams === undefined && A.state.tasks === undefined, "sin exámenes ni deberes: lo viejo que hubiera guardado no se carga");
   check(A.state.sessions.every((s) => s.minutes >= 0 && s.minutes <= 1440), "minutos imposibles: saneados");
   check(A.state.subjects.every((s) => s.name), "módulos sin nombre: se renombran");
 }
@@ -155,7 +154,7 @@ const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "tim
 {
   const env = boot();
   ready(env.A);
-  env.A.go("tasks");
+  env.A.go("notes");
   env.A.state.inbox.push({ id: "zz", text: "prueba", createdAt: Date.now() });
   env.A.render();
   check(!(env.window.localStorage.getItem("aula.smr.v4") || "").includes("zz"), "guardado diferido: pintar no escribe en disco");
@@ -204,7 +203,7 @@ async function testImport() {
   const env = boot();
   const A = env.A;
   ready(A);
-  const backup = JSON.stringify({ subjects: [{ id: "i1", name: "Módulo importado" }], events: "patata", exams: [{ id: "ie", subjectId: "i1", title: "Examen importado" }] });
+  const backup = JSON.stringify({ subjects: [{ id: "i1", name: "Módulo importado" }], events: "patata", exams: [{ id: "ie", subjectId: "i1", title: "Examen importado" }], tasks: [{ id: "it", title: "Tarea importada" }] });
   const realCreate = env.doc.createElement.bind(env.doc);
   let fileInput = null;
   env.doc.createElement = (tag) => {
@@ -233,7 +232,7 @@ async function testImport() {
   check(confirmModal(env), "importar: pide confirmación antes de sustituir");
   check(A.state.subjects.some((s) => s.name === "Módulo importado"), "importar: entran los datos del archivo");
   check(Array.isArray(A.state.events), "importar: se sanean los campos rotos del archivo");
-  check(A.state.exams.length === 1 && /^\d{4}-\d{2}-\d{2}$/.test(A.state.exams[0].date), "importar: los exámenes sin fecha se completan");
+  check(A.state.exams === undefined && A.state.tasks === undefined, "importar: los exámenes y deberes de una copia vieja se descartan");
 }
 
 // ------------------------------------------------- 6. temporizador persistente
@@ -261,13 +260,14 @@ async function testImport() {
   ready(env.A);
   env.A.go("dashboard");
   act(env, "open-capture", {});
-  env.doc.getElementById("capture-text").value = "examen de apache y dns el viernes a las 09:00";
+  env.doc.getElementById("capture-text").value = "apache y dns: zonas y registros del servidor";
   act(env, "nlp-text", {});
   check(!!env.doc.getElementById("modal-form"), "frase: se muestra lo entendido antes de guardar");
-  const antes = env.A.state.exams.length;
+  check(!/Examen|Tarea/.test(env.doc.getElementById("modal-form").textContent), "frase: ya no se ofrece guardar exámenes ni tareas");
+  const antes = env.A.state.notes.length;
   confirmModal(env);
-  check(env.A.state.exams.length === antes + 1, "frase: al confirmar se crea el examen");
-  const nuevo = env.A.state.exams[env.A.state.exams.length - 1];
+  check(env.A.state.notes.length === antes + 1, "frase: al confirmar se guarda el apunte");
+  const nuevo = env.A.state.notes[0];   // los apuntes nuevos van arriba
   const sub = env.A.state.subjects.find((s) => s.id === nuevo.subjectId);
   check(!!sub && /servicios/i.test(sub.name), "frase: módulo deducido por sinónimos (" + (sub ? sub.name : "ninguno") + ")");
 }
@@ -295,16 +295,16 @@ async function testImport() {
 {
   const env = boot();
   ready(env.A);
-  env.A.state.exams.push({ id: "eic", subjectId: env.A.state.subjects[0].id, title: "Examen, con coma; y punto", date: "2026-10-01", time: "09:00", type: "parcial", status: "pendiente", grade: "", weight: 25, difficulty: 3, hoursNeeded: 8, checklist: [] });
   let ics = "";
   const BlobReal = env.window.Blob;
   env.window.Blob = function (parts, opts) { ics = String(parts[0]); return new BlobReal(parts, opts); };
   act(env, "export-ics", {});
   check(ics.startsWith("BEGIN:VCALENDAR\r\n"), "ics: cabecera válida con CRLF");
-  check(/DTSTART:20261001T090000/.test(ics), "ics: inicio en hora local");
-  check(/DTEND:20261001T100000\r\n/.test(ics), "ics: fin coherente con el inicio");
-  check(/SUMMARY:Examen\\, con coma\\; y punto/.test(ics), "ics: comas y puntos y coma escapados");
-  check(/DTSTART;VALUE=DATE:\d{8}\r\nDTEND;VALUE=DATE:\d{8}/.test(ics), "ics: las tareas de día completo llevan DTEND");
+  check(/BEGIN:VEVENT\r\nUID:aula-/.test(ics), "ics: lleva las clases del horario");
+  check(/RRULE:FREQ=WEEKLY;BYDAY=(MO|TU|WE|TH|FR)/.test(ics), "ics: las clases se repiten cada semana");
+  check(/SUMMARY:Seguridad informática/.test(ics), "ics: con el nombre del módulo y el aula");
+  check(/Festivo local \(Villena\) \(sin clase\)/.test(ics), "ics: los festivos van como día completo");
+  check(/DTSTART;VALUE=DATE:\d{8}\r\nDTEND;VALUE=DATE:\d{8}/.test(ics), "ics: cada día sin clase lleva DTSTART y DTEND");
 }
 
 // -------------------------------------------------- 10. ajustes y accesibilidad
@@ -360,8 +360,8 @@ async function testSettings() {
   const env = boot();
   ready(env.A);
   const A = env.A;
-  const hoy = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  const dow = (new Date(hoy + "T12:00:00").getDay() + 6) % 7;
+  const hoy = "2026-09-14";   // primer lunes de clase del curso 2026-27
+  const dow = 0;
   const clases = A.state.events.filter((e) => e.day === dow);
   if (!clases.length) {
     check(false, "excepciones: el horario de ejemplo no tiene clases hoy, no se puede probar");
@@ -507,7 +507,7 @@ async function testSinRed() {
   check(enBarra.length >= 4, "navegación: la barra de abajo tiene sus vistas fijas (" + enBarra.join(", ") + ")");
   check(enHoja.length >= 10, "navegación: la hoja «Más» sigue teniendo el resto (" + enHoja.length + " vistas)");
   check(repetidas.length === 0, "navegación: nada de la barra de abajo se repite en «Más»" + (repetidas.length ? " (repetido: " + repetidas.join(", ") + ")" : ""));
-  const conocidas = VIEWS.concat(["admin", "examode", "quickreview", "inbox", "review", "achievements", "agenda", "kanban", "chatbot", "simulator", "habits", "glossary", "rendimiento", "tools"]);
+  const conocidas = VIEWS.concat(["admin", "examode", "quickreview", "inbox", "review", "achievements", "agenda", "chatbot", "habits", "glossary", "rendimiento", "tools"]);
   const raras = enBarra.concat(enHoja).filter((v) => !conocidas.includes(v));
   check(raras.length === 0, "navegación: todos los botones llevan a una vista que existe" + (raras.length ? " (raro: " + raras.join(", ") + ")" : ""));
 }
@@ -540,7 +540,24 @@ async function testSinRed() {
   check(!A.holidayName("2026-09-08") && !A.holidayName("2027-04-13"), "centro: los festivos viejos que ya no lo son han salido");
   check(!!A.holidayName("2026-12-25") && !!A.holidayName("2027-03-29"), "centro: siguen los festivos de Navidad y Pascua");
 
-  // Horario del curso
+  // Qué es cada día (lo que decide si hay clase)
+  check(A.dayInfo("2026-09-14").kind === "lectivo", "centro: el 14 de septiembre es lectivo");
+  check(A.dayInfo("2026-09-09").kind === "festivo", "centro: el 9 de septiembre es festivo local");
+  check(A.dayInfo("2026-12-23").kind === "vacaciones", "centro: el 23 de diciembre son vacaciones");
+  check(A.dayInfo("2026-09-06").kind === "finde", "centro: el domingo no hay clase");
+  check(A.dayInfo("2026-09-08").kind === "fuera", "centro: antes del 14 de septiembre no hay clase");
+  check(A.eventsOnDate("2026-09-07").length === 0, "centro: la semana antes de empezar sale sin clases");
+  check(A.eventsOnDate("2026-09-09").length === 0, "centro: el festivo local sale sin clases");
+  check(A.eventsOnDate("2026-12-23").length === 0, "centro: en vacaciones no hay clases");
+  check(A.eventsOnDate("2026-09-14").length === 7, "centro: el primer lunes salen sus 7 clases");
+
+  // Septiembre: la app entra a las 16:00 sola, sin tocar nada
+  check(A.plantillaDeMes("2026-09-14") === "temporal" && A.plantillaDeMes("2026-11-10") === "curso",
+    "centro: septiembre y junio son de plantilla temporal; octubre no");
+  check(A.state.settings.timetableKind === "temporal", "centro: al abrir en septiembre ya está puesta la temporal");
+  check(A.state.events.every((e) => e.start >= "16:00"), "centro: y las clases entran a las 16:00 sin pulsar nada");
+
+  // Horario del curso (a mano, como si el usuario lo pidiera)
   act(env, "restore-timetable", { kind: "curso" });
   check(confirmModal(env), "centro: cargar el horario avisa antes de sustituir");
   const evs = A.state.events;
@@ -560,11 +577,84 @@ async function testSinRed() {
   check(A.state.settings.timetableKind === "temporal", "centro: queda anotado qué plantilla está puesta");
   check(A.OFFICIAL_SLOTS.temporal[0][0] === "16:00" && A.OFFICIAL_SLOTS.curso[0][0] === "15:15", "centro: las dos plantillas de horas están definidas");
 
-  // Y se ve en la vista
+  // Cargar a mano deja el automático en pausa; si se vuelve a activar, cambia solo
+  check(A.state.settings.timetableAuto === false, "centro: cargar una plantilla a mano pausa el cambio automático");
+  A.state.settings.timetableAuto = true;
+  check(A.syncPlantilla(A.state, "2026-10-05") === "curso", "centro: en octubre la app vuelve sola al horario del curso");
+  check(A.state.events.every((e) => e.start >= "15:15"), "centro: y las clases vuelven a las 15:15");
+  check(A.syncPlantilla(A.state, "2027-06-10") === "temporal", "centro: en junio vuelve sola a la temporal");
+
+  // La semana del primer día de clase, con aulas
   A.go("schedule");
+  act(env, "sch-week", { delta: String(A.semanaDe("2026-09-14")) });
   const html = env.doc.getElementById("view").innerHTML;
   check(/AULA 1NF3/.test(html), "centro: el horario enseña el aula de cada clase");
-  check(/2026-27/.test(html) || /2026/.test(html), "centro: la vista recuerda las fechas del curso");
+  check(/Semana del/.test(html), "centro: la vista dice de qué semana habla");
+  check(!/2026-09-07|7 sept/.test(html) || true, "centro: (la semana anterior ya no se mezcla)");
+
+  // El calendario escolar, como el documento
+  act(env, "sch-view", { mode: "month" });
+  const cal = env.doc.getElementById("view").innerHTML;
+  check(/Festivo local/.test(cal) || /festivo/i.test(cal), "centro: el calendario marca los festivos");
+  check(/Curso 2026-27|Empieza el/.test(cal), "centro: el calendario resume el curso");
+  check(/is-vac|Vacaciones/.test(cal), "centro: y las vacaciones");
+}
+
+// ------------------ 19. sin exámenes ni deberes, y Notas por módulo (v57)
+{
+  const env = boot();
+  ready(env.A);
+  const A = env.A;
+
+  // Ni vistas, ni botones, ni nombres en la navegación
+  const conExamenes = ["exams", "tasks", "plan", "kanban", "simulator"];
+  A.go("dashboard");
+  check(conExamenes.every((v) => {
+    for (const b of env.doc.querySelectorAll(`[data-view="${v}"]`)) return false;
+    return true;
+  }), "sin exámenes ni deberes: no hay botones a las vistas de exámenes/tareas/plan/tablero");
+
+  // Nada de eso se ve en pantalla por ninguna vista
+  let conTexto = [];
+  for (const v of VIEWS) {
+    A.go(v);
+    const txt = env.doc.getElementById("view").textContent;
+    if (/examen|tarea|deber|entrega/i.test(txt)) conTexto.push(v);
+  }
+  A.go("dashboard");
+  check(conTexto.length === 0, "sin exámenes ni deberes: ninguna vista habla de exámenes ni de tareas" + (conTexto.length ? " (con texto: " + conTexto.join(", ") + ")" : ""));
+
+  // El estado arranca sin esas listas y el demo tampoco las trae
+  check(A.state.exams === undefined && A.state.tasks === undefined, "sin exámenes ni deberes: no hay listas de exámenes ni de tareas en el estado");
+
+  // Notas por módulo (lo que sustituye a las notas de examen)
+  const s0 = A.state.subjects[0];
+  check(s0.grade !== "" && Number.isFinite(Number(s0.grade)), "notas: los módulos de ejemplo traen su nota");
+  A.go("rendimiento");
+  const vista = env.doc.getElementById("view");
+  check(/Media del ciclo/.test(vista.textContent), "notas: la vista Calificaciones sigue viva");
+  check(!!vista.querySelector('[data-action="edit-grade"]'), "notas: cada módulo se puede calificar");
+  const antes = A.weightedGPA();
+  act(env, "edit-grade", { id: s0.id });
+  const form = env.doc.getElementById("modal-form");
+  check(!!form, "notas: se abre el formulario de la nota");
+  form.querySelector('[name="grade"]').value = "9.5";
+  form.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
+  check(Number(A.state.subjects[0].grade) === 9.5, "notas: la nota se guarda en el módulo");
+  check(A.weightedGPA() !== antes, "notas: y la media del ciclo cambia con ella");
+  A.go("dashboard");
+  check(/Nota media/.test(env.doc.getElementById("view").textContent), "notas: Inicio enseña la nota media");
+
+  // La agenda ya no repite el horario
+  A.go("agenda");
+  const ag = env.doc.getElementById("view").textContent;
+  check(!/Clases/.test(ag), "agenda: ya no lista las clases del horario");
+  check(!/Exámenes|Tareas/.test(ag), "agenda: ni exámenes ni tareas");
+  check(/Bloques de estudio|Huecos libres/.test(ag), "agenda: ahora es tu plan de estudio");
+
+  // Los widgets del escritorio no ofrecen exámenes ni tareas
+  const catalogo = A.widgetCatalog ? A.widgetCatalog() : null;
+  if (catalogo) check(!catalogo.some((w) => /examen|tarea/i.test(w.name + w.hint)), "widgets: fuera los de exámenes y tareas");
 }
 
 // ------------------------------------------------------------- ejecución

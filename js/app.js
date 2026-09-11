@@ -4,13 +4,6 @@
   const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
   const DAYS_SHORT = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
   const MONTHS = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
-  const EXAM_TYPES = [
-    { id: "parcial", label: "Parcial" },
-    { id: "final", label: "Final" },
-    { id: "practica", label: "Práctica" },
-    { id: "oral", label: "Oral" },
-    { id: "entrega", label: "Entrega" },
-  ];
   const SKINS = [
     { id: "hub", name: "SMR Hub", tag: "Trade Republic", cat: "sencilla", colors: ["#000000", "#ffffff", "#10B981"] },
     { id: "redes", name: "Rack SMR", tag: "Switch y VLAN", cat: "smr", colors: ["#0b1220", "#3b82f6", "#f59e0b"] },
@@ -51,7 +44,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v56";
+  const APP_VERSION = "v57";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -86,17 +79,6 @@
   const todayISO = () => localISO(new Date());
   const minutesOf = (hhmm) => { const [h, m] = (hhmm || "00:00").split(":").map(Number); return h * 60 + (m || 0); };
   const fmtDate = (iso) => { if (!iso) return ""; const d = new Date(iso + "T00:00:00"); return `${d.getDate()} de ${MONTHS[d.getMonth()]}`; };
-  function fmtDue(iso) {
-    if (!iso) return "sin fecha";
-    const d = daysUntil(iso);
-    if (d === 0) return "hoy";
-    if (d === 1) return "mañana";
-    if (d === -1) return "ayer";
-    if (d < 0) return "hace " + Math.abs(d) + " d";
-    if (d <= 21) return "en " + d + " días";
-    const dt = new Date(iso + "T00:00:00");
-    return dt.getDate() + " " + MONTHS[dt.getMonth()].slice(0, 3);
-  }
   const fmtDateLong = (iso) => {
     const d = new Date(iso + "T00:00:00");
     const wd = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"][d.getDay()];
@@ -111,7 +93,6 @@
   const safeColor = (c, fb) => (/^#[0-9a-fA-F]{3,8}$/.test(String(c)) ? String(c) : (fb || "#64748b"));
   const subjectColor = (id) => safeColor((subjectById(id) || {}).color);
   const subjectName = (id) => (subjectById(id) || {}).name || "Sin módulo";
-  const typeLabel = (id) => (EXAM_TYPES.find((t) => t.id === id) || {}).label || id || "";
   const fmtHours = (mins) => {
     mins = Math.round(mins || 0);
     if (mins < 60) return `${mins}m`;
@@ -119,12 +100,6 @@
     return m ? `${h}h ${m}m` : `${h}h`;
   };
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
-  function weightedGPA() {
-    const g = state.exams.filter((e) => e.grade !== "" && !Number.isNaN(Number(e.grade)));
-    if (!g.length) return null;
-    const w = g.reduce((a, e) => a + (Number(e.weight) || 1), 0);
-    return g.reduce((a, e) => a + Number(e.grade) * (Number(e.weight) || 1), 0) / w;
-  }
   function attStats() {
     const rows = state.attendance || [];
     const t = rows.length;
@@ -132,10 +107,6 @@
     const r = rows.filter((a) => a.status === "retraso").length;
     const f = rows.filter((a) => a.status === "falta").length;
     return { t, p, r, f, pct: t ? Math.round((p / t) * 100) : null };
-  }
-  function overdueTasks() {
-    const today = todayISO();
-    return state.tasks.filter((x) => !x.done && x.due && x.due < today);
   }
   function fmtRemain(mins) {
     if (mins == null) return "—";
@@ -164,7 +135,7 @@
     }
     return "";
   }
-  function isNonTeaching(iso) { return !!holidayName(iso) || exceptionKind(iso, "holiday") !== null; }
+  function isNonTeaching(iso) { return dayInfo(iso).kind !== "lectivo"; }
 
   /* Excepciones de un día concreto. El horario es semanal, pero la vida real no:
      un martes no hay clase, una clase se mueve al jueves, aparece una extra…
@@ -228,12 +199,6 @@
       if (now < stt && !next) next = { ev: c, startMins: stt, endMins: en };
     }
     return { active, next, weekend: weekdayMon0(new Date()) > 4, holiday: "" };
-  }
-  function subjectGPA(sid) {
-    const g = state.exams.filter((e) => e.subjectId === sid && e.grade !== "" && !Number.isNaN(Number(e.grade)));
-    if (!g.length) return null;
-    const w = g.reduce((a, e) => a + (Number(e.weight) || 1), 0);
-    return g.reduce((a, e) => a + Number(e.grade) * (Number(e.weight) || 1), 0) / w;
   }
   function buzz() {
     if (state.settings.vibrate === false) return;
@@ -305,18 +270,9 @@
         "Estás en clase",
         subjectName(info.ev.subjectId) + " hasta las " + info.ev.end);
     }
-    const lead = Number(state.settings.examLeadDays) || 1;
-    if (state.settings.notifyExams !== false) {
-      const todayEx = state.exams.filter((e) => e.status !== "hecho" && daysUntil(e.date) === 0);
-      todayEx.forEach((e) => noteOnce("exam-hoy-" + e.id, "Examen hoy", e.title + (e.time ? " · " + e.time : "")));
-      const soon = state.exams.filter((e) => e.status !== "hecho" && daysUntil(e.date) === lead);
-      soon.forEach((e) => noteOnce("exam-lead-" + e.id, lead === 1 ? "Examen mañana" : "Examen en " + lead + " días", e.title));
-    }
-    if (state.settings.notifyTasks !== false) {
-      const due = state.tasks.filter((x) => !x.done && x.due === today);
-      if (due.length) noteOnce("tareas-" + today, "Tareas de hoy", due.length === 1 ? due[0].title : due.length + " pendientes");
-      const late = overdueTasks();
-      if (late.length) noteOnce("atrasadas-" + today, "Tareas atrasadas", late.length + " sin entregar");
+    const hoydia = dayInfo(today);
+    if (state.settings.notifyClass !== false && hoydia.kind !== "lectivo") {
+      noteOnce("sinclase-" + today, hoydia.short || "Sin clase", hoydia.label || "Hoy no hay clase");
     }
     if (state.settings.notifyCards !== false) {
       const n = dueCards().length;
@@ -332,10 +288,12 @@
       noteOnce("racha-" + today, "Racha en peligro", "10 minutos ahora y no la rompes.");
     }
     if (state.settings.morningSummary !== false && hour >= (state.settings.remindHour || 8) && hour < 12) {
-      const nx = nextExam();
-      const dueN = state.tasks.filter((x) => !x.done && x.due === today).length;
+      const info = dayInfo(today);
+      const clases = info.kind === "lectivo" ? eventsOnDate(today) : [];
       noteOnce("manana-" + today, "Buenos días",
-        (dueN ? dueN + " tareas hoy" : "Sin tareas hoy") + (nx ? " · próximo examen: " + nx.title : ""));
+        info.kind !== "lectivo" ? (info.label || "Hoy no hay clase")
+          : clases.length ? clases.length + (clases.length === 1 ? " clase hoy · primera a las " + clases[0].start : " clases hoy · primera a las " + clases[0].start)
+          : "Hoy no hay clases");
     }
   }
 
@@ -349,17 +307,18 @@
         center: "", group: "2SMR", endDate: COURSE.end, startView: "dashboard",
         uiSize: "md", compact: false, reduceMotion: false, showXp: true, showMedals: true, showWeekStrip: true,
         vibrate: true, confetti: true, autoNext: false, keepAwake: true, showTimerBar: true,
-        notifyExams: true, notifyTasks: true, notifyCards: true, notifyClass: true, examLeadDays: 1,
-        confirmDelete: true, showAttendance: true, defaultHours: 8, defaultPrio: "media",
-        gradeMax: 10, startHour: 15, endHour: 23, weekGoalDays: 5, hideCompleted: false, timetableId: "",
+        notifyCards: true, notifyClass: true,
+        confirmDelete: true, showAttendance: true,
+        gradeMax: 10, startHour: 15, endHour: 23, weekGoalDays: 5, timetableId: "",
         ollamaUrl: "", ollamaModel: "llama3.2", pin: "", autoTheme: false, guest: false,
         nightRemind: true, morningSummary: true, inactivityDays: 5, avatarOn: true, avatarIcon: "letter",
+        timetableAuto: true, timetableKind: "",
         appIcon: "dragon", customAvatars: [],
       },
-      subjects: [], exams: [], notes: [], events: [], tasks: [], sessions: [], cards: [], inbox: [], attendance: [],
+      subjects: [], notes: [], events: [], sessions: [], cards: [], inbox: [], attendance: [],
       progress: { bonusXp: 0, unlocked: {}, daily: "", log: [], flags: {}, freeze: 1, lastFreezeWeek: "" },
       topics: [], habits: [], glossary: [], backupsMeta: [],
-      widgets: ["live","exams","tasks","xp"],
+      widgets: ["live","hoy","xp"],
     };
   }
 
@@ -405,17 +364,17 @@
   };
   const TIMETABLE_ID = "2smr-2026-2027";
   const HOLIDAYS = {
-    "2026-09-09": "Festivo local escolar",
+    "2026-09-09": "Festivo local (Villena)",
     "2026-10-09": "Día de la Comunitat Valenciana",
     "2026-10-12": "Fiesta Nacional de España",
     "2026-11-01": "Todos los Santos",
     "2026-12-06": "Día de la Constitución",
-    "2026-12-07": "Festivo local escolar",
+    "2026-12-07": "Festivo local (Villena)",
     "2026-12-08": "Inmaculada Concepción",
     "2026-12-25": "Navidad",
     "2027-01-01": "Año Nuevo",
     "2027-01-06": "Reyes",
-    "2027-02-08": "Festivo local escolar",
+    "2027-02-08": "Festivo local (Villena)",
     "2027-03-19": "San José",
     "2027-03-26": "Viernes Santo",
     "2027-03-29": "Lunes de Pascua",
@@ -426,6 +385,33 @@
     { from: "2026-12-22", to: "2027-01-06", name: "Vacaciones de Navidad" },
     { from: "2027-03-25", to: "2027-04-05", name: "Vacaciones de Pascua" },
   ];
+  const MESES_TEMPORAL = [8, 5];   // septiembre y junio: el centro entra a las 16:00
+
+  function vacacionEn(iso) {
+    for (const v of VACATIONS) if (iso >= v.from && iso <= v.to) return v;
+    return null;
+  }
+  /* Qué es cada día del calendario escolar. Devuelve el tipo y el texto que se enseña.
+     lectivo · festivo · vacaciones · finde · fuera (antes de empezar o curso acabado) */
+  function dayInfo(iso) {
+    iso = iso || todayISO();
+    const dow = weekdayMon0(new Date(iso + "T12:00:00"));
+    const exc = excepciones().find((x) => x.date === iso && x.kind === "holiday");
+    if (exc) return { kind: "festivo", label: exc.note || "Festivo", short: exc.note || "Festivo", dow };
+    const vac = vacacionEn(iso);
+    if (vac) return { kind: "vacaciones", label: vac.name, short: "Vacaciones", dow };
+    if (HOLIDAYS[iso]) return { kind: "festivo", label: HOLIDAYS[iso], short: HOLIDAYS[iso], dow };
+    if (dow > 4) return { kind: "finde", label: "Fin de semana", short: "Fin de semana", dow };
+    if (iso < COURSE.start) return { kind: "fuera", label: "Sin clase: el curso empieza el " + fmtDate(COURSE.start), short: "Sin curso", dow };
+    if (iso > COURSE.end) return { kind: "fuera", label: "Sin clase: el curso acabó el " + fmtDate(COURSE.end), short: "Sin curso", dow };
+    return { kind: "lectivo", label: "", short: "", dow };
+  }
+  function isLectivo(iso) { return dayInfo(iso).kind === "lectivo"; }
+  // Septiembre y junio: plantilla temporal (entrada a las 16:00). El resto, la del curso.
+  function plantillaDeMes(fechaISO) {
+    const d = fechaISO ? new Date(fechaISO + "T12:00:00") : new Date();
+    return MESES_TEMPORAL.includes(d.getMonth()) ? "temporal" : "curso";
+  }
   function officialSubjectId(st, spec) {
     const hit = (st.subjects || []).find((s) => {
       const n = String(s.name || "").toLowerCase();
@@ -474,45 +460,51 @@
     st.settings.remindHour = st.settings.remindHour === 8 ? 14 : (st.settings.remindHour || 14);
     return ids;
   }
+  /* Cambia las horas de las clases del centro sin tocar ids, excepciones ni asistencia.
+     Si el horario tiene clases tuyas (horas raras) no se toca nada y devuelve false. */
+  function retimarHorario(st, kind) {
+    const tramos = OFFICIAL_SLOTS[kind] || OFFICIAL_SLOTS.curso;
+    const horas = new Set();
+    Object.values(OFFICIAL_SLOTS).forEach((t) => t.forEach((s) => horas.add(s[0])));
+    const porDia = {};
+    (st.events || []).forEach((e) => { (porDia[e.day] = porDia[e.day] || []).push(e); });
+    const dias = Object.values(porDia);
+    if (!dias.length) return false;
+    if (dias.some((l) => l.some((e) => !horas.has(e.start) || (e.type && e.type !== "clase" && e.type !== "estudio")))) return false;
+    dias.forEach((l) => {
+      const clases = l.filter((e) => !e.type || e.type === "clase");
+      clases.sort((a, b) => String(a.start).localeCompare(String(b.start)));
+      clases.forEach((e, i) => { if (tramos[i]) { e.start = tramos[i][0]; e.end = tramos[i][1]; } });
+    });
+    return true;
+  }
+  // Se llama al abrir la app y cada poco: si toca la plantilla temporal, la pone sola.
+  function syncPlantilla(st, fechaISO) {
+    if (!st || !st.settings) return "";
+    if (st.settings.timetableAuto === false) return "";
+    if (!st.settings.timetableId) return "";                 // no hay horario del centro cargado
+    const quiero = plantillaDeMes(fechaISO);
+    if ((st.settings.timetableKind || "") === quiero) return "";
+    if (!retimarHorario(st, quiero)) return "";
+    st.settings.timetableKind = quiero;
+    st.settings.plantillaDia = fechaISO || todayISO();
+    return quiero;
+  }
+  function avisoPlantilla(kind) {
+    return kind === "temporal"
+      ? "Septiembre y junio: el centro entra a las 16:00 (horario temporal)"
+      : "Horario del curso: entrada a las 15:15";
+  }
+
   function seedDemo() {
     const s = defaultState();
     const ids = applyOfficialTimetable(s);
     s.settings.demo = true;
-    s.exams = [
-      { id: uid(), subjectId: ids.sor, title: "Parcial: dominio y usuarios (AD)", date: "2026-10-16", time: "09:00", type: "parcial", location: "Aula 2", notes: "Active Directory, perfiles, permisos NTFS, GPOs básicas.", grade: "", weight: 30, difficulty: 4, hoursNeeded: 10, status: "pendiente", checklist: [{ id: uid(), text: "Crear OU y usuarios", done: true }, { id: uid(), text: "Permisos NTFS vs compartir", done: false }] },
-      { id: uid(), subjectId: ids.ser, title: "Práctica: DHCP + DNS + Apache", date: "2026-10-23", time: "10:40", type: "practica", location: "Aula redes", notes: "Ámbitos DHCP, zonas DNS, virtual hosts y HTTPS básico.", grade: "", weight: 30, difficulty: 4, hoursNeeded: 12, status: "pendiente", checklist: [{ id: uid(), text: "Reservas DHCP", done: false }, { id: uid(), text: "Registro A y CNAME", done: false }] },
-      { id: uid(), subjectId: ids.seg, title: "Parcial: amenazas, copias y cortafuegos", date: "2026-11-06", time: "08:30", type: "parcial", location: "Lab 2", notes: "Malware, 3-2-1, ACL, NAT, autenticación.", grade: "", weight: 35, difficulty: 4, hoursNeeded: 12, status: "pendiente", checklist: [] },
-      { id: uid(), subjectId: ids.web, title: "Entrega: sitio HTML/CSS + formulario", date: "2026-11-13", time: "11:00", type: "entrega", location: "Aula 3", notes: "Semántica, CSS, validación y PHP o JS mínimo.", grade: "", weight: 25, difficulty: 3, hoursNeeded: 8, status: "pendiente", checklist: [] },
-      { id: uid(), subjectId: ids.ser, title: "Parcial: FTP, correo y acceso remoto", date: "2026-12-04", time: "09:00", type: "parcial", location: "Aula redes", notes: "FTP activo/pasivo, SMTP/IMAP, SSH y escritorio remoto.", grade: "", weight: 30, difficulty: 4, hoursNeeded: 10, status: "pendiente", checklist: [] },
-      { id: uid(), subjectId: ids.ipe, title: "IPE: contrato, nómina y CV", date: "2026-12-11", time: "12:30", type: "parcial", location: "B-04", notes: "Tipos de contrato, nómina, prevención, entrevista.", grade: "", weight: 40, difficulty: 2, hoursNeeded: 5, status: "pendiente", checklist: [] },
-      { id: uid(), subjectId: ids.pro, title: "Entrega proyecto intermodular", date: "2027-03-12", time: "10:00", type: "entrega", location: "Taller", notes: "Memoria + demo: red, servicios y seguridad del caso.", grade: "", weight: 100, difficulty: 5, hoursNeeded: 30, status: "pendiente", checklist: [] },
-    ];
     s.notes = [
-      { id: uid(), subjectId: ids.ser, title: "Puertos que hay que saber", content: "# Servicios y puertos\n\n- SSH :: 22\n- DNS :: 53\n- DHCP :: 67/68\n- HTTP :: 80\n- HTTPS :: 443\n- FTP :: 20/21\n- SMTP :: 25 / 587\n- IMAP :: 143 / 993\n- RDP :: 3389\n\n**Truco:** el examen suele pedir el puerto Y si es TCP o UDP.", pinned: true, createdAt: Date.now() - 86400000 * 3, updatedAt: Date.now() - 3600000 },
+      { id: uid(), subjectId: ids.ser, title: "Puertos que hay que saber", content: "# Servicios y puertos\n\n- SSH :: 22\n- DNS :: 53\n- DHCP :: 67/68\n- HTTP :: 80\n- HTTPS :: 443\n- FTP :: 20/21\n- SMTP :: 25 / 587\n- IMAP :: 143 / 993\n- RDP :: 3389\n\n**Truco:** en clase siempre preguntan el puerto Y si es TCP o UDP.", pinned: true, createdAt: Date.now() - 86400000 * 3, updatedAt: Date.now() - 3600000 },
       { id: uid(), subjectId: ids.seg, title: "Amenazas y copias", content: "## Malware\nVirus, gusanos, troyanos, ransomware, spyware.\n\n## Copias 3-2-1\n3 copias, 2 soportes, 1 fuera del sitio.\n\n- Firewall :: filtra tráfico de red\n- ACL :: lista de control de acceso\n- Phishing :: engaño para robar credenciales\n- 2FA :: segundo factor de autenticación", pinned: false, createdAt: Date.now() - 86400000 * 2, updatedAt: Date.now() - 86400000 },
       { id: uid(), subjectId: ids.sor, title: "Active Directory en 1 hoja", content: "# Dominio Windows\n\n- **AD DS**: servicio de directorio.\n- **OU**: unidad organizativa (agrupa usuarios/equipos).\n- **GPO**: políticas que se aplican a OU.\n- **SID**: identificador de seguridad del objeto.\n\n- net user :: gestionar usuarios locales\n- gpupdate /force :: aplicar GPO ya", pinned: false, createdAt: Date.now() - 86400000, updatedAt: Date.now() - 7200000 },
       { id: uid(), subjectId: ids.web, title: "HTML mínimo para el módulo", content: "# Esqueleto\n\n`<!DOCTYPE html>` + charset UTF-8.\n\n- `<form method=\"post\">` envía al servidor.\n- CSS en archivo aparte (mantenible).\n- Nunca guardes contraseñas en claro.\n- GET :: pide un recurso\n- POST :: envía datos (login, formularios)", pinned: false, createdAt: Date.now() - 40000000, updatedAt: Date.now() - 40000000 },
-    ];
-    s.tasks = [
-      { id: uid(), subjectId: ids.ser, title: "Levantar DHCP + DNS en la VM del aula", due: "2026-09-18", done: false, priority: "alta" },
-      { id: uid(), subjectId: ids.seg, title: "Practicar reglas iptables / firewalld", due: "2026-09-16", done: false, priority: "alta" },
-      { id: uid(), subjectId: ids.sor, title: "Crear dominio de prueba y 5 usuarios", due: "2026-09-10", done: false, priority: "media" },
-      { id: uid(), subjectId: ids.web, title: "Bosquejo del sitio del proyecto", due: "2026-09-05", done: false, priority: "media" },
-      { id: uid(), subjectId: ids.pro, title: "Definir el caso del proyecto intermodular", due: "2026-09-18", done: false, priority: "alta" },
-      { id: uid(), subjectId: ids.ipe, title: "Actualizar el CV con prácticas SMR", due: "2026-09-12", done: false, priority: "baja" },
-    ];
-    s.cards = [
-      { id: uid(), subjectId: ids.ser, front: "Puerto de DNS", back: "53 (UDP consultas, TCP transferencias de zona)", due: todayISO(), interval: 0, reps: 0 },
-      { id: uid(), subjectId: ids.ser, front: "¿Qué reparte el DHCP?", back: "IP, máscara, puerta de enlace y DNS, durante un tiempo (lease)", due: todayISO(), interval: 0, reps: 0 },
-      { id: uid(), subjectId: ids.sor, front: "¿Qué es una GPO?", back: "Directiva de grupo: configura usuarios y equipos del dominio", due: todayISO(), interval: 0, reps: 0 },
-      { id: uid(), subjectId: ids.seg, front: "Copia 3-2-1", back: "3 copias, 2 soportes distintos, 1 fuera del sitio", due: todayISO(), interval: 0, reps: 0 },
-      { id: uid(), subjectId: ids.seg, front: "Diferencia NAT y firewall", back: "NAT traduce direcciones; el firewall decide si deja pasar el tráfico", due: todayISO(), interval: 0, reps: 0 },
-      { id: uid(), subjectId: ids.web, front: "¿GET o POST para un login?", back: "POST: no va en la URL y no se cachea igual", due: todayISO(), interval: 0, reps: 0 },
-      { id: uid(), subjectId: ids.ipe, front: "Empleabilidad", back: "Itinerario personal para la empleabilidad II: contrato, CV y entrevista", due: todayISO(), interval: 0, reps: 0 },
-    ];
-    s.inbox = [
-      { id: uid(), text: "Preguntar si el proyecto puede ser un servidor LAMP + copias", createdAt: Date.now() - 3600000 },
-      { id: uid(), text: "Apuntar la IP del servidor de prácticas del aula", createdAt: Date.now() - 7200000 },
     ];
     const now = new Date();
     for (let i = 13; i >= 0; i--) {
@@ -520,6 +512,9 @@
       if (d.getDay() === 0) continue;
       s.sessions.push({ id: uid(), subjectId: s.subjects[i % s.subjects.length].id, date: localISO(d), minutes: 35 + ((i * 17) % 70), type: "pomodoro" });
     }
+    // Notas de los módulos (lo que se ve en Calificaciones)
+    const notasDemo = [7.5, 8.2, 6.5, 9, 7, 8.5, 6, 7.5, 8, 7];
+    s.subjects.forEach((sub, i) => { sub.grade = notasDemo[i % notasDemo.length]; });
     s.settings.name = "";
     return s;
   }
@@ -563,12 +558,13 @@
     delete settings.syncPin;
     delete out._guide;   // el borrador de la guía docente se retiró
     delete out.trash;    // la papelera se retiró (lo que hubiera dentro ya está en out.notes)
+    delete out.exams;    // los exámenes se retiraron (v57): lo que hubiera guardado ya no se carga
+    delete out.tasks;    // y los deberes también: la app es horario + estudio, sin pendientes
     if (!Number.isFinite(Number(settings.dailyGoal)) || Number(settings.dailyGoal) <= 0) settings.dailyGoal = 90;
     settings.pomodoroWork = clamp(Number(settings.pomodoroWork) || 25, 1, 180);
     settings.pomodoroBreak = clamp(Number(settings.pomodoroBreak) || 5, 1, 60);
     settings.pomodoroLong = clamp(Number(settings.pomodoroLong) || 15, 1, 120);
     settings.gradeMax = clamp(Number(settings.gradeMax) || 10, 5, 100);
-    settings.examLeadDays = clamp(Number(settings.examLeadDays) || 1, 0, 30);
     settings.startHour = clamp(Number(settings.startHour) || 8, 0, 23);
     settings.endHour = clamp(Number(settings.endHour) || 21, 1, 24);
     out.settings = settings;
@@ -580,39 +576,19 @@
       room: asText(s.room),
       credits: Number(s.credits) || 0,
       color: asColor(s.color, "#64748b"),
+      // Nota del módulo (0..nota máxima). "" = todavía sin nota
+      grade: (s.grade === "" || s.grade == null || !Number.isFinite(Number(s.grade))) ? "" : clamp(Number(s.grade), 0, Number(settings.gradeMax) || 10),
     }));
     out.subjects = subjects;
     const hasSub = (id) => subjects.some((s) => s.id === id);
     const subOf = (id) => (hasSub(id) ? id : (subjects[0] ? subjects[0].id : ""));
     const subName = (id) => asText((subjects.find((s) => s.id === id) || {}).name);
 
-    const fixCheck = (c) => ({ id: asText(c.id) || uid(), text: asText(c.text, "Ítem"), done: !!c.done });
-
     out.events = asArray(src.events).filter(isObj).map((e) => ({
       id: asText(e.id) || uid(), subjectId: subOf(e.subjectId),
       day: clamp(Number(e.day) || 0, 0, 6),
       start: asHHMM(e.start, "09:00"), end: asHHMM(e.end, "10:00"),
       room: asText(e.room), type: asText(e.type, "clase"),
-    }));
-
-    out.exams = asArray(src.exams).filter(isObj).filter((e) => e.title || e.date).map((e) => ({
-      id: asText(e.id) || uid(), subjectId: subOf(e.subjectId),
-      title: asText(e.title, "Examen sin título"),
-      date: asISO(e.date) || todayISO(), time: asHHMM(e.time, "09:00"),
-      type: asText(e.type, "parcial"), location: asText(e.location), notes: asText(e.notes),
-      grade: (e.grade === "" || e.grade == null || !Number.isFinite(Number(e.grade))) ? "" : String(e.grade),
-      weight: clamp(Number(e.weight) || 25, 0, 100),
-      difficulty: clamp(Number(e.difficulty) || 3, 1, 5),
-      hoursNeeded: clamp(Number(e.hoursNeeded) || Number(settings.defaultHours) || 8, 1, 500),
-      status: e.status === "hecho" ? "hecho" : "pendiente",
-      checklist: asArray(e.checklist).filter(isObj).map(fixCheck),
-    }));
-
-    out.tasks = asArray(src.tasks).filter(isObj).filter((x) => x.title).map((x) => ({
-      id: asText(x.id) || uid(), subjectId: hasSub(x.subjectId) ? x.subjectId : (x.subjectId || ""),
-      title: asText(x.title, "Tarea"), due: asISO(x.due),
-      priority: ["alta", "media", "baja"].includes(x.priority) ? x.priority : "media",
-      done: !!x.done, kanban: ["todo", "doing", "done"].includes(x.kanban) ? x.kanban : undefined,
     }));
 
     // La papelera se retiró (v54): si quedaba algo dentro, vuelve a Apuntes en vez de desaparecer
@@ -795,14 +771,15 @@
   }
 
   let state = load();
-  let view = ["dashboard","schedule","exams","tasks","timer","review","achievements"].includes(state.settings.startView) ? state.settings.startView : "dashboard";
+  let view = ["dashboard","schedule","timer","review","achievements"].includes(state.settings.startView) ? state.settings.startView : "dashboard";
   let calendarCursor = new Date(); calendarCursor.setDate(1);
   let noteId = null, notePreview = false, noteFilter = "all", noteQuery = "";
-  let examTab = "lista", examFilter = "all", taskFilter = "pendientes";
   let cardFilter = "all", cardFlip = false, cardQueue = [];
   let subjectFocus = null, cmdOpen = false, cmdIndex = 0, cmdItems = [];
   let deferredInstall = null, wakeLock = null;
   let schView = "week";
+  let schWeek = 0;                       // 0 = semana actual; -1 y +1 las de al lado
+  const plantillaAuto = syncPlantilla(state);
   let exDate = "";
   let schDay = weekdayMon0(new Date());
   let agendaFilter = "all";
@@ -925,9 +902,23 @@
     return state.sessions.filter((s) => s.subjectId === sid && (!until || s.date <= until)).reduce((a, b) => a + b.minutes, 0);
   }
   function dueCards() { const t = todayISO(); return state.cards.filter((c) => !c.due || c.due <= t); }
-  function nextExam() {
-    return [...state.exams].filter((e) => e.status !== "hecho" && daysUntil(e.date) >= 0)
-      .sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")))[0];
+  // Nota media del ciclo: la nota de cada modulo (se pone a mano en Modulos o en Notas)
+  function weightedGPA() {
+    const notas = state.subjects.map((s) => Number(s.grade)).filter((n) => Number.isFinite(n) && n >= 0);
+    if (!notas.length) return null;
+    return notas.reduce((a, b) => a + b, 0) / notas.length;
+  }
+  // Proximos dias sin clase (festivos y vacaciones que quedan por delante)
+  function diasSinClase(n = 4) {
+    const out = [];
+    const d = new Date(todayISO() + "T12:00:00");
+    for (let i = 0; i < 400 && out.length < n; i++) {
+      const iso = localISO(d);
+      const info = dayInfo(iso);
+      if (iso > todayISO() && (info.kind === "festivo" || info.kind === "vacaciones")) out.push({ iso, info });
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
   }
   function nextClass() {
     if (isNonTeaching(todayISO())) return null;
@@ -936,19 +927,15 @@
   }
   const WIDGET_CATALOG = [
     { id: "clase", name: "Próxima clase", size: "2×2", hint: "En curso o la siguiente" },
-    { id: "examen", name: "Próximo examen", size: "2×2", hint: "La fecha más cercana" },
-    { id: "hoy", name: "Hoy", size: "4×2", hint: "Clase y examen juntos" },
+    { id: "hoy", name: "Hoy", size: "4×2", hint: "Clase y día sin clase" },
     { id: "horario", name: "Horario de hoy", size: "4×2", hint: "Tres bloques del día" },
-    { id: "examenes", name: "Exámenes", size: "4×2", hint: "Los tres más próximos" },
-    { id: "tareas", name: "Tareas", size: "4×2", hint: "Pendientes de entrega" },
-    { id: "media", name: "Nota media", size: "2×2", hint: "Media ponderada" },
+    { id: "festivos", name: "Días sin clase", size: "4×2", hint: "Festivos y vacaciones" },
+    { id: "media", name: "Nota media", size: "2×2", hint: "Media de tus módulos" },
     { id: "racha", name: "Racha", size: "2×2", hint: "Días seguidos" },
     { id: "estudio", name: "Estudio hoy", size: "2×2", hint: "Minutos de hoy" },
     { id: "semana", name: "Estudio semana", size: "2×2", hint: "Minutos de la semana" },
     { id: "xp", name: "Nivel / XP", size: "2×2", hint: "Nivel y experiencia" },
     { id: "fichas", name: "Fichas", size: "2×2", hint: "Repaso de hoy" },
-    { id: "pendientes", name: "Pendientes", size: "2×2", hint: "Tareas sin hacer" },
-    { id: "atrasadas", name: "Atrasadas", size: "2×2", hint: "Fuera de plazo" },
     { id: "asistencia", name: "Asistencia", size: "2×2", hint: "Presente / retraso / falta" },
     { id: "curso", name: "Días de curso", size: "2×2", hint: "Hasta el inicio o el fin" },
     { id: "bandeja", name: "Bandeja", size: "2×2", hint: "Capturas rápidas" },
@@ -956,13 +943,11 @@
     { id: "festivo", name: "Hoy / festivo", size: "2×2", hint: "Si hay clase o no" },
     { id: "hint", name: "Qué estudiar", size: "2×2", hint: "Consejo del día" },
     { id: "mini_clase", name: "Mini clase", size: "2×1", hint: "Tira compacta" },
-    { id: "mini_examen", name: "Mini examen", size: "2×1", hint: "Tira compacta" },
     { id: "mini_racha", name: "Mini racha", size: "2×1", hint: "Tira compacta" },
-    { id: "duo", name: "Clase | Examen", size: "4×1", hint: "Dos columnas" },
+    { id: "duo", name: "Clase | Festivo", size: "4×1", hint: "Dos columnas" },
   ];
   function widgetPayload() {
     const lb = liveBlock();
-    const nx = nextExam();
     let clase = { kicker: "HORARIO", title: "Sin más clases hoy", sub: "" };
     if (lb.active) {
       const e = lb.active.ev;
@@ -975,38 +960,18 @@
     } else if (lb.weekend) {
       clase = { kicker: "HORARIO", title: "Fin de semana", sub: "Sin clases" };
     }
-    let exam = { kicker: "EXAMEN", title: "Sin exámenes cerca", sub: "" };
-    if (nx) {
-      const d = daysUntil(nx.date);
-      const when = d === 0 ? "hoy" : d === 1 ? "mañana" : "en " + d + " días";
-      exam = { kicker: "PRÓXIMO EXAMEN", title: nx.title, sub: when + (nx.time ? " · " + nx.time : "") };
-    }
     const gpa = weightedGPA();
-    const pending = state.tasks.filter((t) => !t.done).length;
-    const overdue = overdueTasks();
     const today = todayISO();
     const dow = weekdayMon0(new Date());
-    const hol = holidayName(today);
-    const todayClasses = hol ? [] : eventsOnDate(today);
+    const dia = dayInfo(today);
+    const todayClasses = dia.kind === "lectivo" ? eventsOnDate(today) : [];
     const horarioRows = todayClasses.slice(0, 3).map((e) => ({
       t: e.start + "  " + subjectName(e.subjectId),
       s: e.end + (e.room ? " · " + e.room : ""),
     }));
-    if (!horarioRows.length) horarioRows.push({ t: hol || (dow > 4 ? "Fin de semana" : "Sin clases"), s: "" });
-    const examRows = [...state.exams].filter((e) => e.status !== "hecho" && daysUntil(e.date) >= 0)
-      .sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")))
-      .slice(0, 3)
-      .map((e) => {
-        const d = daysUntil(e.date);
-        const when = d === 0 ? "hoy" : d === 1 ? "mañana" : "en " + d + " días";
-        return { t: e.title, s: when + (e.time ? " · " + e.time : "") };
-      });
-    if (!examRows.length) examRows.push({ t: "Sin exámenes cerca", s: "" });
-    const taskRows = state.tasks.filter((t) => !t.done)
-      .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"))
-      .slice(0, 3)
-      .map((t) => ({ t: t.title, s: fmtDue(t.due) }));
-    if (!taskRows.length) taskRows.push({ t: "Todo al día", s: "" });
+    if (!horarioRows.length) horarioRows.push({ t: dia.kind === "lectivo" ? "Sin clases" : dia.short, s: dia.kind === "lectivo" ? "" : "Día sin clase" });
+    const festivoRows = diasSinClase(3).map((x) => ({ t: x.info.label, s: fmtDate(x.iso) }));
+    if (!festivoRows.length) festivoRows.push({ t: "Sin festivos por delante", s: "" });
     const todayMins = state.sessions.filter((s) => s.date === today).reduce((a, b) => a + (b.minutes || 0), 0);
     const wr = weekRange();
     const weekMins = state.sessions.filter((s) => s.date >= wr.from && s.date <= wr.to).reduce((a, b) => a + (b.minutes || 0), 0);
@@ -1021,38 +986,34 @@
     else if (endD != null && endD <= 0) { cursoNum = "0"; cursoSub = "curso cerrado"; }
     const inboxN = (state.inbox || []).length;
     let foco = { kicker: "FOCO", title: "Abre Aula SMR", sub: "Elige un módulo" };
-    if (nx) foco = { kicker: "ESTUDIAR", title: subjectName(nx.subjectId), sub: nx.title };
-    else if (lb.active) foco = { kicker: "EN CURSO", title: subjectName(lb.active.ev.subjectId), sub: "Clase ahora" };
+    if (lb.active) foco = { kicker: "EN CURSO", title: subjectName(lb.active.ev.subjectId), sub: "Clase ahora" };
     else if (lb.next) foco = { kicker: "SIGUE", title: subjectName(lb.next.ev.subjectId), sub: "Próxima clase" };
     let festivo;
-    if (hol) festivo = { kicker: "FESTIVO", title: hol, sub: "Sin clases" };
+    if (dia.kind !== "lectivo") festivo = { kicker: dia.kind === "vacaciones" ? "VACACIONES" : dia.kind === "festivo" ? "SIN CLASE" : "HOY", title: dia.short, sub: "No hay clase" };
     else if (dow > 4) festivo = { kicker: "HOY", title: "Fin de semana", sub: "Sin clases" };
     else festivo = { kicker: "HOY", title: DAYS[dow] || "Hoy", sub: todayClasses.length ? (todayClasses.length + (todayClasses.length === 1 ? " clase" : " clases")) : "Sin clases" };
     const hintRaw = (window.AulaStudio && window.AulaStudio.todayStudyHint && window.AulaStudio.todayStudyHint())
-      || "15 min de fichas o el módulo del próximo examen";
+      || "15 minutos de fichas del módulo que llevas más flojo";
     const hint = { kicker: "CONSEJO", title: String(hintRaw).slice(0, 90), sub: "Qué estudiar" };
     const gpaNum = gpa == null ? null : Number(gpa.toFixed(2));
     return {
-      clase, exam, pending, gpa: gpaNum,
+      clase, gpa: gpaNum,
+      hoy: { kicker: "HOY", title: clase.title, sub: dia.kind === "lectivo" ? (horarioRows[0] ? horarioRows[0].t : "Sin clases") : dia.label },
       horario: { kicker: "HORARIO HOY", rows: horarioRows },
-      examenes: { kicker: "EXÁMENES", rows: examRows },
-      tareas: { kicker: "TAREAS", rows: taskRows },
-      media: { kicker: "MEDIA", num: gpa == null ? "—" : gpa.toFixed(1), sub: "ponderada" },
+      festivos: { kicker: "DÍAS SIN CLASE", rows: festivoRows },
+      media: { kicker: "MEDIA", num: gpa == null ? "—" : gpa.toFixed(1), sub: "de tus módulos" },
       racha: { kicker: "RACHA", num: String(streak()), sub: streak() === 1 ? "día" : "días" },
       estudio: { kicker: "HOY", num: fmtHours(todayMins), sub: "estudio" },
       semana: { kicker: "SEMANA", num: fmtHours(weekMins), sub: "estudio" },
       xp: { kicker: "NIVEL " + lv.level, num: String(lv.xp), sub: lv.title },
-      fichas: { kicker: "FICHAS", num: String(dueN), sub: dueN === 1 ? "para hoy" : "para hoy" },
-      pendientes: { kicker: "PENDIENTES", num: String(pending), sub: pending === 1 ? "tarea" : "tareas" },
-      atrasadas: { kicker: "ATRASADAS", num: String(overdue.length), sub: "sin entregar" },
+      fichas: { kicker: "FICHAS", num: String(dueN), sub: "para hoy" },
       asistencia: { kicker: "ASISTENCIA", num: att.pct == null ? "—" : att.pct + "%", sub: att.t ? (att.p + "P · " + att.r + "R · " + att.f + "F") : "sin pases" },
       curso: { kicker: "CURSO", num: cursoNum, sub: cursoSub },
       bandeja: { kicker: "BANDEJA", num: String(inboxN), sub: inboxN ? "capturas" : "vacía" },
       foco, festivo, hint,
       mini_clase: { kicker: clase.kicker, num: clase.title },
-      mini_examen: { kicker: "EXAMEN", num: exam.title },
       mini_racha: { kicker: "RACHA", num: String(streak()) },
-      duo: { lk: "CLASE", lt: clase.title, rk: "EXAMEN", rt: exam.title },
+      duo: { lk: "CLASE", lt: clase.title, rk: "SIN CLASE", rt: festivoRows[0].t },
     };
   }
   function pushWidgets() {
@@ -1103,12 +1064,9 @@
   const titles = {
     dashboard: ["Inicio", "Tu ciclo SMR, a mano"],
     schedule: ["Horario", "Taller, redes y aulas"],
-    exams: ["Exámenes", "Parciales, prácticas y entregas"],
     cards: ["Fichas", "IP, OSI, Linux…"],
-    tasks: ["Tareas", "Prácticas y deberes"],
     timer: ["Estudio", "Bloques pomodoro"],
     stats: ["Gráficos", "Tiempo y notas"],
-    plan: ["Plan de estudio", "Hasta cada fecha"],
     subjects: ["Módulos", "Los módulos de SMR"],
     subject: ["Módulo", ""],
     settings: ["Ajustes", "Perfil, estudio, avisos y datos"],
@@ -1116,13 +1074,11 @@
     review: ["Repaso", "Cómo va la semana"],
     achievements: ["Logros", "XP, niveles y medallas"],
     agenda: ["Agenda", "Día, semana y mes"],
-    kanban: ["Tablero", "Pendiente / en curso / hecho"],
     chatbot: ["Asistente", "Tus apuntes y tu calendario"],
-    simulator: ["Simulador", "Qué necesitas en el final"],
     habits: ["Hábitos", "Repaso diario"],
     glossary: ["Glosario", "Términos del ciclo"],
-    examode: ["Modo examen", "Sin distracciones"],
-    quickreview: ["Repaso rápido", "Antes del examen"],
+    examode: ["Concentración", "Sin distracciones"],
+    quickreview: ["Repaso rápido", "Un módulo a fondo"],
     admin: ["Datos locales", "Copias y estado"],
     rendimiento: ["Calificaciones", "Boletín de cada módulo"],
     notes: ["Apuntes", "Texto del ciclo"],
@@ -1178,26 +1134,10 @@
       const on = b.dataset.view === view;
       if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
-    const pending = state.tasks.filter((x) => !x.done).length;
-    const dueN = dueCards().length;
-    const badge = $("#nav-task-badge");
-    if (badge) {
-      const soon = state.exams.filter((e) => daysUntil(e.date) >= 0 && e.status !== "hecho").length;
-      badge.hidden = soon <= 0;
-      badge.textContent = "";
-    }
     const setCount = (id, n) => { const el = $(id); if (!el) return; el.textContent = n || ""; el.dataset.empty = n ? "0" : "1"; };
-    setCount("#exam-count", state.exams.filter((e) => daysUntil(e.date) >= 0 && e.status !== "hecho").length);
-    setCount("#task-count", state.tasks.filter((x) => !x.done).length);
     setCount("#card-count", dueCards().length);
     setCount("#inbox-count", (state.inbox || []).length);
-    const bn = $("#bn-exam");
-    if (bn) {
-      const n = state.exams.filter((e) => daysUntil(e.date) >= 0 && daysUntil(e.date) <= 3 && e.status !== "hecho").length;
-      bn.textContent = n || "";
-      bn.classList.toggle("on", !!n);
-    }
-    const labels = { dashboard: "Captura", schedule: "Clase", exams: "Examen", notes: "Nota", cards: "Ficha", tasks: "Tarea", timer: "Sesión", stats: "Nuevo", plan: "Plan", subjects: "Módulo", subject: "Nuevo", settings: "Nuevo", inbox: "Captura", review: "Repaso", achievements: "Logro" };
+    const labels = { dashboard: "Captura", schedule: "Clase", notes: "Nota", cards: "Ficha", timer: "Sesión", stats: "Nuevo", subjects: "Módulo", subject: "Nuevo", settings: "Nuevo", inbox: "Captura", review: "Repaso", achievements: "Logro" };
     $("#fab-label").textContent = labels[view] || "Nuevo";
     if (!state.settings.onboarded) {
       document.body.classList.add("onboarding");
@@ -1211,11 +1151,11 @@
     document.body.classList.remove("onboarding");
     const S = (name) => (window.AulaStudio && window.AulaStudio[name]) ? window.AulaStudio[name]() : `<div class="empty">Módulo no cargado.</div>`;
     const map = {
-      dashboard: renderDashboard, schedule: renderSchedule, exams: renderExams, notes: renderNotes,
-      cards: renderCards, tasks: renderTasks, timer: renderTimer, stats: renderStats, plan: renderPlan,
+      dashboard: renderDashboard, schedule: renderSchedule, notes: renderNotes,
+      cards: renderCards, timer: renderTimer, stats: renderStats,
       subjects: renderSubjects, subject: renderSubject, settings: renderSettings, inbox: renderInbox, review: renderReview, achievements: renderAchievements,
-      agenda: () => S("agenda"), kanban: () => S("kanban"), chatbot: () => S("chatbot"),
-      simulator: () => S("simulator"), habits: () => S("habits"), glossary: () => S("glossary"),
+      agenda: () => S("agenda"), chatbot: () => S("chatbot"),
+      habits: () => S("habits"), glossary: () => S("glossary"),
       examode: () => S("examode"), quickreview: () => S("quickreview"), admin: () => S("admin"),
       rendimiento: renderRendimiento,
       tools: () => (window.AulaTools && typeof window.AulaTools.view === "function")
@@ -1302,11 +1242,8 @@
   function ACHIEVEMENTS() {
     const mins = studyMinutes();
     const st = streak();
-    const tasksDone = state.tasks.filter((x) => x.done).length;
     const cardsRep = state.cards.filter((c) => (c.reps || 0) > 0).length;
     const cardsMany = state.cards.reduce((a, c) => a + (c.reps || 0), 0);
-    const examsMade = state.exams.length;
-    const examsDone = state.exams.filter((e) => e.status === "hecho" || e.grade !== "").length;
     const notesN = state.notes.length;
     const attP = (state.attendance || []).filter((a) => a.status === "presente").length;
     const subjectsStudied = new Set(state.sessions.map((s) => s.subjectId)).size;
@@ -1324,9 +1261,10 @@
     const wr = weekRange();
     const weekDays = new Set(state.sessions.filter((s) => s.date >= wr.from && s.date <= wr.to && s.minutes > 0).map((s) => s.date));
     const goalDays = Number(state.settings.weekGoalDays) || 5;
-    const notable = state.exams.some((e) => Number(e.grade) >= 7);
-    const excel = state.exams.some((e) => Number(e.grade) >= 9);
-    const inbox0 = (state.inbox || []).length === 0 && notesN + tasksDone > 0;
+    const notable = state.subjects.some((s) => Number(s.grade) >= 7);
+    const excel = state.subjects.some((s) => Number(s.grade) >= 9);
+    const conNota = state.subjects.filter((s) => Number.isFinite(Number(s.grade)) && s.grade !== "").length;
+    const inbox0 = (state.inbox || []).length === 0 && notesN > 0;
     return [
       { id: "first_session", cat: "estudio", ico: "▶", name: "Primera sesión", desc: "Arranca el temporizador o registra minutos.", xp: 15, on: mins > 0 },
       { id: "h1", cat: "estudio", ico: "1h", name: "Calentamiento", desc: "Acumula 1 hora de estudio.", xp: 20, on: mins >= 60 },
@@ -1343,9 +1281,7 @@
       { id: "streak14", cat: "constancia", ico: "14", name: "Quincena de hierro", desc: "Racha de 14 días.", xp: 80, on: st >= 14 },
       { id: "streak30", cat: "constancia", ico: "30", name: "Mes en el taller", desc: "Racha de 30 días.", xp: 150, on: st >= 30 },
       { id: "week_goal", cat: "constancia", ico: "✓", name: "Semana objetivo", desc: "Estudia todos los días de tu meta semanal.", xp: 40, on: weekDays.size >= goalDays },
-      { id: "task1", cat: "organizacion", ico: "☐", name: "Primera tarea", desc: "Marca una tarea como hecha.", xp: 10, on: tasksDone >= 1 },
-      { id: "task10", cat: "organizacion", ico: "10", name: "Lista viva", desc: "Completa 10 tareas.", xp: 30, on: tasksDone >= 10 },
-      { id: "task25", cat: "organizacion", ico: "25", name: "Cero pendientes", desc: "25 tareas hechas.", xp: 55, on: tasksDone >= 25 },
+      { id: "subjects5", cat: "organizacion", ico: "5", name: "Ciclo completo", desc: "Cinco módulos dados de alta.", xp: 20, on: state.subjects.length >= 5 },
       { id: "note1", cat: "organizacion", ico: "✎", name: "Primer apunte", desc: "Crea una nota.", xp: 10, on: notesN >= 1 },
       { id: "note10", cat: "organizacion", ico: "📓", name: "Cuaderno lleno", desc: "10 notas guardadas.", xp: 30, on: notesN >= 10 },
       { id: "inbox0", cat: "organizacion", ico: "∅", name: "Bandeja a cero", desc: "Vacía la bandeja habiendo usado la app.", xp: 15, on: inbox0 },
@@ -1353,14 +1289,12 @@
       { id: "card1", cat: "evaluacion", ico: "🃏", name: "Primera ficha", desc: "Repasa al menos una ficha.", xp: 10, on: cardsRep >= 1 },
       { id: "card20", cat: "evaluacion", ico: "20", name: "Mazo caliente", desc: "20 fichas distintas repasadas.", xp: 35, on: cardsRep >= 20 },
       { id: "reps50", cat: "evaluacion", ico: "50", name: "Memoria muscular", desc: "50 repasadas en total.", xp: 45, on: cardsMany >= 50 },
-      { id: "exam3", cat: "evaluacion", ico: "📅", name: "Calendario listo", desc: "Añade 3 exámenes.", xp: 15, on: examsMade >= 3 },
-      { id: "exam_done", cat: "evaluacion", ico: "★", name: "Primer combate", desc: "Marca un examen como hecho o pon nota.", xp: 25, on: examsDone >= 1 },
-      { id: "exam5", cat: "evaluacion", ico: "5", name: "Convocatorias", desc: "5 exámenes cerrados.", xp: 50, on: examsDone >= 5 },
-      { id: "notable", cat: "evaluacion", ico: "7", name: "Notable", desc: "Saca un 7 o más.", xp: 30, on: notable },
-      { id: "excelente", cat: "evaluacion", ico: "9", name: "Sobresaliente", desc: "Un 9 o más en el boletín.", xp: 60, on: excel },
+      { id: "grade1", cat: "evaluacion", ico: "★", name: "Primera nota", desc: "Pon la nota de un módulo.", xp: 15, on: conNota >= 1 },
+      { id: "grade5", cat: "evaluacion", ico: "5", name: "Boletín al día", desc: "Nota puesta en 5 módulos.", xp: 40, on: conNota >= 5 },
+      { id: "notable", cat: "evaluacion", ico: "7", name: "Notable", desc: "Un módulo con 7 o más.", xp: 30, on: notable },
+      { id: "excelente", cat: "evaluacion", ico: "9", name: "Sobresaliente", desc: "Un módulo con 9 o más.", xp: 60, on: excel },
       { id: "skin", cat: "exploracion", ico: "◐", name: "Cambio de look", desc: "Prueba un tema distinto al inicial.", xp: 10, on: (state.settings.skin || "hub") !== "hub" },
       { id: "export", cat: "exploracion", ico: "⤓", name: "Copia de seguridad", desc: "Exporta el JSON o el calendario.", xp: 15, on: !!state.progress.flags?.exported },
-      { id: "plan", cat: "exploracion", ico: "🗺", name: "Plan pasado a tareas", desc: "Usa «pasar 7 días a tareas».", xp: 15, on: !!state.progress.flags?.planned },
       { id: "capture", cat: "exploracion", ico: "↓", name: "Captura rápida", desc: "Mete algo en la bandeja.", xp: 10, on: (state.inbox || []).length > 0 || !!state.progress.flags?.captured },
       { id: "lvl5", cat: "exploracion", ico: "Lv5", name: "Especialista", desc: "Alcanza el nivel 5.", xp: 40, on: levelOf() >= 5 },
       { id: "lvl10", cat: "exploracion", ico: "Lv10", name: "Referente", desc: "Nivel 10. Ya mandas en el ciclo.", xp: 90, on: levelOf() >= 10 },
@@ -1422,7 +1356,7 @@
       </div>
       <div class="card" style="margin-bottom:16px">
         <h3>Cómo se gana XP</h3>
-        <p style="margin:0;color:var(--muted);font-size:13.5px;line-height:1.55">1 minuto de estudio = 1 XP. Además: tarea +15, ficha bien +8 / fácil +12, examen cerrado +40, nota +5, presente +3, check-in diario +8. Cada logro suma su bonus una sola vez.</p>
+        <p style="margin:0;color:var(--muted);font-size:13.5px;line-height:1.55">1 minuto de estudio = 1 XP. Además: ficha bien +8 / fácil +12, bloque de estudio +5, presente +3, check-in diario +8. Cada logro suma su bonus una sola vez.</p>
       </div>
       ${ACH_CATS.map((c) => {
         const items = list.filter((a) => a.cat === c.id);
@@ -1559,13 +1493,11 @@
     if (onStep === 6) return `<div class="onboard-full">
       ${onDots(6)}
       <h2>Avisos</h2>
-      <p>Locales, en este móvil: clase, examen, tareas y fichas. En Android hay que dar permiso.</p>
+      <p>Locales, en este móvil: aviso de clase y fichas de repaso. En Android hay que dar permiso.</p>
       <button class="btn ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify" style="width:100%;margin-bottom:12px">
         ${st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos"}
       </button>
       ${chk("set-nclass", st.notifyClass !== false, "Clase (10 min antes)")}
-      ${chk("set-nex", st.notifyExams !== false, "Exámenes")}
-      ${chk("set-nta", st.notifyTasks !== false, "Tareas")}
       ${chk("set-nca", st.notifyCards !== false, "Fichas de repaso")}
       ${foot(true, "Listo")}
     </div>`;
@@ -1577,14 +1509,14 @@
     </div>`;
   }
   function renderDashboard() {
-    const nx = nextExam();
     const today = todayISO();
     const todayMins = state.sessions.filter((x) => x.date === today).reduce((a, b) => a + b.minutes, 0);
-    const pending = state.tasks.filter((t) => !t.done).length;
     const gpa = weightedGPA();
+    const dueN = dueCards().length;
     const wr = weekRange();
     const mon = new Date(wr.from + "T00:00:00");
     const lb = liveBlock();
+    const dia = dayInfo(today);
     const now = nowMinutes();
     let liveHtml = "";
     if (lb.active) {
@@ -1614,10 +1546,10 @@
         <div class="live-foot"><span>Empieza a las ${n.ev.start}</span><b id="live-remain">En ${wait}</b></div>
         </div>
       </div>`;
-    } else if (lb.holiday) {
-      liveHtml = `<div class="idle-note">${esc(lb.holiday)} · sin clases</div>`;
+    } else if (dia.kind !== "lectivo") {
+      liveHtml = `<div class="idle-note">${esc(dia.label || dia.short)} · sin clases</div>`;
     } else {
-      liveHtml = `<div class="idle-note">${lb.weekend ? "Fin de semana · sin clases" : "No hay más clases por hoy"}</div>`;
+      liveHtml = `<div class="idle-note">No hay más clases por hoy</div>`;
     }
     const startD = state.settings.startDate ? daysUntil(state.settings.startDate) : null;
     const endD = state.settings.endDate ? daysUntil(state.settings.endDate) : null;
@@ -1635,7 +1567,7 @@
         <span>día${endD === 1 ? "" : "s"} · hasta ${fmtDate(state.settings.endDate)}</span>
       </div>`;
     }
-    const todayClasses = lb.holiday ? [] : eventsOnDate(todayISO());
+    const todayClasses = dia.kind === "lectivo" ? eventsOnDate(today) : [];
     const todayList = todayClasses.length ? `<div>
         <div class="sec-head"><h3>Hoy</h3><button data-action="go" data-to="schedule" class="linkish">Horario</button></div>
         <div class="today-list">${todayClasses.map((e) => {
@@ -1649,29 +1581,27 @@
           </button>`;
         }).join("")}</div>
       </div>` : "";
-    const soonEx = [...state.exams].filter((e) => e.status !== "hecho" && daysUntil(e.date) >= 0)
-      .sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || ""))).slice(0, 3);
-    const soonHtml = soonEx.length ? `<div>
-        <div class="sec-head"><h3>Próximos exámenes</h3><button data-action="go" data-to="exams" class="linkish">Ver</button></div>
-        <div class="soon-list">${soonEx.map((e) => {
-          const d = daysUntil(e.date);
-          const when = d === 0 ? "hoy" : d === 1 ? "mañana" : d + " d";
-          return `<button class="soon-row" data-action="edit-exam" data-id="${e.id}">
-            <span class="d">${when}</span>
-            <span class="n">${esc(e.title)}</span>
-          </button>`;
-        }).join("")}</div>
-      </div>` : "";
-    const examDays = nx ? daysUntil(nx.date) : null;
+    // Cambio de la v57: en vez de exámenes, los días que no hay clase (lo que importa en el calendario del centro)
+    const sinClase = diasSinClase(3);
+    const sinClaseHtml = `<div>
+        <div class="sec-head"><h3>Días sin clase</h3><button data-action="sch-view" data-mode="month" class="linkish">Calendario</button></div>
+        ${sinClase.length
+          ? `<div class="soon-list">${sinClase.map((x) => `<div class="soon-row" style="cursor:default">
+              <span class="d">${daysUntil(x.iso)} d</span>
+              <span class="n">${esc(x.info.label)}</span>
+              <span class="r" style="margin-left:auto;color:var(--muted);font-size:12px">${esc(fmtDate(x.iso))}</span>
+            </div>`).join("")}</div>`
+          : `<p class="hint">No quedan festivos ni vacaciones por delante.</p>`}
+      </div>`;
     const pills = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(mon); d.setDate(mon.getDate() + i);
       const iso = localISO(d);
-      pills.push({ iso, n: d.getDate(), lbl: DAYS_SHORT[i], today: iso === today, exam: state.exams.some((e) => e.date === iso), hol: isNonTeaching(iso) });
+      pills.push({ iso, n: d.getDate(), lbl: DAYS_SHORT[i], today: iso === today, hol: !isLectivo(iso) });
     }
     return `
       ${state.settings.demo && state.settings.onboarded ? `<div class="card demo-banner">
-        <div><strong>Datos de ejemplo</strong><div class="hint" style="margin:4px 0 0">Horario y exámenes de muestra. Quédatelo o bórralo.</div></div>
+        <div><strong>Datos de ejemplo</strong><div class="hint" style="margin:4px 0 0">Horario de muestra del centro. Quédatelo o bórralo.</div></div>
         <div class="hero-actions">
           <button class="btn btn-primary" data-action="keep-demo">Quedármelo</button>
           <button class="btn" data-action="clear-demo">Empezar de cero</button>
@@ -1681,7 +1611,7 @@
       ${(startD != null && startD > 0) ? "" : liveHtml}
       ${todayList}
       ${state.settings.onboarded && typeof Notification !== "undefined" && Notification.permission !== "granted" ? `<div class="idle-note" style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left">
-        <span>Activa avisos: clase, examen y tareas.</span>
+        <span>Activa avisos: clase y fichas de repaso.</span>
         <button class="btn btn-sm btn-primary" data-action="enable-notify">Activar</button>
       </div>` : ""}
       <div class="bento">
@@ -1693,24 +1623,24 @@
           <div class="bento-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 3h6"/></svg></div>
           <div><div class="num">${todayMins}<span>m</span></div><div class="lbl">Estudio hoy</div></div>
         </button>
-        <button class="bento-card" data-action="go" data-to="tasks">
-          <div class="bento-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
-            ${pending ? '<span class="dot-alert"></span>' : ""}</div>
-          <div><div class="num">${pending}</div><div class="lbl">Pendientes</div></div>
+        <button class="bento-card" data-action="go" data-to="cards">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="12" height="16" rx="2"/><path d="M16 7h4v14H8"/></svg>
+            ${dueN ? '<span class="dot-alert"></span>' : ""}</div>
+          <div><div class="num">${dueN}</div><div class="lbl">Fichas hoy</div></div>
         </button>
-        <button class="bento-card" data-action="go" data-to="exams">
-          <div class="bento-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M12 16V8M16 16v-3"/></svg></div>
-          <div><div class="num">${examDays == null ? "--" : examDays}<span>${examDays == null ? "" : "d"}</span></div><div class="lbl">Próx. examen</div></div>
+        <button class="bento-card" data-action="go" data-to="achievements">
+          <div class="bento-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="4"/></svg></div>
+          <div><div class="num">${streak()}<span>d</span></div><div class="lbl">Racha</div></div>
         </button>
       </div>
       <div>
         <div class="sec-head"><h3>Tu semana</h3><button data-action="go" data-to="schedule" class="linkish">Ver todo</button></div>
-        <div class="week-pills">${pills.map((d) => `<button class="week-pill ${d.today ? "is-today" : ""} ${d.exam ? "has-exam" : ""} ${d.hol ? "has-hol" : ""}" data-action="jump-day" data-date="${d.iso}">${d.lbl}<b>${d.n}</b></button>`).join("")}</div>
+        <div class="week-pills">${pills.map((d) => `<button class="week-pill ${d.today ? "is-today" : ""} ${d.hol ? "has-hol" : ""}" data-action="jump-day" data-date="${d.iso}">${d.lbl}<b>${d.n}</b></button>`).join("")}</div>
       </div>
-      ${soonHtml}
+      ${sinClaseHtml}
       <div class="study-rec">
         <div class="k">Qué estudiar hoy</div>
-        <p>${esc((window.AulaStudio && window.AulaStudio.todayStudyHint && window.AulaStudio.todayStudyHint()) || "Abre fichas 15 minutos o avanza el módulo con el examen más cerca.")}</p>
+        <p>${esc((window.AulaStudio && window.AulaStudio.todayStudyHint && window.AulaStudio.todayStudyHint()) || "Abre fichas 15 minutos o avanza el módulo que llevas más flojo.")}</p>
         <div class="hero-actions">
           <button class="btn btn-sm btn-primary" data-action="go" data-to="quickreview">Repaso rápido</button>
           <button class="btn btn-sm" data-action="go" data-to="cards">Fichas</button>
@@ -1722,8 +1652,9 @@
   }
 
   // Huecos entre clases: se ofrece el rato libre para estudiar en vez de dejarlo vacío.
-  function studyGapsHTML(day, list, todayIdx) {
+  function studyGapsHTML(iso, list, esHoy) {
     if (!list.length) return "";
+    const day = weekdayMon0(new Date(iso + "T12:00:00"));
     const sorted = [...list].sort((a, b) => minutesOf(a.start) - minutesOf(b.start));
     const ini = Number(state.settings.startHour || 8) * 60;
     const fin = Number(state.settings.endHour || 21) * 60;
@@ -1742,7 +1673,7 @@
       return `<button type="button" class="class-row is-study" data-action="study-block" data-day="${day}" data-min="${mins}" data-start="${hhmm(a)}">
         <span class="class-stripe" style="--c:var(--accent)"></span>
         <div class="class-time">${hhmm(a)}<br>${hhmm(b)}</div>
-        <div class="class-body"><b>Hueco libre · ${mins} min</b><small>${todayIdx === day ? "Estudia ahora" : "Rato libre"}</small></div>
+        <div class="class-body"><b>Hueco libre · ${mins} min</b><small>${esHoy ? "Estudia ahora" : "Rato libre"}</small></div>
       </button>`;
     }).join("");
   }
@@ -1789,11 +1720,11 @@
         </div>` : `<p class="hint" style="margin:8px 0 0">No hay cambios apuntados.</p>`}
       </div>`;
   }
-  function classRowHTML(e, todayIdx) {
+  function classRowHTML(e, esHoy, iso) {
     const nowM = nowMinutes();
-    const liveNow = todayIdx === e.day && minutesOf(e.start) <= nowM && nowM < minutesOf(e.end);
-    const att = attStatus(e.id, todayISO());
-    const showAtt = state.settings.showAttendance !== false && todayIdx === e.day;
+    const liveNow = !!esHoy && minutesOf(e.start) <= nowM && nowM < minutesOf(e.end);
+    const att = attStatus(e.id, iso || todayISO());
+    const showAtt = state.settings.showAttendance !== false && !!esHoy;
     return `<div class="class-row ${liveNow ? "is-live" : ""}" data-action="edit-event" data-id="${e.id}">
       <span class="class-stripe" style="--c:${subjectColor(e.subjectId)}"></span>
       <div class="class-time">${e.start}<br>${e.end}</div>
@@ -1807,133 +1738,130 @@
       </div>
     </div>`;
   }
+  function lunesDe(offset) {
+    const d = new Date(todayISO() + "T12:00:00");
+    d.setDate(d.getDate() - weekdayMon0(d) + (Number(offset) || 0) * 7);
+    return localISO(d);
+  }
+  function semanaDe(iso) {
+    const a = new Date(lunesDe(0) + "T12:00:00");
+    const b = new Date(iso + "T12:00:00");
+    return Math.round((b - a) / (7 * 86400000));
+  }
   function renderSchedule() {
     const daysN = state.settings.includeSaturday ? 6 : 5;
-    const todayIdx = weekdayMon0(new Date());
-    if (schDay == null || schDay >= daysN) schDay = Math.min(Math.max(todayIdx, 0), daysN - 1);
+    const hoy = todayISO();
+    const lunes = lunesDe(schWeek);
+    const dias = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(lunes + "T12:00:00");
+      d.setDate(d.getDate() + i);
+      return localISO(d);
+    }).slice(0, daysN);
+    const plantilla = state.settings.timetableKind === "temporal" ? "temporal" : "curso";
+    const tramos = OFFICIAL_SLOTS[plantilla] || OFFICIAL_SLOTS.curso;
+    const rango = new Date(dias[0] + "T12:00:00").getDate() + " – " + fmtDate(dias[daysN - 1]);
+    const auto = state.settings.timetableAuto !== false;
+    const avisoAuto = `<p class="hint sch-hint">Horario ${plantilla === "temporal" ? "temporal (septiembre y junio)" : "del curso"} ·
+      entrada a las <b>${tramos[0][0]}</b> · salida a las <b>${tramos[tramos.length - 1][1]}</b>${auto ? " <b>· se cambia solo</b>" : " · cambio automático desactivado"}.</p>`;
     const weekHtml = `
-      <div class="sec-head"><h3>Horario regular</h3>
-        <span style="display:flex;gap:6px">
-          <button class="btn btn-sm" data-action="csv-import">Importar CSV</button>
+      <div class="sec-head"><h3>Semana</h3>
+        <span style="display:flex;gap:6px;align-items:center">
+          <button class="btn btn-sm" data-action="sch-week" data-delta="-1" aria-label="Semana anterior">‹</button>
+          <button class="btn btn-sm" data-action="sch-week" data-delta="0" ${schWeek === 0 ? "disabled" : ""}>Hoy</button>
+          <button class="btn btn-sm" data-action="sch-week" data-delta="1" aria-label="Semana siguiente">›</button>
           <button class="hub-round" data-action="add-event" aria-label="Añadir clase">+</button>
         </span></div>
-      <input type="file" id="csv-file" accept=".csv,.txt" hidden aria-label="Archivo CSV del horario" />
-      <p class="hint sch-hint">Semana fija L–${daysN === 6 ? "S" : "V"}. Toca una clase para editarla.</p>
+      <p class="hint sch-hint">Semana del <b>${rango}</b>. Solo sale clase en los días que hay: si es festivo, vacaciones o el curso no ha empezado, el día va en blanco.</p>
+      ${avisoAuto}
       ${state.settings.showAttendance !== false ? `<p class="att-legend">Hoy: <b>P</b> presente · <b>R</b> retraso · <b>F</b> falta</p>` : ""}
       <div class="week-board">
-        ${DAYS.slice(0, daysN).map((d, i) => {
-          const list = state.events.filter((e) => Number(e.day) === i).sort((a, b) => a.start.localeCompare(b.start));
-          return `<section class="sch-day ${i === todayIdx ? "is-today" : ""}" id="sch-day-${i}">
+        ${dias.map((iso, i) => {
+          const info = dayInfo(iso);
+          const list = info.kind === "lectivo" ? eventsOnDate(iso) : [];
+          const esHoy = iso === hoy;
+          return `<section class="sch-day ${esHoy ? "is-today" : ""} ${info.kind === "lectivo" ? "" : "is-off"}" id="sch-day-${i}">
             <div class="sch-day-h">
-              <strong>${esc(d)}</strong>
-              ${i === todayIdx ? `<span class="badge hot">hoy</span>` : ""}
-              <span class="sch-n">${list.length ? list.length + (list.length === 1 ? " clase" : " clases") : "libre"}</span>
+              <strong>${DAYS[i]} ${Number(iso.slice(8))}</strong>
+              ${esHoy ? `<span class="badge hot">hoy</span>` : ""}
+              <span class="sch-n">${info.kind === "lectivo" ? (list.length ? list.length + (list.length === 1 ? " clase" : " clases") : "libre") : esc(info.short)}</span>
             </div>
             <div class="sch-day-list">
-              ${list.length ? list.map((e) => classRowHTML(e, todayIdx)).join("") + studyGapsHTML(i, list, todayIdx) : `<div class="sch-empty">Sin clases</div>`}
+              ${list.length
+                ? list.map((e) => classRowHTML(e, esHoy, iso)).join("") + studyGapsHTML(iso, list, esHoy)
+                : `<div class="sch-empty">${esc(info.kind === "lectivo" ? "Sin clases" : info.label)}</div>`}
             </div>
           </section>`;
         }).join("")}
-      </div>`;
+      </div>
+      <div class="filters" style="margin-top:10px">
+        <button class="btn btn-sm" data-action="csv-import">Importar CSV</button>
+        <button class="btn btn-sm" data-action="sch-view" data-mode="month">Ver el calendario escolar</button>
+      </div>
+      <input type="file" id="csv-file" accept=".csv,.txt" hidden aria-label="Archivo CSV del horario" />`;
+
     const monthHtml = renderCalendar();
-    const mes = new Date().getMonth();
-    const tocaTemporal = (mes === 8 || mes === 5) && (state.settings.timetableKind || "curso") !== "temporal";
-    const avisoTemporal = tocaTemporal
-      ? `<div class="idle-note" style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left">
-          <span>En ${mes === 8 ? "septiembre" : "junio"} el centro usa el <b>horario temporal</b> (16:00–21:45).</span>
-          <button class="btn btn-sm btn-primary" data-action="restore-timetable" data-kind="temporal">Cargar</button>
-        </div>` : "";
-    const cursoHtml = `<p class="hint" style="margin-top:10px">Curso 2026-27: del <b>${fmtDate(COURSE.start)}</b> al <b>${fmtDate(COURSE.end)}</b> · festivos locales a efectos escolares: ${COURSE.local.map((d) => fmtDate(d)).join(", ")}.</p>`;
     return `
       <div class="hub-seg">
         <button data-action="sch-view" data-mode="week" class="${schView === "week" ? "is-on" : ""}">Semana</button>
         <button data-action="sch-view" data-mode="month" class="${schView === "month" ? "is-on" : ""}">Calendario</button>
       </div>
-      ${avisoTemporal}
-      ${schView === "month" ? monthHtml + cursoHtml : weekHtml + renderExceptionsBlock()}
-    `;
-  }
-
-  function renderExams() {
-    const items = [...state.exams].sort((a, b) => a.date.localeCompare(b.date)).filter((e) => {
-      if (examFilter === "all") return true;
-      if (examFilter === "proximos") return daysUntil(e.date) >= 0 && e.status !== "hecho";
-      if (examFilter === "hechos") return e.status === "hecho" || e.grade !== "";
-      return e.subjectId === examFilter;
-    });
-    const lista = items.map((e) => {
-      const d = daysUntil(e.date);
-      const need = (Number(e.hoursNeeded) || 8) * 60;
-      const got = studiedFor(e.subjectId, e.date);
-      const urgent = d >= 0 && d <= 3 && e.status !== "hecho";
-      const cl = e.checklist || [];
-      return `<div class="card exam-card ${urgent ? "urgent" : ""}" style="padding:14px 16px">
-        <div style="display:flex;gap:12px;align-items:flex-t">
-          <span class="dot" style="background:${subjectColor(e.subjectId)};margin-top:6px"></span>
-          <div style="flex:1">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <b>${esc(e.title)}</b>
-              <span class="badge ${esc(e.type)}">${esc(typeLabel(e.type))}</span>
-              ${e.grade !== "" ? `<span class="badge done">${e.grade}</span>` : ""}
-            </div>
-            <div style="color:var(--muted);font-size:13px;margin-top:4px">${esc(subjectName(e.subjectId))} · ${fmtDateLong(e.date)} ${e.time || ""} · ${esc(e.location || "")}</div>
-            ${e.notes ? `<div style="margin-top:8px;font-size:13.5px">${esc(e.notes)}</div>` : ""}
-            <div style="margin-top:10px;font-size:12px;color:var(--muted)">${fmtHours(got)} / ${fmtHours(need)}</div>
-            <div class="bar"><i style="width:${clamp((got / need) * 100, 0, 100)}%"></i></div>
-            ${cl.length ? cl.map((c) => `<label class="check-item"><input type="checkbox" data-action="toggle-check" data-eid="${e.id}" data-id="${c.id}" ${c.done ? "checked" : ""}/> ${esc(c.text)}</label>`).join("") : ""}
-            <button class="btn btn-sm" style="margin-top:8px" data-action="add-check" data-id="${e.id}">+ Temario</button>
-          </div>
-          <div style="text-align:right">
-            <div style="font-family:var(--display);font-size:22px">${d < 0 ? "—" : d}</div>
-            <div style="font-size:11px;color:var(--muted)">${d < 0 ? "pasado" : "días"}</div>
-            <div style="margin-top:8px;display:flex;gap:4px">
-              <button class="btn btn-sm" data-action="edit-exam" data-id="${e.id}">Editar</button>
-              <button class="btn btn-sm" data-action="delete-exam" data-id="${e.id}">×</button>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    }).join("") || `<div class="empty">No hay exámenes en este filtro.</div>`;
-    return `
-      <div class="agenda-toolbar">
-        <div class="hub-seg agenda-seg">
-          <button data-action="exam-filter" data-id="all" class="${examFilter === "all" ? "is-on" : ""}">Todos</button>
-          <button data-action="exam-filter" data-id="proximos" class="${examFilter === "proximos" ? "is-on" : ""}">Próximos</button>
-          <button data-action="exam-filter" data-id="hechos" class="${examFilter === "hechos" ? "is-on" : ""}">Hechos</button>
-        </div>
-        <button class="hub-round" data-action="export-ics" title="Exportar calendario">ICS</button>
-        <button class="hub-round hub-avatar" data-action="add-exam" aria-label="Nuevo examen">+</button>
-      </div>
-      <div class="exam-mods">${state.subjects.map((s) => `<button class="mod-chip ${examFilter === s.id ? "is-on" : ""}" data-action="exam-filter" data-id="${s.id}">${esc(s.name)}</button>`).join("")}</div>
-      <div class="grid" style="gap:10px">${lista}</div>
+      ${schView === "month" ? monthHtml : weekHtml + renderExceptionsBlock()}
     `;
   }
 
   function renderCalendar() {
-    const y = calendarCursor.getFullYear(), m = calendarCursor.getMonth();
-    const first = new Date(y, m, 1);
-    const startPad = weekdayMon0(first);
+    const primero = new Date(COURSE.start + "T12:00:00");
+    const ultimo = new Date(COURSE.end + "T12:00:00");
+    const minMes = new Date(primero.getFullYear(), primero.getMonth(), 1);
+    const maxMes = new Date(ultimo.getFullYear(), ultimo.getMonth(), 1);
+    let cur = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), 1);
+    if (cur < minMes) cur = minMes;
+    if (cur > maxMes) cur = maxMes;
+    const y = cur.getFullYear(), m = cur.getMonth();
+    const startPad = weekdayMon0(new Date(y, m, 1));
     const daysIn = new Date(y, m + 1, 0).getDate();
     const cells = [];
-    for (let i = 0; i < startPad; i++) cells.push({ out: true, n: "" });
+    const sinClase = [];
+    for (let i = 0; i < startPad; i++) cells.push({ out: true });
     for (let d = 1; d <= daysIn; d++) {
       const iso = `${y}-${pad(m + 1)}-${pad(d)}`;
-      cells.push({ out: false, n: d, iso, evs: state.exams.filter((e) => e.date === iso), today: iso === todayISO(), hol: holidayName(iso) });
+      const info = dayInfo(iso);
+      if (info.kind === "festivo" || info.kind === "vacaciones") sinClase.push({ iso, info });
+      cells.push({ out: false, n: d, iso, info, hoy: iso === todayISO() });
     }
-    while (cells.length % 7) cells.push({ out: true, n: "" });
-    return `<div class="card">
-      <div class="cal-nav">
-        <button class="icon-btn" data-action="cal-prev">‹</button>
-        <h2>${MONTHS[m]} ${y}</h2>
-        <button class="icon-btn" data-action="cal-next">›</button>
-      </div>
-      <div class="cal">
-        ${DAYS_SHORT.map((d) => `<div class="dow">${d}</div>`).join("")}
-        ${cells.map((c) => `<div class="cal-day ${c.out ? "out" : ""} ${c.today ? "today" : ""} ${(c.evs || []).length ? "has-ev" : ""} ${c.hol ? "has-hol" : ""}" ${c.iso ? `data-action="cal-day" data-date="${c.iso}"` : ""}>
+    while (cells.length % 7) cells.push({ out: true });
+    const claseDia = (k) => k === "festivo" ? "is-hol" : k === "vacaciones" ? "is-vac" : k === "lectivo" ? "is-lectivo" : k === "finde" ? "is-finde" : "is-fuera";
+    const celdas = cells.map((c) => c.out
+      ? `<div class="cal-day out"></div>`
+      : `<div class="cal-day ${claseDia(c.info.kind)} ${c.hoy ? "today" : ""}" data-action="cal-day" data-date="${c.iso}" title="${esc(c.info.label || "Clase")}">
           <div class="n">${c.n}</div>
-          ${c.hol ? `<div class="cal-hol">${esc(c.hol)}</div>` : ""}
-          ${(c.evs || []).map((e) => `<div class="cal-ev" data-action="edit-exam" data-id="${e.id}" style="background:${subjectColor(e.subjectId)}">${esc(e.title)}</div>`).join("")}
-        </div>`).join("")}
+          ${c.info.kind === "lectivo" ? "" : `<div class="cal-hol">${esc(c.info.short)}</div>`}
+        </div>`).join("");
+    return `<div class="card cal-escuela">
+      <div class="cal-nav">
+        <button class="icon-btn" data-action="cal-prev" aria-label="Mes anterior">‹</button>
+        <h2>${MONTHS[m]} ${y}</h2>
+        <button class="icon-btn" data-action="cal-next" aria-label="Mes siguiente">›</button>
+      </div>
+      <div class="cal">${DAYS_SHORT.map((d) => `<div class="dow">${d}</div>`).join("")}${celdas}</div>
+      <p class="cal-key"><span class="k k-lectivo"></span> Clase · <span class="k k-hol"></span> Festivo · <span class="k k-vac"></span> Vacaciones · <span class="k k-fuera"></span> Sin curso</p>
+    </div>
+    <div class="card">
+      <div class="sec-head"><h3>Este mes no hay clase</h3></div>
+      ${sinClase.length
+        ? `<div class="cal-list">${sinClase.map((x) => `<div class="row">
+            <span class="dot" style="background:${x.info.kind === "vacaciones" ? "#f59e0b" : "#ef4444"}"></span>
+            <div style="flex:1"><b>${esc(fmtDateLong(x.iso))}</b><small class="hint">${esc(x.info.label)}</small></div>
+          </div>`).join("")}</div>`
+        : `<p class="hint">Festivo o vacaciones que caigan en día de clase: este mes ninguno.</p>`}
+    </div>
+    <div class="card">
+      <div class="sec-head"><h3>Curso 2026-27</h3></div>
+      <div class="cal-list">
+        <div class="row"><span class="dot" style="background:#22c55e"></span><div style="flex:1"><b>Empieza el ${esc(fmtDateLong(COURSE.start))}</b><small class="hint">Primer día de clase</small></div></div>
+        <div class="row"><span class="dot" style="background:#38bdf8"></span><div style="flex:1"><b>Acaba el ${esc(fmtDateLong(COURSE.end))}</b><small class="hint">Último día de clase</small></div></div>
+        ${VACATIONS.map((v) => `<div class="row"><span class="dot" style="background:#f59e0b"></span><div style="flex:1"><b>${esc(v.name)}</b><small class="hint">Del ${esc(fmtDateLong(v.from))} al ${esc(fmtDateLong(v.to))}</small></div></div>`).join("")}
+        ${COURSE.local.map((d) => `<div class="row"><span class="dot" style="background:#ef4444"></span><div style="flex:1"><b>${esc(HOLIDAYS[d] || "Festivo local")}</b><small class="hint">${esc(fmtDateLong(d))}</small></div></div>`).join("")}
       </div>
     </div>`;
   }
@@ -2091,55 +2019,6 @@
     `;
   }
 
-  function renderTasks() {
-    const today = todayISO();
-    const f = agendaFilter || "all";
-    const tasks = state.tasks.slice().sort((a, b) => Number(a.done) - Number(b.done) || (a.due || "9999").localeCompare(b.due || "9999"));
-    const exams = [...state.exams].filter((e) => e.status !== "hecho").sort((a, b) => a.date.localeCompare(b.date));
-    let html = "";
-    if (f !== "examen") {
-      html += tasks.filter((t) => f === "hechas" ? t.done : f === "tarea" || f === "all" ? !t.done || f === "all" : true).map((t) => {
-        const late = t.due && t.due < today && !t.done;
-        return `<div class="task ${t.done ? "done" : ""}">
-          <i class="task-stripe" style="background:${subjectColor(t.subjectId)}"></i>
-          <input type="checkbox" data-action="toggle-task" data-id="${t.id}" aria-label="Marcar como hecha: ${esc(t.title)}" ${t.done ? "checked" : ""} />
-          <div style="flex:1;min-width:0" data-action="edit-task" data-id="${t.id}">
-            <div class="tt">${esc(t.title)}</div>
-            <div class="task-meta">${esc(subjectName(t.subjectId) || "Sin módulo")}</div>
-            <div style="margin-top:6px"><span class="badge">tarea</span>
-              <span class="${late ? "prio-alta" : "prio-media"}">${fmtDue(t.due)}</span></div>
-          </div>
-          <button class="icon-del" type="button" data-action="delete-task" data-id="${t.id}" aria-label="Eliminar tarea">×</button>
-        </div>`;
-      }).join("");
-    }
-    if (f === "all" || f === "examen") {
-      html += exams.map((e) => {
-        const d = daysUntil(e.date);
-        return `<div class="task">
-          <div style="width:20px;height:20px;border-radius:999px;background:color-mix(in srgb, ${subjectColor(e.subjectId)} 70%, transparent);margin-top:2px"></div>
-          <div style="flex:1" data-action="edit-exam" data-id="${e.id}">
-            <div class="tt">${esc(e.title)}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(subjectName(e.subjectId))}</div>
-            <div style="margin-top:6px"><span class="badge examen">examen</span>
-              <span class="${d <= 2 ? "prio-alta" : "prio-media"}">${d < 0 ? "pasado" : d === 0 ? "hoy" : "en " + d + " d"}</span></div>
-          </div>
-        </div>`;
-      }).join("");
-    }
-    return `
-      <div class="agenda-toolbar">
-        <div class="hub-seg agenda-seg">
-          <button data-action="agenda-filter" data-id="all" class="${f === "all" ? "is-on" : ""}">Todo</button>
-          <button data-action="agenda-filter" data-id="tarea" class="${f === "tarea" ? "is-on" : ""}">Tareas</button>
-          <button data-action="agenda-filter" data-id="examen" class="${f === "examen" ? "is-on" : ""}">Exámenes</button>
-        </div>
-        <button class="hub-round hub-avatar" data-action="add-task" aria-label="Nueva tarea">+</button>
-      </div>
-      ${html || `<div class="empty"><b>Todo al día</b>No hay pendientes.</div>`}
-    `;
-  }
-
   function renderTimer() {
     const today = todayISO();
     const wr = weekRange();
@@ -2182,13 +2061,13 @@
     const wr = weekRange();
     const mins = state.sessions.filter((s) => s.date >= wr.from && s.date <= wr.to).reduce((a, b) => a + b.minutes, 0);
     const total = state.sessions.reduce((a, b) => a + b.minutes, 0);
-    const graded = state.exams.filter((e) => e.grade !== "" && !Number.isNaN(Number(e.grade)));
+    const graded = state.subjects.filter((s) => s.grade !== "" && Number.isFinite(Number(s.grade)));
     const avg = graded.length ? graded.reduce((a, b) => a + Number(b.grade), 0) / graded.length : null;
     return `
       <div class="grid grid-4">
         <div class="stat"><div class="k">Total</div><div class="v">${fmtHours(total)}</div></div>
         <div class="stat"><div class="k">Semana</div><div class="v">${fmtHours(mins)}</div></div>
-        <div class="stat"><div class="k">Media pond.</div><div class="v">${weightedGPA() == null ? "—" : weightedGPA().toFixed(1)}</div></div>
+        <div class="stat"><div class="k">Nota media</div><div class="v">${weightedGPA() == null ? "—" : weightedGPA().toFixed(1)}</div></div>
         <div class="stat"><div class="k">Asistencia</div><div class="v">${attStats().pct == null ? "—" : attStats().pct + "%"}</div></div>
       </div>
       <div class="grid grid-2" style="margin-top:16px">
@@ -2232,44 +2111,12 @@
     });
   }
 
-  function renderPlan() {
-    const exams = [...state.exams].filter((e) => daysUntil(e.date) >= 0 && e.status !== "hecho").sort((a, b) => a.date.localeCompare(b.date));
-    if (!exams.length) return `<div class="empty">Añade exámenes y el plan se construye solo.</div>`;
-    const start = new Date(); start.setHours(0, 0, 0, 0);
-    const days = [];
-    for (let i = 0; i < 21; i++) {
-      const d = new Date(start); d.setDate(start.getDate() + i);
-      const iso = localISO(d);
-      const blocks = [];
-      exams.forEach((ex) => {
-        if (iso === ex.date) { blocks.push({ kind: "exam", ex }); return; }
-        const left = daysUntil(ex.date) - i;
-        if (left < 0) return;
-        const minutes = Math.min(80, Math.max(25, Math.round(((Number(ex.hoursNeeded) || 8) * 60) / Math.max(1, daysUntil(ex.date)))));
-        blocks.push({ kind: "study", ex, minutes });
-      });
-      days.push({ iso, blocks: blocks.slice(0, 3), weekend: weekdayMon0(d) >= 5 });
-    }
-    return `
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-head"><p style="margin:0">Minutos sugeridos hasta cada fecha.</p>
-          <button class="btn btn-sm btn-primary" data-action="plan-to-tasks">Pasar 7 días a tareas</button></div>
-      </div>
-      ${days.map((day) => `<div class="plan-day ${day.iso === todayISO() ? "today" : ""}" style="--c:${day.blocks[0] ? subjectColor(day.blocks[0].ex.subjectId) : "var(--line)"}">
-        <strong>${fmtDateLong(day.iso)}</strong>
-        ${day.blocks.map((b) => b.kind === "exam"
-          ? `<div style="margin-top:6px"><span class="badge final">EXAMEN</span> ${esc(b.ex.title)}</div>`
-          : `<div style="margin-top:6px">${b.minutes} min · ${esc(subjectName(b.ex.subjectId))}</div>`).join("") || `<div style="color:var(--muted);margin-top:6px">Día ligero.</div>`}
-      </div>`).join("")}
-    `;
-  }
-
   function renderSubjects() {
     return `<div class="subject-grid">
       ${state.subjects.map((s) => `<button class="subject-card" style="--c:${safeColor(s.color)}" data-action="open-subject" data-id="${s.id}">
         <h4 style="margin:6px 0 0;font-size:18px">${esc(s.name)}</h4>
         <p style="margin:8px 0 0;color:var(--muted);font-size:13px">${esc(s.teacher || "—")} · ${esc(s.room || "")}</p>
-        <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">${fmtHours(studiedFor(s.id))} · ${state.exams.filter((e) => e.subjectId === s.id).length} exámenes</p>
+        <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">${fmtHours(studiedFor(s.id))} · ${s.grade === "" || s.grade == null ? "sin nota" : "nota " + Number(s.grade).toFixed(1)}</p>
       </button>`).join("")}
       <button class="subject-card" data-action="add-subject" style="border-style:dashed;min-height:110px;display:grid;place-items:center;color:var(--muted)">+ Nuevo módulo</button>
     </div>`;
@@ -2278,8 +2125,8 @@
   function renderSubject() {
     const s = subjectById(subjectFocus);
     if (!s) return `<div class="empty">No encontrado. <button class="btn" data-action="go" data-to="subjects">Volver</button></div>`;
-    const exams = state.exams.filter((e) => e.subjectId === s.id);
     const notes = state.notes.filter((n) => n.subjectId === s.id);
+    const sesiones = state.sessions.filter((x) => x.subjectId === s.id).length;
     return `
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <button class="btn" data-action="go" data-to="subjects">← Módulos</button>
@@ -2288,16 +2135,19 @@
       </div>
       <div class="grid grid-4">
         <div class="stat"><div class="k">Estudio</div><div class="v">${fmtHours(studiedFor(s.id))}</div></div>
-        <div class="stat"><div class="k">Exámenes</div><div class="v">${exams.length}</div></div>
-        <div class="stat"><div class="k">Notas</div><div class="v">${notes.length}</div></div>
+        <div class="stat"><div class="k">Nota</div><div class="v">${s.grade === "" || s.grade == null ? "—" : Number(s.grade).toFixed(1)}</div></div>
+        <div class="stat"><div class="k">Apuntes</div><div class="v">${notes.length}</div></div>
         <div class="stat"><div class="k">Fichas</div><div class="v">${state.cards.filter((c) => c.subjectId === s.id).length}</div></div>
       </div>
       <div class="card" style="margin-top:16px">
-        <h3>Exámenes</h3>
-        ${exams.map((e) => `<button class="row" data-action="edit-exam" data-id="${e.id}" style="width:100%;text-align:left">
-          <span class="dot" style="background:${safeColor(s.color)}"></span><div>${esc(e.title)}</div><div class="meta">${fmtDate(e.date)}</div>
-        </button>`).join("") || `<div class="empty">Sin exámenes.</div>`}
+        <div class="card-head"><div><b>Nota del módulo</b><div class="hint" style="margin:4px 0 0">${sesiones} ${sesiones === 1 ? "sesión de estudio" : "sesiones de estudio"} · profesor ${esc(s.teacher || "—")}</div></div>
+          <button class="btn btn-sm btn-primary" data-action="edit-grade" data-id="${s.id}">${s.grade === "" || s.grade == null ? "Poner nota" : "Cambiar"}</button></div>
+        <p class="hint" style="margin:10px 0 0">La nota es la del módulo, la que te sale al final. Con todas puestas, en <b>Calificaciones</b> ves la media del ciclo.</p>
       </div>
+      ${notes.length ? `<div class="card" style="margin-top:16px"><h3>Apuntes de ${esc(s.name)}</h3>
+        ${notes.slice(0, 6).map((n) => `<button class="row" style="width:100%;text-align:left" data-action="open-note" data-id="${n.id}">
+          <span class="dot" style="background:${safeColor(s.color)}"></span><div>${esc(n.title)}</div><div class="meta">${esc(fmtDate(new Date(n.updatedAt || Date.now()).toISOString().slice(0, 10)))}</div>
+        </button>`).join("")}</div>` : ""}
     `;
   }
 
@@ -2308,8 +2158,7 @@
         <button class="btn btn-sm btn-primary" data-action="open-capture">Capturar</button></div>
       ${items.map((it) => `<div class="inbox-item">
         <div style="flex:1"><div>${esc(it.text)}</div><div style="font-size:12px;color:var(--muted);margin-top:4px">${new Date(it.createdAt).toLocaleString("es-ES")}</div></div>
-        <button class="btn btn-sm" data-action="inbox-task" data-id="${it.id}">Tarea</button>
-        <button class="btn btn-sm" data-action="inbox-note" data-id="${it.id}">Nota</button>
+        <button class="btn btn-sm" data-action="inbox-note" data-id="${it.id}">A apuntes</button>
         <button class="btn btn-sm" data-action="inbox-del" data-id="${it.id}">×</button>
       </div>`).join("") || `<div class="empty">Bandeja vacía.</div>`}
     </div>`;
@@ -2320,8 +2169,6 @@
     const weekS = state.sessions.filter((s) => s.date >= wr.from && s.date <= wr.to);
     const mins = weekS.reduce((a, b) => a + b.minutes, 0);
     const goal = (state.settings.dailyGoal || 90) * 5;
-    const late = overdueTasks();
-    const soon = state.exams.filter((e) => e.status !== "hecho" && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 14);
     const att = attStats();
     const gpa = weightedGPA();
     const bySub = state.subjects.map((s) => ({
@@ -2334,7 +2181,7 @@
       <div class="review-grid">
         <div class="review-item"><div class="n">${fmtHours(mins)}</div><div class="l">estudiadas (meta ${fmtHours(goal)})</div>
           <div class="bar"><i style="width:${clamp((mins / Math.max(goal, 1)) * 100, 0, 100)}%"></i></div></div>
-        <div class="review-item"><div class="n">${gpa == null ? "—" : gpa.toFixed(1)}</div><div class="l">media ponderada</div></div>
+        <div class="review-item"><div class="n">${gpa == null ? "—" : gpa.toFixed(1)}</div><div class="l">nota media</div></div>
         <div class="review-item"><div class="n">${streak()}</div><div class="l">días de racha</div></div>
         <div class="review-item"><div class="n">${att.pct == null ? "—" : att.pct + "%"}</div><div class="l">asistencia (${att.p}P ${att.r}R ${att.f}F)</div>
           ${att.t ? `<div class="att-bar"><span class="p" style="width:${att.p / att.t * 100}%"></span><span class="r" style="width:${att.r / att.t * 100}%"></span><span class="f" style="width:${att.f / att.t * 100}%"></span></div>` : ""}</div>
@@ -2350,15 +2197,15 @@
       </div>
       <div class="grid grid-2" style="margin-top:16px">
         <div class="card">
-          <h3>Exámenes en 14 días</h3>
-          ${soon.map((e) => `<div class="row"><span class="dot" style="background:${subjectColor(e.subjectId)}"></span>
-            <div style="flex:1">${esc(e.title)}</div><div class="meta">${daysUntil(e.date)} d</div></div>`).join("") || `<div class="empty">Nada cerca. Respira.</div>`}
+          <h3>Días sin clase</h3>
+          ${diasSinClase(3).map((x) => `<div class="row"><span class="dot" style="background:${x.info.kind === "vacaciones" ? "#f59e0b" : "#ef4444"}"></span>
+            <div style="flex:1">${esc(x.info.label)}</div><div class="meta">${fmtDate(x.iso)}</div></div>`).join("") || `<div class="empty">Sin festivos a la vista.</div>`}
         </div>
         <div class="card">
-          <h3>Atrasadas</h3>
-          ${late.map((t) => `<div class="task"><input type="checkbox" data-action="toggle-task" data-id="${t.id}" aria-label="Marcar como hecha: ${esc(t.title)}" />
-            <div class="tt">${esc(t.title)}</div></div>`).join("") || `<div class="empty">Al día. Bien.</div>`}
-          <button class="btn btn-sm btn-primary" style="margin-top:10px" data-action="plan-to-tasks">Pasar plan a tareas</button>
+          <h3>Módulos que llevas más flojos</h3>
+          ${[...state.subjects].sort((a, b) => studiedFor(a.id) - studiedFor(b.id)).slice(0, 3)
+            .map((s) => `<div class="row"><span class="dot" style="background:${safeColor(s.color)}"></span>
+              <div style="flex:1">${esc(s.name)}</div><div class="meta">${fmtHours(studiedFor(s.id))}</div></div>`).join("") || `<div class="empty">Añade módulos y estudia.</div>`}
         </div>
       </div>
     `;
@@ -2661,7 +2508,7 @@
           </select></div>
         <div class="field"><label for="set-startview">Vista al abrir</label>
           <select id="set-startview">
-            ${["dashboard", "schedule", "exams", "tasks", "timer", "review", "achievements"].map((v) =>
+            ${["dashboard", "schedule", "notes", "cards", "timer", "review", "achievements"].map((v) =>
               `<option value="${v}" ${st.startView === v ? "selected" : ""}>${esc((titles[v] || [v])[0])}</option>`).join("")}
           </select></div>
         ${chk("set-compact", st.compact, "Modo compacto")}
@@ -2689,16 +2536,7 @@
           <div class="field"><label for="set-long">Descanso largo (min)</label><input id="set-long" type="number" min="1" max="120" value="${st.pomodoroLong || 15}"></div>
           <div class="field"><label for="set-cycles">Bloques hasta el largo</label><input id="set-cycles" type="number" min="2" max="10" value="${st.cyclesUntilLong || 4}"></div>
         </div>
-        <div class="form-row">
-          <div class="field"><label for="set-defhours">Horas por examen</label><input id="set-defhours" type="number" min="1" max="100" value="${st.defaultHours || 8}"></div>
-          <div class="field"><label for="set-grademax">Nota máxima</label><input id="set-grademax" type="number" min="5" max="100" value="${st.gradeMax || 10}"></div>
-        </div>
-        <div class="field"><label for="set-prio">Prioridad por defecto</label>
-          <select id="set-prio">
-            <option value="alta" ${st.defaultPrio === "alta" ? "selected" : ""}>Alta</option>
-            <option value="media" ${!st.defaultPrio || st.defaultPrio === "media" ? "selected" : ""}>Media</option>
-            <option value="baja" ${st.defaultPrio === "baja" ? "selected" : ""}>Baja</option>
-          </select></div>
+        <div class="field"><label for="set-grademax">Nota máxima (la de tus módulos)</label><input id="set-grademax" type="number" min="5" max="100" value="${st.gradeMax || 10}"></div>
         ${chk("set-sound", st.sound !== false, "Sonido al terminar el bloque")}
         ${chk("set-vibrate", st.vibrate !== false, "Vibración")}
         ${chk("set-confetti", st.confetti !== false, "Confeti en logros")}
@@ -2715,7 +2553,6 @@
         </div>
         ${chk("set-sat", st.includeSaturday, "Incluir sábado en el horario")}
         ${chk("set-att", st.showAttendance !== false, "Pasar lista (presente / retraso / falta)")}
-        ${chk("set-hideok", st.hideCompleted, "Ocultar tareas hechas")}
       </div>
 
       <p class="tools-kicker">Horario del centro · 2.º SMR 2026-27</p>
@@ -2725,7 +2562,9 @@
           <button class="btn ${(st.timetableKind || "curso") === "curso" ? "btn-primary" : ""}" type="button" data-action="restore-timetable" data-kind="curso">Curso · 15:15–21:45</button>
           <button class="btn ${st.timetableKind === "temporal" ? "btn-primary" : ""}" type="button" data-action="restore-timetable" data-kind="temporal">Septiembre y junio · 16:00–21:45</button>
         </div>
-        <p class="hint" style="margin:6px 0 0">Cargar una plantilla <b>sustituye</b> tus clases actuales (pide confirmación antes). Exámenes, notas y tareas no se tocan, y puedes deshacerlo justo después. Las aulas (AULA 1NF3, AULA 2, AULA 3) vienen con cada clase.</p>
+        <p class="hint" style="margin:6px 0 0">Las horas cambian <b>solas</b> en septiembre y junio (entrada a las 16:00); el resto del curso, a las 15:15. El Horario avisa de qué plantilla está puesta y solo enseña clase los días lectivos.</p>
+        <label class="check"><input type="checkbox" data-action="toggle-auto-plantilla" ${st.timetableAuto !== false ? "checked" : ""}/> Cambiar el horario solo en septiembre y junio</label>
+        <p class="hint">Cargar una plantilla a mano <b>sustituye</b> tus clases actuales (pide confirmación antes) y desactiva el cambio automático. Las aulas (AULA 1NF3, AULA 2, AULA 3) vienen con cada clase.</p>
       </div>
 
       <p class="tools-kicker">Avisos</p>
@@ -2735,14 +2574,11 @@
           ${st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos"}
         </button>
         ${chk("set-nclass", st.notifyClass !== false, "Clase (10 min antes)")}
-        ${chk("set-nex", st.notifyExams !== false, "Exámenes")}
-        ${chk("set-nta", st.notifyTasks !== false, "Tareas")}
         ${chk("set-nca", st.notifyCards !== false, "Fichas de repaso")}
         ${chk("set-night", st.nightRemind !== false, "Aviso nocturno para no romper la racha")}
         ${chk("set-morn", st.morningSummary !== false, "Resumen por la mañana")}
         <div class="form-row" style="margin-top:10px">
           <div class="field"><label for="set-remindh">Hora del resumen</label><input id="set-remindh" type="number" min="5" max="12" value="${st.remindHour || 8}"></div>
-          <div class="field"><label for="set-lead">Días de antelación (examen)</label><input id="set-lead" type="number" min="0" max="30" value="${st.examLeadDays || 1}"></div>
         </div>
         <div class="field" style="margin-top:12px">
           <label for="set-inact">Avisar si paso días sin abrirla</label>
@@ -2785,7 +2621,7 @@
         <p class="hint" style="margin:0">Notas, exámenes y demás: <b>${kb} KB</b> ${mediaOk() ? `· fotos en el almacén de archivos: <b>${fotosKb} KB</b> (${mediaInfo.n})` : "· las fotos se guardan dentro del estado (este navegador no tiene almacén de archivos)"}.</p>
         <button class="btn btn-primary" data-action="export">Exportar copia JSON (con fotos)</button>
         <button class="btn" data-action="import">Importar JSON</button>
-        <button class="btn" data-action="export-ics">Calendario .ics (exámenes y entregas)</button>
+        <button class="btn" data-action="export-ics">Calendario .ics (horario y festivos)</button>
         <button class="btn" data-action="export-md">Apuntes a Markdown</button>
         <button class="btn" data-action="export-anki">Fichas a CSV (Anki)</button>
         <button class="btn" data-action="load-demo">Cargar ejemplo 2.º SMR</button>
@@ -2807,29 +2643,6 @@
     `;
   }
 
-  function examForm(ex = {}) {
-    return `
-      <div class="field"><label>Título</label><input name="title" required value="${esc(ex.title || "")}" /></div>
-      <div class="form-row">
-        <div class="field"><label>Módulo</label><select name="subjectId">${subjectOptions(ex.subjectId || subjectFocus)}</select></div>
-        <div class="field"><label>Tipo</label><select name="type">${EXAM_TYPES.map((t) => `<option value="${t.id}" ${ex.type === t.id ? "selected" : ""}>${t.label}</option>`).join("")}</select></div>
-      </div>
-      <div class="form-row">
-        <div class="field"><label>Fecha</label><input name="date" type="date" required value="${esc(ex.date || "")}" /></div>
-        <div class="field"><label>Hora</label><input name="time" type="time" value="${esc(ex.time || "09:00")}" /></div>
-      </div>
-      <div class="form-row">
-        <div class="field"><label>Lugar</label><input name="location" value="${esc(ex.location || "")}" /></div>
-        <div class="field"><label>Nota</label><input name="grade" type="number" step="0.1" min="0" max="${state.settings.gradeMax || 10}" value="${esc(ex.grade ?? "")}" /></div>
-      </div>
-      <div class="form-row">
-        <div class="field"><label>Peso (%)</label><input name="weight" type="number" min="0" max="100" value="${esc(ex.weight ?? 25)}" /></div>
-        <div class="field"><label>Horas de estudio</label><input name="hoursNeeded" type="number" min="1" value="${esc(ex.hoursNeeded || 8)}" /></div>
-      </div>
-      <div class="field"><label>Temario</label><textarea name="notes">${esc(ex.notes || "")}</textarea></div>
-      <label class="check"><input type="checkbox" name="done" ${ex.status === "hecho" ? "checked" : ""}/> Ya lo he hecho</label>
-    `;
-  }
   function eventForm(ev = {}) {
     return `
       <div class="field"><label>Módulo</label><select name="subjectId" required>${subjectOptions(ev.subjectId)}</select></div>
@@ -2859,22 +2672,6 @@
       </div>
     `;
   }
-  function taskForm(t = {}) {
-    return `
-      <div class="field"><label>Tarea</label><input name="title" required value="${esc(t.title || "")}" /></div>
-      <div class="form-row">
-        <div class="field"><label>Módulo</label><select name="subjectId">${subjectOptions(t.subjectId || subjectFocus)}</select></div>
-        <div class="field"><label>Prioridad</label>
-          <select name="priority">
-            <option value="alta" ${t.priority === "alta" ? "selected" : ""}>Alta</option>
-            <option value="media" ${t.priority !== "baja" && t.priority !== "alta" ? "selected" : ""}>Media</option>
-            <option value="baja" ${t.priority === "baja" ? "selected" : ""}>Baja</option>
-          </select>
-        </div>
-      </div>
-      <div class="field"><label>Fecha</label><input name="due" type="date" value="${esc(t.due || "")}" /></div>
-    `;
-  }
   function cardForm(c = {}) {
     return `
       <div class="field"><label>Módulo</label><select name="subjectId">${subjectOptions(c.subjectId || subjectFocus)}</select></div>
@@ -2888,25 +2685,6 @@
     toast("Primero crea un módulo");
     view = "subjects"; render();
     return false;
-  }
-  function addExam(ex, preset = {}) {
-    if (!needSubjects()) return;
-    openModal(ex ? "Editar examen" : "Nuevo examen", examForm({ ...preset, ...ex }), {
-      onSubmit(data) {
-        const row = {
-          id: ex?.id || uid(), subjectId: data.subjectId, title: data.title.trim(), date: data.date, time: data.time,
-          type: data.type, location: data.location, notes: data.notes, grade: data.grade, weight: Number(data.weight) || 25,
-          difficulty: 3, hoursNeeded: Number(data.hoursNeeded) || state.settings.defaultHours || 8, status: data.done ? "hecho" : "pendiente",
-          checklist: ex?.checklist || [],
-        };
-        const wasDone = ex && (ex.status === "hecho" || ex.grade !== "");
-        const nowDone = row.status === "hecho" || row.grade !== "";
-        if (ex) state.exams = state.exams.map((e) => e.id === ex.id ? row : e);
-        else state.exams.push(row);
-        if (nowDone && !wasDone) grantXP(40, "Examen cerrado");
-        checkAchievements(); closeModal(); render();
-      },
-    });
   }
   function addEvent(ev, preset = {}) {
     if (!needSubjects()) return;
@@ -2928,16 +2706,6 @@
         const row = { id: s?.id || uid(), name: data.name.trim(), teacher: data.teacher, room: data.room, credits: 0, color: data.color };
         if (s) state.subjects = state.subjects.map((x) => x.id === s.id ? row : x);
         else state.subjects.push(row);
-        closeModal(); render();
-      },
-    });
-  }
-  function addTask(t) {
-    openModal(t && t.id ? "Editar tarea" : "Nueva tarea", taskForm(t), {
-      onSubmit(data) {
-        const row = { id: t?.id || uid(), title: data.title.trim(), subjectId: data.subjectId, due: data.due, priority: data.priority || state.settings.defaultPrio || "media", done: t?.done || false };
-        if (t && t.id) state.tasks = state.tasks.map((x) => x.id === t.id ? row : x);
-        else state.tasks.push(row);
         closeModal(); render();
       },
     });
@@ -3173,47 +2941,61 @@
     return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
   function exportICS() {
-    const now = new Date();
-    const lines = [
-      "BEGIN:VCALENDAR", "VERSION:2.0", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
-      "PRODID:-//Aula SMR//ES", `X-WR-CALNAME:${icsEscape(state.settings.courseName || "Aula SMR")}`,
+    const stamp = icsStamp(new Date());
+    const lineas = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Aula SMR//Horario//ES",
+      "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:Aula SMR 2.º SMR 2026-27",
     ];
-    const addEvent = (uidVal, dateISO, startHHMM, mins, summary, desc, subj) => {
-      const start = `${dateISO.replace(/-/g, "")}T${(startHHMM || "09:00").replace(":", "")}00`;
-      const end = new Date(new Date(`${dateISO}T${startHHMM || "09:00"}:00`).getTime() + mins * 60000);
-      lines.push("BEGIN:VEVENT",
-        `UID:${uidVal}@aula-smr`,
-        `DTSTAMP:${icsStamp(now)}`,
-        `DTSTART:${start}`,
-        `DTEND:${icsLocalStamp(end)}`,
-        `SUMMARY:${icsEscape(summary)}`);
-      if (desc) lines.push(`DESCRIPTION:${icsEscape(desc)}`);
-      if (subj) lines.push(`CATEGORIES:${icsEscape(subj)}`);
-      lines.push("BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY", `DESCRIPTION:${icsEscape(summary)}`, "END:VALARM", "END:VEVENT");
-    };
-    state.exams.forEach((e) => {
-      if (!e.date) return;
-      addEvent(e.id, e.date, e.time || "09:00", 60, e.title, e.notes || e.location || "", subjectName(e.subjectId));
+    const evDe = (iso, hora) => iso.replace(/-/g, "") + "T" + String(hora).replace(":", "") + "00";
+    // Clases del centro: se repiten cada semana hasta el fin de curso
+    const dow = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+    state.events.filter((e) => !e.type || e.type === "clase").forEach((e) => {
+      const sub = subjectById(e.subjectId);
+      lineas.push(
+        "BEGIN:VEVENT",
+        "UID:aula-" + e.id + "@aula-smr",
+        "DTSTAMP:" + stamp,
+        "SUMMARY:" + icsEscape((sub ? sub.name : "Clase") + (e.room ? " · " + e.room : "")),
+        "RRULE:FREQ=WEEKLY;BYDAY=" + dow[Number(e.day) % 7] + ";UNTIL=" + evDe(state.settings.endDate || COURSE.end, "235900") + "Z",
+        "DTSTART;TZID=Europe/Madrid:" + evDe(COURSE.start, e.start),
+        "DTEND;TZID=Europe/Madrid:" + evDe(COURSE.start, e.end),
+        "END:VEVENT",
+      );
     });
-    state.tasks.filter((x) => !x.done && x.due).forEach((x) => {
-      // Un evento de día completo necesita DTEND: el día siguiente.
-      const diaSig = new Date(x.due + "T12:00:00");
-      diaSig.setDate(diaSig.getDate() + 1);
-      lines.push("BEGIN:VEVENT", `UID:${x.id}@aula-smr`, `DTSTAMP:${icsStamp(now)}`,
-        `DTSTART;VALUE=DATE:${x.due.replace(/-/g, "")}`,
-        `DTEND;VALUE=DATE:${localISO(diaSig).replace(/-/g, "")}`,
-        `SUMMARY:${icsEscape("Entrega: " + x.title)}`,
-        `CATEGORIES:${icsEscape(subjectName(x.subjectId))}`,
-        "END:VEVENT");
+    // Festivos y vacaciones (día completo, como en el calendario del centro)
+    const dias = [];
+    VACATIONS.forEach((v) => {
+      const d = new Date(v.from + "T12:00:00");
+      const fin = new Date(v.to + "T12:00:00");
+      while (d <= fin && dias.length < 120) { dias.push({ iso: localISO(d), name: v.name }); d.setDate(d.getDate() + 1); }
     });
-    lines.push("END:VCALENDAR");
-    const body = lines.map(icsFold).join("\r\n") + "\r\n";
+    Object.keys(HOLIDAYS).forEach((iso) => { if (!vacacionEn(iso)) dias.push({ iso, name: HOLIDAYS[iso] }); });
+    dias.sort((a, b) => a.iso.localeCompare(b.iso)).forEach((x, i) => {
+      const sig = new Date(x.iso + "T12:00:00"); sig.setDate(sig.getDate() + 1);
+      lineas.push(
+        "BEGIN:VEVENT",
+        "UID:aula-fest-" + x.iso + "-" + i + "@aula-smr",
+        "DTSTAMP:" + stamp,
+        "SUMMARY:" + icsEscape(x.name + " (sin clase)"),
+        "DTSTART;VALUE=DATE:" + x.iso.replace(/-/g, ""),
+        "DTEND;VALUE=DATE:" + localISO(sig).replace(/-/g, ""),
+        "END:VEVENT",
+      );
+    });
+    lineas.push("END:VCALENDAR");
+    const blob = new Blob([lineas.join("\r\n")], { type: "text/calendar;charset=utf-8" });
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([body], { type: "text/calendar;charset=utf-8" }));
-    a.download = "aula-smr.ics"; a.click();
-    toast("Calendario exportado (" + (state.exams.length + state.tasks.filter((x) => !x.done && x.due).length) + " eventos)");
-    ensureProgress(); state.progress.flags = { ...(state.progress.flags || {}), exported: true }; checkAchievements(); save();
+    a.href = URL.createObjectURL(blob);
+    a.download = "aula-smr-horario.ics";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    state.progress = state.progress || {}; state.progress.flags = state.progress.flags || {};
+    state.progress.flags.exported = true;
+    save();
+    const nClases = state.events.filter((e) => !e.type || e.type === "clase").length;
+    toast("Calendario exportado (" + nClases + " clases + " + dias.length + " días sin clase)");
   }
+
   function noteToCards() {
     persistNoteNow();
     const n = state.notes.find((x) => x.id === noteId);
@@ -3230,17 +3012,18 @@
     if (added) { cardQueue = []; go("cards"); }
   }
   function jumpDay(iso) {
-    const exams = state.exams.filter((e) => e.date === iso);
-    const tasks = state.tasks.filter((t) => t.due === iso && !t.done);
-    const classes = eventsOnDate(iso);
-    const hol = holidayName(iso);
-    openModal("Agenda", `
+    const info = dayInfo(iso);
+    const classes = info.kind === "lectivo" ? eventsOnDate(iso) : [];
+    openModal("Día del calendario", `
       <p style="color:var(--muted)">${fmtDateLong(iso)}</p>
-      ${hol ? `<p class="idle-note">${esc(hol)} · no lectivo</p>` : ""}
-      <h3>Clases</h3>${hol ? "<p>Sin clase (festivo).</p>" : (classes.map((e) => `<div>${esc(subjectName(e.subjectId))} ${e.start}</div>`).join("") || "<p>Ninguna.</p>")}
-      <h3>Exámenes</h3>${exams.map((e) => `<div>${esc(e.title)}</div>`).join("") || "<p>Ninguno.</p>"}
-      <h3>Tareas</h3>${tasks.map((t) => `<div>${esc(t.title)}</div>`).join("") || "<p>Ninguna.</p>"}
-    `, { confirm: "Cerrar", onSubmit: closeModal });
+      ${info.kind !== "lectivo" ? `<p class="idle-note">${esc(info.label)} · sin clase</p>` : ""}
+      <h3>Clases</h3>${classes.length
+        ? classes.map((e) => `<div class="row"><span class="dot" style="background:${subjectColor(e.subjectId)}"></span>
+            <div style="flex:1">${esc(subjectName(e.subjectId))}${e.room ? `<small class="hint">${esc(e.room)}</small>` : ""}</div>
+            <div class="meta">${e.start}–${e.end}</div></div>`).join("")
+        : `<p>${info.kind === "lectivo" ? "Ninguna." : "Día sin clase."}</p>`}
+      <p class="hint" style="margin-top:10px">Para cambiar algo de ese día: Horario → «Cambios de un día suelto».</p>`,
+      { confirm: "Ver esa semana", onSubmit() { closeModal(); exDate = iso; schWeek = semanaDe(iso); schView = "week"; go("schedule"); } });
   }
 
   function collectCmd(q) {
@@ -3249,20 +3032,17 @@
     const out = [];
     const acc = (title, run) => { if (hit(title)) out.push({ kind: "Ir", title, run }); };
     acc("Captura rápida", openCapture);
-    acc("Nuevo examen", () => addExam());
     acc("Nueva nota", addNote);
-    acc("Nueva tarea", () => addTask());
     acc("Nueva ficha", () => addCard());
     acc("Nueva clase en el horario", () => addEvent());
     acc("Registrar estudio a mano", logSession);
     acc("Temporizador", () => go("timer"));
-    acc("Tablero kanban", () => go("kanban"));
     acc("Calendario y horario", () => go("schedule"));
     acc("Calificaciones", () => go("rendimiento"));
     acc("Estadísticas", () => go("stats"));
     acc("Logros", () => go("achievements"));
     acc("Repaso rápido", () => go("quickreview"));
-    acc("Modo examen", () => go("examode"));
+    acc("Concentración", () => go("examode"));
     acc("Herramientas SMR", () => go("tools"));
     acc("Ajustes", () => go("settings"));
     acc("Deshacer el último cambio", undo);
@@ -3275,8 +3055,6 @@
         const visible = !(n.locked && !unlockedNotes.has(n.id));
         if (hit(n.title) || (visible && hit(notePlain(n)))) out.push({ kind: "Nota", title: n.title || "Sin título", run: () => { noteId = n.id; go("notes"); } });
       });
-      state.exams.forEach((e) => { if (hit(e.title)) out.push({ kind: "Examen", title: e.title, run: () => { examFilter = e.subjectId || "all"; go("exams"); } }); });
-      state.tasks.forEach((x) => { if (hit(x.title)) out.push({ kind: "Tarea", title: x.title, run: () => go("tasks") }); });
       state.subjects.forEach((s) => { if (hit(s.name)) out.push({ kind: "Módulo", title: s.name, run: () => { subjectFocus = s.id; go("subjects"); } }); });
       state.cards.forEach((c) => { if (hit(c.front)) out.push({ kind: "Ficha", title: c.front, run: () => { cardFilter = c.subjectId || "all"; cardQueue = [c]; go("cards"); } }); });
       state.glossary.forEach((g) => { if (hit(g.term)) out.push({ kind: "Glosario", title: g.term, run: () => go("glossary") }); });
@@ -3315,7 +3093,7 @@
     window.scrollTo(0, 0);
   }
   function quickAdd() {
-    const map = { dashboard: openCapture, schedule: () => addEvent(), exams: () => addExam(), notes: addNote, cards: () => addCard(), tasks: () => addTask(), timer: logSession, inbox: openCapture, subjects: () => addSubject(), subject: addNote };
+    const map = { dashboard: openCapture, schedule: () => addEvent(), notes: addNote, cards: () => addCard(), timer: logSession, inbox: openCapture, subjects: () => addSubject(), subject: addNote };
     (map[view] || openCapture)();
   }
   function logSession() {
@@ -3428,7 +3206,7 @@
         let parsed = null;
         try { parsed = JSON.parse(r.result); } catch { toast("El archivo no es un JSON válido"); return; }
         if (!parsed || typeof parsed !== "object") { toast("El archivo no tiene datos de Aula SMR"); return; }
-        const resumen = `Trae ${(parsed.subjects || []).length} módulos, ${(parsed.exams || []).length} exámenes, ${(parsed.notes || []).length} notas y ${(parsed.tasks || []).length} tareas.`;
+        const resumen = `Trae ${(parsed.subjects || []).length} módulos y ${(parsed.notes || []).length} notas.`;
         ask("Importar copia", `${resumen} Se sustituyen los datos actuales. Si te arrepientes, usa Deshacer.`, () => {
           pushUndo();
           const nuevo = sanitize(parsed);
@@ -3509,27 +3287,6 @@
     render();
     void antes;
   }
-  function planToTasks() {
-    const exams = [...state.exams].filter((e) => daysUntil(e.date) >= 0);
-    let n = 0;
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(); d.setDate(d.getDate() + i);
-      const iso = localISO(d);
-      exams.forEach((ex) => {
-        if (iso === ex.date) return;
-        const title = `Estudiar — ${ex.title}`;
-        if (!state.tasks.some((t) => t.title === title && t.due === iso)) {
-          state.tasks.push({ id: uid(), subjectId: ex.subjectId, title, due: iso, done: false, priority: "media" });
-          n++;
-        }
-      });
-    }
-    ensureProgress(); state.progress.flags = { ...(state.progress.flags || {}), planned: true };
-    if (n) grantXP(10, "Plan a tareas");
-    checkAchievements();
-    toast(n ? `${n} tareas` : "Ya estaban");
-    go("tasks");
-  }
   function num(id, fb) { const el = $(id); if (!el) return fb; const n = Number(el.value); return Number.isFinite(n) ? n : fb; }
   function on(id) { const el = $(id); return el ? !!el.checked : undefined; }
   function saveSettings() {
@@ -3553,7 +3310,6 @@
     const w = on("#set-showweek"); if (w !== undefined) st.showWeekStrip = w;
     if ($("#set-goal")) st.dailyGoal = num("#set-goal", 90);
     if ($("#set-weekdays")) st.weekGoalDays = num("#set-weekdays", 5);
-    if ($("#set-defhours")) st.defaultHours = num("#set-defhours", 8);
     if ($("#set-grademax")) st.gradeMax = num("#set-grademax", 10);
     if ($("#set-prio")) st.defaultPrio = $("#set-prio").value;
     const sat = on("#set-sat"); if (sat !== undefined) st.includeSaturday = sat;
@@ -3570,10 +3326,7 @@
     const aw = on("#set-awake"); if (aw !== undefined) st.keepAwake = aw;
     const tb = on("#set-tbar"); if (tb !== undefined) st.showTimerBar = tb;
     if ($("#set-remindh")) st.remindHour = num("#set-remindh", 8);
-    if ($("#set-lead")) st.examLeadDays = num("#set-lead", 1);
     const ncl = on("#set-nclass"); if (ncl !== undefined) st.notifyClass = ncl;
-    const ne = on("#set-nex"); if (ne !== undefined) st.notifyExams = ne;
-    const nt = on("#set-nta"); if (nt !== undefined) st.notifyTasks = nt;
     const nc = on("#set-nca"); if (nc !== undefined) st.notifyCards = nc;
     if ($("#set-starth")) st.startHour = num("#set-starth", 8);
     if ($("#set-endh")) st.endHour = num("#set-endh", 21);
@@ -3680,13 +3433,15 @@
     }
     if (action === "study-block") {
       const mins = clamp(Number(btn.dataset.min) || 45, 10, 180);
-      const hoy = Number(btn.dataset.day) === weekdayMon0(new Date());
+      const dia = Number(btn.dataset.day) || 0;
+      const hora = /^\d{1,2}:\d{2}$/.test(String(btn.dataset.start || "")) ? btn.dataset.start : "15:00";
+      const hoy = dia === weekdayMon0(new Date());
       openModal("Hueco libre · " + mins + " min", `
         <div class="field"><label>Módulo</label><select id="sb-subject">${subjectOptions("")}</select></div>
         <div class="field"><label>Minutos</label><input id="sb-min" type="number" min="10" max="180" value="${mins}"></div>
-        <p class="hint">${hoy ? "Puedes poner el temporizador ahora mismo o apuntarlo como tarea." : "Este día no es hoy: se apunta como tarea."}</p>`,
+        <p class="hint">${hoy ? "Puedes ponerte el temporizador ahora o dejar el bloque apuntado en el horario." : "Se apunta en el horario de ese día como bloque de estudio."}</p>`,
         {
-          confirm: hoy ? "Empezar a estudiar" : "Apuntar tarea",
+          confirm: hoy ? "Empezar a estudiar" : "Apuntar bloque",
           onSubmit(data) {
             const m = clamp(Number(data["sb-min"] || $("#sb-min")?.value) || mins, 10, 180);
             const sid = data["sb-subject"] || $("#sb-subject")?.value || "";
@@ -3696,8 +3451,9 @@
               closeModal(); go("timer"); toggleTimer();
               toast("Bloque de " + m + " min");
             } else {
-              state.tasks.push({ id: uid(), subjectId: sid, title: `Estudiar ${m} min`, due: todayISO(), priority: "media", done: false });
-              closeModal(); save(); render(); toast("Tarea apuntada");
+              const fin = minutesOf(hora) + m;
+              state.events.push({ id: uid(), subjectId: sid, day: dia, start: hora, end: pad(Math.floor(fin / 60) % 24) + ":" + pad(fin % 60), room: "Estudio", type: "estudio" });
+              closeModal(); save(); render(); toast("Bloque de estudio apuntado en el horario");
             }
           },
         });
@@ -3771,14 +3527,18 @@
     if (action === "agenda-filter") { agendaFilter = id; render(); }
     if (action === "open-mod") { subjectFocus = id; go("subject"); }
     if (action === "sim-run") { /* live via input */ }
-    if (action === "add-exam") addExam();
-    if (action === "edit-exam") addExam(state.exams.find((x) => x.id === id));
-    if (action === "delete-exam") { const goDel = () => { pushUndo(); state.exams = state.exams.filter((x) => x.id !== id); render(); }; state.settings.confirmDelete === false ? goDel() : ask("Eliminar examen", "Se quita de la lista.", goDel); }
-    if (action === "exam-tab") { examTab = btn.dataset.tab; render(); }
-    if (action === "exam-filter") { examFilter = id; render(); }
+    if (action === "edit-grade") addGrade(subjectById(id));
     if (action === "cal-prev") { calendarCursor.setMonth(calendarCursor.getMonth() - 1); render(); }
     if (action === "cal-next") { calendarCursor.setMonth(calendarCursor.getMonth() + 1); render(); }
-    if (action === "cal-day") { if (!e.target.closest("[data-action='edit-exam']")) addExam(null, { date: btn.dataset.date }); }
+    if (action === "sch-week") { schWeek = Number(btn.dataset.delta) || 0; render(); }
+    if (action === "cal-day") {
+      const dia = btn.dataset.date;
+      exDate = dia;
+      schWeek = semanaDe(dia);
+      schView = "week";
+      render();
+      toast("Semana del " + fmtDate(dia) + " · cambios de ese día abajo");
+    }
     if (action === "add-event") addEvent();
     if (action === "edit-event") addEvent(state.events.find((x) => x.id === id));
     if (action === "slot-add") { const h = Number(btn.dataset.hour); addEvent(null, { day: Number(btn.dataset.day), start: `${pad(h)}:00`, end: `${pad(h + 1)}:00` }); }
@@ -3802,11 +3562,6 @@
       render();
       toast("Nota eliminada");
     });
-    if (action === "add-task") addTask();
-    if (action === "edit-task") addTask(state.tasks.find((x) => x.id === id));
-    if (action === "delete-task") { pushUndo(); state.tasks = state.tasks.filter((x) => x.id !== id); render(); }
-    if (action === "toggle-task") { const tsk = state.tasks.find((x) => x.id === id); if (tsk) { tsk.done = !tsk.done; if (tsk.done) { grantXP(15, "Tarea hecha"); checkAchievements(); confetti(); buzz(); } render(); } }
-    if (action === "task-filter") { taskFilter = id; render(); }
     if (action === "add-card") addCard();
     if (action === "edit-card") addCard(state.cards.find((x) => x.id === id));
     if (action === "delete-card") { state.cards = state.cards.filter((x) => x.id !== id); cardQueue = cardQueue.filter((x) => x.id !== id); render(); }
@@ -3819,7 +3574,6 @@
     if (action === "timer-skip") completeTimer();
     if (action === "timer-subject-go") { timer.subjectId = id; go("timer"); }
     if (action === "log-session") logSession();
-    if (action === "plan-to-tasks") planToTasks();
     if (action === "save-settings") saveSettings();
     if (action === "export") exportJSON();
     if (action === "import") importJSON();
@@ -3852,8 +3606,6 @@
     if (action === "skip-onboard" || action === "on-finish") {
       collectOnboard();
       const ncl = on("#set-nclass"); if (ncl !== undefined) state.settings.notifyClass = ncl;
-      const ne = on("#set-nex"); if (ne !== undefined) state.settings.notifyExams = ne;
-      const nt = on("#set-nta"); if (nt !== undefined) state.settings.notifyTasks = nt;
       const nc = on("#set-nca"); if (nc !== undefined) state.settings.notifyCards = nc;
       state.settings.onboarded = true;
       state.settings.demo = false;
@@ -3865,8 +3617,6 @@
     if (action === "on-next") {
       collectOnboard();
       const ncl = on("#set-nclass"); if (ncl !== undefined) state.settings.notifyClass = ncl;
-      const ne = on("#set-nex"); if (ne !== undefined) state.settings.notifyExams = ne;
-      const nt = on("#set-nta"); if (nt !== undefined) state.settings.notifyTasks = nt;
       const nc = on("#set-nca"); if (nc !== undefined) state.settings.notifyCards = nc;
       if (onStep >= 6) {
         state.settings.onboarded = true;
@@ -3927,14 +3677,12 @@
     if (action === "open-capture") { closeMore(); openCapture(); }
     if (action === "close-capture") closeCapture();
     if (action === "capture-inbox") captureToInbox();
-    if (action === "capture-task") { const t = captureText(); if (!t) return; closeCapture(); addTask({ title: t, due: todayISO(), priority: "media" }); }
     if (action === "capture-note") {
       const t = captureText(); if (!t || !needSubjects()) return; closeCapture();
       const n = { id: uid(), subjectId: state.subjects[0].id, title: t.slice(0, 48), content: t, pinned: false, createdAt: Date.now(), updatedAt: Date.now() };
       state.notes.unshift(n); noteId = n.id; go("notes");
     }
     if (action === "inbox-del") { pushUndo(); state.inbox = state.inbox.filter((x) => x.id !== id); render(); }
-    if (action === "inbox-task") { const it = state.inbox.find((x) => x.id === id); if (it) addTask({ title: it.text, due: todayISO(), priority: "media" }); }
     if (action === "inbox-note") {
       const it = state.inbox.find((x) => x.id === id);
       if (!it || !needSubjects()) return;
@@ -3946,21 +3694,6 @@
       e.stopPropagation();
       setAttendance(id, todayISO(), btn.dataset.st);
     }
-    if (action === "add-check") {
-      openModal("Ítem de temario", `<div class="field"><label>Texto</label><input name="text" required /></div>`, {
-        confirm: "Añadir",
-        onSubmit(data) {
-          const ex = state.exams.find((x) => x.id === id);
-          if (ex) { ex.checklist = ex.checklist || []; ex.checklist.push({ id: uid(), text: data.text.trim(), done: false }); }
-          closeModal(); render();
-        },
-      });
-    }
-    if (action === "toggle-check") {
-      const ex = state.exams.find((x) => x.id === btn.dataset.eid);
-      const item = ex?.checklist?.find((c) => c.id === id);
-      if (item) { item.done = !item.done; save(); render(); }
-    }
     if (action === "restore-backup") restoreBackup();
     if (action === "dismiss-load-problem") { loadProblem = ""; render(); }
     if (action === "restore-timetable") {
@@ -3969,10 +3702,12 @@
         ? "el <b>horario temporal</b> de septiembre y junio (16:00 a 21:45)"
         : "el <b>horario del curso</b> (15:15 a 21:45)";
       openModal("Cargar el horario del centro", `<p>Se <b>sustituyen</b> tus clases actuales por ${cuando}, con los ${OFFICIAL_MODS.length} módulos y sus aulas.</p>
-        <p class="hint">Exámenes, notas, tareas y sesiones no se tocan. Puedes deshacerlo justo después.</p>`,
+        <p class="hint">Con esto el cambio automático de septiembre y junio se queda en pausa; puedes volver a activarlo en Ajustes.</p>
+        <p class="hint">Tus apuntes, fichas y sesiones de estudio no se tocan. Puedes deshacerlo justo después.</p>`,
         { confirm: "Cargar horario", onSubmit() {
             pushUndo();
             state.events = [];
+            state.settings.timetableAuto = false;
             applyOfficialTimetable(state, kind);
             checkAchievements(); save(); closeModal(); render();
             toast(kind === "temporal" ? "Horario temporal cargado" : "Horario del curso cargado");
@@ -3995,6 +3730,13 @@
   });
 
   document.addEventListener("change", (e) => {
+    if (e.target.dataset.action === "toggle-auto-plantilla") {
+      state.settings.timetableAuto = !!e.target.checked;
+      if (state.settings.timetableAuto) syncPlantilla(state);
+      save(); render();
+      toast(e.target.checked ? "La app cambia el horario sola en septiembre y junio" : "Cambio automático desactivado");
+      return;
+    }
     if (e.target.id === "ex-date") { exDate = e.target.value; render(); return; }
     if (e.target.id === "timer-subject") timer.subjectId = e.target.value;
     if (e.target.dataset.action === "note-subject" && noteId) {
@@ -4144,18 +3886,13 @@
   }
   function nlpParse(raw) {
     const lower = raw.toLowerCase();
-    const isExam = /examen|prueba|control|parcial|entrega|trabajo/.test(lower);
-    const isNote = /^apunte|^nota|resumen/.test(lower);
     const when = parseWhen(lower);
-    const time = (lower.match(/\b(\d{1,2})[:.](\d{2})\b/) || []);
     return {
-      kind: isNote ? "note" : isExam ? "exam" : "task",
+      kind: "note",
       title: raw.charAt(0).toUpperCase() + raw.slice(1),
       date: when.date,
       guessed: when.guessed,
-      time: time.length ? pad(Number(time[1])) + ":" + time[2] : "09:00",
       subjectId: matchSubject(lower) || "",
-      type: /entrega|trabajo/.test(lower) ? "entrega" : "parcial",
     };
   }
   // Antes de guardar nada se ve lo que se ha entendido y se puede corregir.
@@ -4164,40 +3901,19 @@
     if (!raw) { toast("Nada que interpretar"); return; }
     if (!needSubjects()) return;
     const d = nlpParse(raw);
-    const kindLbl = d.kind === "exam" ? "Examen" : d.kind === "note" ? "Nota" : "Tarea";
     openModal("¿Es esto?", `
-      <p class="hint" style="margin-top:0">He interpretado tu frase. Cambia lo que haga falta antes de guardar.</p>
-      <div class="field"><label>Tipo</label>
-        <select name="kind">
-          <option value="task" ${d.kind === "task" ? "selected" : ""}>Tarea</option>
-          <option value="exam" ${d.kind === "exam" ? "selected" : ""}>Examen / entrega</option>
-          <option value="note" ${d.kind === "note" ? "selected" : ""}>Nota</option>
-        </select></div>
+      <p class="hint" style="margin-top:0">Lo he entendido como un apunte. Corrige lo que haga falta y guárdalo.</p>
       <div class="field"><label>Título</label><input name="title" required value="${esc(d.title)}" /></div>
-      <div class="form-row">
-        <div class="field"><label>Módulo ${d.subjectId ? "" : "(elige)"}</label><select name="subjectId">${subjectOptions(d.subjectId)}</select></div>
-        <div class="field"><label>Fecha ${d.guessed ? "(¡la he supuesto!)" : ""}</label><input name="date" type="date" value="${d.date}" /></div>
-      </div>
-      <div class="field"><label>Hora</label><input name="time" type="time" value="${d.time}" /></div>
+      <div class="field"><label>Módulo ${d.subjectId ? "" : "(elige)"}</label><select name="subjectId">${subjectOptions(d.subjectId)}</select></div>
+      <p class="hint">${esc(fmtDateLong(d.date))}${d.guessed ? " (fecha estimada)" : ""}</p>
     `, {
-      confirm: "Guardar " + kindLbl.toLowerCase(),
+      confirm: "Guardar apunte",
       onSubmit(data) {
-        const row = { subjectId: data.subjectId, title: String(data.title || d.title).trim(), date: asISO(data.date) || todayISO() };
-        if (data.kind === "exam") {
-          state.exams.push({ id: uid(), subjectId: row.subjectId, title: row.title, date: row.date, time: asHHMM(data.time, "09:00"),
-            type: d.type, location: "", notes: "Captura rápida", grade: "", weight: 25, difficulty: 3,
-            hoursNeeded: Number(state.settings.defaultHours) || 8, status: "pendiente", checklist: [] });
-          toast("Examen guardado");
-        } else if (data.kind === "note") {
-          const n = { id: uid(), subjectId: row.subjectId, title: row.title.slice(0, 60), content: raw, pinned: false, createdAt: Date.now(), updatedAt: Date.now() };
-          state.notes.unshift(n); noteId = n.id;
-          toast("Nota guardada");
-        } else {
-          state.tasks.push({ id: uid(), subjectId: row.subjectId, title: row.title, due: row.date, priority: state.settings.defaultPrio || "media", done: false });
-          toast("Tarea guardada");
-        }
-        checkAchievements(); closeModal();
-        if (data.kind === "note") go("notes"); else { view = data.kind === "exam" ? "exams" : "tasks"; render(); }
+        const n = { id: uid(), subjectId: data.subjectId, title: String(data.title || d.title).trim().slice(0, 60), content: raw,
+          pinned: false, createdAt: Date.now(), updatedAt: Date.now() };
+        state.notes.unshift(n); noteId = n.id;
+        checkAchievements(); closeModal(); go("notes");
+        toast("Apunte guardado");
       },
     });
   }
@@ -4224,7 +3940,7 @@
     updateVoiceUI();
     pill?.classList.add("on");
     const stt = $("#ai-status-text");
-    if (stt) stt.textContent = "Di: «Examen de redes el viernes»";
+    if (stt) stt.textContent = "Di: «apunta: el DNS usa el puerto 53»";
     if (!Speech) {
       openCapture();
       stop();
@@ -4256,12 +3972,13 @@
   }
   function radarSVG() {
     const mods = state.subjects.slice(0, 8);
-    const has = mods.some((s) => subjectGPA(s.id) != null);
+    const has = mods.some((s) => s.grade !== "" && Number.isFinite(Number(s.grade)));
     if (!has) {
       return `<div class="radar-empty">
         <b>Aún no hay notas</b>
-        <p>Cuando pongas una calificación en un examen, aquí verás el radar por módulo.</p>
-        <button class="btn btn-primary" data-action="add-exam">Registrar una nota</button>
+        <p>Cuando pongas la nota de un módulo, aquí verás el radar del ciclo.</p>
+        ${mods.length ? `<button class="btn btn-primary" data-action="edit-grade" data-id="${mods[0].id}">Poner una nota</button>`
+          : `<button class="btn btn-primary" data-action="go" data-to="subjects">Añadir un módulo</button>`}
       </div>`;
     }
     const n = Math.max(mods.length, 3);
@@ -4274,7 +3991,8 @@
     [0.25, 0.5, 0.75, 1].forEach((k) => {
       rings += `<polygon points="${Array.from({ length: n }, (_, i) => pt(i, R * k).join(",")).join(" ")}" fill="none" stroke="currentColor" opacity=".18"/>`;
     });
-    const data = mods.map((sub, i) => pt(i, R * ((subjectGPA(sub.id) || 0) / 10)));
+    const maxNota = Number(state.settings.gradeMax) || 10;
+    const data = mods.map((sub, i) => pt(i, R * (Number(sub.grade) || 0) / maxNota));
     while (data.length < 3) data.push(pt(data.length, 0));
     const poly = data.map((x) => x.join(",")).join(" ");
     const labels = mods.map((sub, i) => {
@@ -4284,62 +4002,60 @@
     }).join("");
     return `<svg viewBox="0 0 280 280" class="radar-box">${rings}<polygon points="${poly}" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="2"/>${data.map((x) => `<circle cx="${x[0]}" cy="${x[1]}" r="4" fill="#10b981"/>`).join("")}${labels}</svg>`;
   }
+  function gradeForm(s) {
+    const max = Number(state.settings.gradeMax) || 10;
+    return `
+      <div class="field"><label for="grade-in">Nota de ${esc(s.name)}</label>
+        <input id="grade-in" name="grade" type="number" step="0.1" min="0" max="${max}" value="${s.grade === "" || s.grade == null ? "" : Number(s.grade)}" placeholder="Sin nota" /></div>
+      <p class="hint">Déjalo vacío para quitar la nota. La media del ciclo sale de las notas de tus módulos.</p>`;
+  }
+  function addGrade(s) {
+    if (!s) return;
+    openModal("Nota del módulo", gradeForm(s), {
+      confirm: "Guardar nota",
+      onSubmit(data) {
+        const v = String(data.grade ?? "").trim();
+        s.grade = v === "" ? "" : clamp(Number(v.replace(",", ".")) || 0, 0, Number(state.settings.gradeMax) || 10);
+        checkAchievements(); save(); closeModal(); render();
+        toast(s.grade === "" ? "Nota quitada" : "Nota guardada: " + Number(s.grade).toFixed(1));
+      },
+    });
+  }
   function renderRendimiento() {
     const gpa = weightedGPA();
     const max = Number(state.settings.gradeMax) || 10;
     const clsOf = (avg) => avg == null ? "g-na" : avg >= 9 ? "g-top" : avg >= 5 ? "g-ok" : "g-bad";
     const boletin = state.subjects.map((sub) => {
-      const list = state.exams.filter((e) => e.subjectId === sub.id)
-        .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-      const avg = subjectGPA(sub.id);
-      const graded = list.filter((e) => e.grade !== "" && !Number.isNaN(Number(e.grade)));
-      const rows = list.length ? list.map((e) => {
-        const has = e.grade !== "" && !Number.isNaN(Number(e.grade));
-        const n = has ? Number(e.grade) : null;
-        const gcls = n == null ? "g-na" : n >= 9 ? "g-top" : n >= 5 ? "g-ok" : "g-bad";
-        return `<button type="button" class="grade-row" data-action="edit-exam" data-id="${e.id}">
-          <span class="grade-row-t">
-            <b>${esc(e.title)}</b>
-            <small>${esc(typeLabel(e.type))}${e.date ? " · " + fmtDate(e.date) : ""} · ${Number(e.weight) || 0}%</small>
-          </span>
-          <span class="g ${gcls}">${has ? Number(e.grade).toFixed(1) : "—"}</span>
-        </button>`;
-      }).join("") : `<p class="sch-empty">Sin exámenes en este módulo.</p>`;
+      const n = sub.grade === "" || sub.grade == null ? null : Number(sub.grade);
+      const gcls = n == null ? "g-na" : n >= 9 ? "g-top" : n >= 5 ? "g-ok" : "g-bad";
+      const mins = studiedFor(sub.id);
       return `<section class="boletin-mod">
         <div class="boletin-head">
           <i style="background:${safeColor(sub.color)}"></i>
           <div>
             <b>${esc(sub.name)}</b>
-            <small>${graded.length ? graded.length + (graded.length === 1 ? " nota" : " notas") : "sin calificar"}</small>
+            <small>${fmtHours(mins)} de estudio · ${esc(sub.teacher || "sin profesor")}</small>
           </div>
-          <div class="g ${clsOf(avg)}">${avg == null ? "—" : avg.toFixed(2)}</div>
+          <div class="g ${gcls}">${n == null ? "—" : n.toFixed(2)}</div>
         </div>
-        ${rows}
+        <button type="button" class="grade-row" data-action="edit-grade" data-id="${sub.id}">
+          <span class="grade-row-t"><b>${n == null ? "Poner la nota" : "Cambiar la nota"}</b>
+            <small>Nota final del módulo (0 a ${max})</small></span>
+          <span class="g ${gcls}">${n == null ? "—" : n.toFixed(1)}</span>
+        </button>
       </section>`;
-    }).join("") || `<div class="empty"><b>Sin módulos</b>Añade asignaturas para ir apuntando notas.</div>`;
+    }).join("") || `<div class="empty"><b>Sin módulos</b>Añade tus módulos para ir apuntando notas.</div>`;
+    const conNota = state.subjects.filter((s) => s.grade !== "" && Number.isFinite(Number(s.grade))).length;
     return `
       <div class="boletin-hero">
         <span class="k">Media del ciclo</span>
         <div class="g ${clsOf(gpa)}">${gpa == null ? "—" : gpa.toFixed(2)}</div>
-        <small>${gpa == null ? "Cuando pongas notas en los exámenes, sale aquí el total." : "Ponderada con el peso de cada evaluación."}</small>
+        <small>${conNota ? conNota + " de " + state.subjects.length + " módulos con nota." : "Pon la nota de cada módulo y aquí sale la media."}</small>
       </div>
-      <div class="sec-head"><h3>Por asignatura</h3>
-        <button class="hub-round" data-action="add-exam" title="Registrar nota" aria-label="Registrar nota">+</button></div>
+      <div class="sec-head"><h3>Por módulo</h3>
+        <button class="hub-round" data-action="go" data-to="subjects" title="Ver módulos" aria-label="Ver módulos">+</button></div>
       ${radarSVG()}
       ${boletin}
-      <div class="sim-box">
-        <h3 style="margin:0 0 8px;font-size:14px;font-weight:800">Simulador del final</h3>
-        <p class="hint" style="margin:0 0 12px">Qué nota te pide el examen final según lo que llevas.</p>
-        <div class="form-row">
-          <div class="field"><label for="sim-current">Nota actual</label><input type="number" step="0.1" id="sim-current" value="${gpa == null ? "6.5" : gpa.toFixed(1)}" data-action="sim-live"></div>
-          <div class="field"><label for="sim-weight">Peso final (%)</label><input type="number" id="sim-weight" value="40" data-action="sim-live"></div>
-        </div>
-        <div class="field"><label for="sim-target">Quiero sacar un…</label>
-          <input type="range" id="sim-target" min="5" max="${max}" step="0.1" value="8" data-action="sim-live" aria-describedby="sim-target-display">
-          <div style="text-align:center;font-family:var(--mono);font-weight:800" id="sim-target-display">8.0</div>
-        </div>
-        <div class="sim-out"><span>Necesitas un:</span><b id="sim-result">—</b></div>
-      </div>
     `;
   }
 
@@ -4358,28 +4074,29 @@
     get state() { return state; },
     save, render, go, toast, esc, uid, todayISO, daysUntil, fmtDate, fmtDateLong, fmtHours,
     subjectName, subjectColor, subjectById, minutesOf, weekdayMon0, DAYS, DAYS_SHORT, MONTHS,
-    pad, clamp, localISO, weekRange, streak, studiedFor, nextExam, nextClass, $, $$,
+    pad, clamp, localISO, weekRange, streak, studiedFor, nextClass, $, $$,
     openModal, closeModal, ask, weightedGPA, grantXP, checkAchievements, needSubjects,
     pushUndo, undo, sanitize, save, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
     isNativeShell, soloLocal: true,
     safeColor, sm2, cardState, nextLabel, migrateMedia, eventsOnDate, setException, exceptionsFor,
     COURSE, holidayName, OFFICIAL_MODS, OFFICIAL_SLOTS, OFFICIAL_PLAN, applyOfficialTimetable,
+    dayInfo, isLectivo, plantillaDeMes, syncPlantilla, retimarHorario, semanaDe, HOLIDAYS, VACATIONS,
     unlockNote(id) { unlockedNotes.delete(id); },
     lockNote(id) { unlockedNotes.add(id); },
     get loadProblem() { return loadProblem; },
     get saveProblem() { return saveProblem; },
-    subjectOptions, md, dueCards, attStats, typeLabel, EXAM_TYPES, addExam, addTask, addNote, addCard,
+    subjectOptions, md, dueCards, attStats, addNote, addCard, addGrade, diasSinClase,
     persistNote, buzz, confetti, levelInfo,
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },
   };
-  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, kanban: 1, simulator: 1, habits: 1, glossary: 1, examode: 1, quickreview: 1, admin: 1, achievements: 1, rendimiento: 1, tools: 1 };
+  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, habits: 1, glossary: 1, examode: 1, quickreview: 1, admin: 1, achievements: 1, rendimiento: 1, tools: 1 };
   const esVista = (v) => !!(v && (titles[v] || EXTRA_VIEWS[v]));
   const hash = (location.hash || "").replace("#", "");
   if (esVista(hash)) view = hash;
   applyTheme();
   setMode("work", true);
-  // Modo examen que sobrevive a recargas
+  // Concentración que sobrevive a recargas
   const _lockUntil = Number((state.progress && state.progress.flags && state.progress.flags.examLockUntil) || 0);
   if (_lockUntil > Date.now()) {
     document.body.classList.add("focus-mode", "exam-lock");
@@ -4458,12 +4175,17 @@
     }
     updateTimerChrome();
     tickNotify();
+    const cambioPlantilla = syncPlantilla(state);
+    if (cambioPlantilla) { save(); toast(avisoPlantilla(cambioPlantilla)); render(); }
     tickLiveUI();
     pushWidgets();
   }, 15000);
   setTimeout(() => tickNotify(), 2500);
+  if (plantillaAuto) setTimeout(() => { toast(avisoPlantilla(plantillaAuto)); save(); }, 1400);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { flushSave(); return; }
+    const cambioPlantilla = syncPlantilla(state);
+    if (cambioPlantilla) { save(); toast(avisoPlantilla(cambioPlantilla)); render(); }
     tickNotify();
     pushWidgets();
     // Al volver del segundo plano: recalcular el temporizador y recuperar el wake lock.

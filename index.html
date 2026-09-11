@@ -49,7 +49,6 @@
   <noscript><p style="padding:16px;font-family:sans-serif">Aula SMR necesita JavaScript activado.</p></noscript>
   <a class="skip-link" href="#view">Saltar al contenido</a>
   <span id="brand-course" class="sr-only">SMR</span>
-  <span id="exam-count" class="sr-only"></span>
   <span id="card-count" class="sr-only"></span>
   <span id="task-count" class="sr-only"></span>
   <span id="inbox-count" class="sr-only"></span>
@@ -100,11 +99,9 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 7h14M5 12h14M5 17h10"/></svg>
         <span class="nav-lbl">Más</span>
       </button>
-      <button data-view="exams" class="nav-badge" aria-label="Exámenes">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
-        <span class="nav-dot" id="nav-task-badge" hidden></span>
-        <i class="dot-count" id="bn-exam" hidden></i>
-        <span class="nav-lbl">Exámenes</span>
+      <button data-view="notes" aria-label="Apuntes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h6M9 16h6"/></svg>
+        <span class="nav-lbl">Apuntes</span>
       </button>
       <button data-view="rendimiento" aria-label="Calificaciones">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M12 16V8M16 16v-3"/></svg>
@@ -116,7 +113,7 @@
       <div class="sheet-card no-scrollbar">
         <div class="sheet-handle"></div>
         <h3>Más</h3>
-        <p class="sheet-hint">Inicio, Horario, Exámenes y Notas ya están en la barra de abajo.</p>
+        <p class="sheet-hint">Inicio, Horario, Apuntes y Notas ya están en la barra de abajo.</p>
         <div class="sheet-sec">Taller</div>
         <div class="sheet-grid sheet-wide">
           <button data-view="tools">
@@ -136,7 +133,7 @@
           </button>
           <button data-view="quickreview">
             <span class="sheet-ico" style="color:#22c55e"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M12 16V8M16 16v-3"/></svg></span>
-            <span class="sheet-txt">Repaso rápido <small>Antes del examen</small></span>
+            <span class="sheet-txt">Repaso rápido <small>Un módulo a fondo</small></span>
           </button>
           <button data-view="chatbot">
             <span class="sheet-ico" style="color:#38bdf8"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 6h14v10H8l-3 3V6Z"/></svg></span>
@@ -144,7 +141,7 @@
           </button>
           <button data-view="examode">
             <span class="sheet-ico" style="color:#f43f5e"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
-            <span class="sheet-txt">Modo examen <small>Sin distracciones</small></span>
+            <span class="sheet-txt">Concentración <small>Sin distracciones</small></span>
           </button>
           <button data-view="habits">
             <span class="sheet-ico" style="color:#34d399"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 12l4 4 8-8"/><circle cx="12" cy="12" r="9"/></svg></span>
@@ -153,14 +150,6 @@
         </div>
         <div class="sheet-sec">Organizar</div>
         <div class="sheet-grid">
-          <button data-view="notes">
-            <span class="sheet-ico" style="color:#eab308"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h8l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M15 3v5h5M9 13h6M9 17h4"/></svg></span>
-            <span class="sheet-txt">Apuntes <small>Markdown</small></span>
-          </button>
-          <button data-view="kanban">
-            <span class="sheet-ico" style="color:#fb7185"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="11" y="4" width="4" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg></span>
-            <span class="sheet-txt">Tablero <small>Entregas</small></span>
-          </button>
           <button data-view="agenda">
             <span class="sheet-ico" style="color:#60a5fa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
             <span class="sheet-txt">Agenda <small>Día / sem / mes</small></span>
@@ -168,10 +157,6 @@
           <button data-view="inbox">
             <span class="sheet-ico" style="color:#94a3b8"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 13h4l2 3h4l2-3h4v6H4v-6Z"/><path d="M4 13 6.5 5h11L20 13"/></svg></span>
             <span class="sheet-txt">Bandeja <small>Sin clasificar</small></span>
-          </button>
-          <button data-view="plan">
-            <span class="sheet-ico" style="color:#14b8a6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="17" r="3"/></svg></span>
-            <span class="sheet-txt">Plan <small>Hasta la fecha</small></span>
           </button>
           <button data-view="glossary">
             <span class="sheet-ico" style="color:#2dd4bf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3M8 11h6M11 8v6"/></svg></span>
@@ -209,10 +194,9 @@
 
     <div id="capture" class="cmdk" hidden>
       <div class="cmdk-box capture-box">
-        <textarea id="capture-text" rows="4" placeholder="Di o escribe: «Examen de redes el viernes»"></textarea>
+        <textarea id="capture-text" rows="4" placeholder="Di o escribe lo que quieras apuntar: «DHCP asigna IP por rango»"></textarea>
         <div class="capture-actions">
           <button class="btn btn-primary" data-action="capture-inbox">Bandeja</button>
-          <button class="btn" data-action="capture-task">Tarea</button>
           <button class="btn" data-action="capture-note">Nota</button>
           <button class="btn" data-action="nlp-text">Interpretar</button>
           <button class="btn" data-action="voice-fab" id="capture-voice">🎤 Dictar</button>
@@ -223,7 +207,7 @@
 
     <div id="cmdk" class="cmdk" hidden>
       <div class="cmdk-box">
-        <input id="cmdk-input" placeholder="Buscar notas, exámenes, acciones…" autocomplete="off" />
+        <input id="cmdk-input" placeholder="Buscar notas, módulos, acciones…" autocomplete="off" />
         <div id="cmdk-list"></div>
         <div class="cmdk-hint">↑↓ navegar · Enter abrir · Esc cerrar</div>
       </div>

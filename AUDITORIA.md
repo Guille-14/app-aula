@@ -48,7 +48,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 **Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas),
 `7d2d814` (herramientas y red), `ee04323` (accesibilidad y detalles), `5654dd6`
 (fotos en IndexedDB, repetición espaciada real y excepciones de horario), `718e69d`
-(receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados) y `v53` (fuera la vista Cuatrimestre) y `v54` (fuera Guía docente y Papelera) `v55` (Ajustes más cortos) y `v56` (horario y calendario reales del centro).
+(receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados), `v53` (fuera la vista Cuatrimestre), `v54` (fuera Guía docente y Papelera), `v55` (Ajustes más cortos), `v56` (horario y calendario reales del centro) y `v57` (horario automático, calendario escolar y la app sin exámenes ni deberes).
 
 | Bug | Estado | Cómo se ha arreglado |
 |---|---|---|
@@ -138,6 +138,22 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
   con botón para cargarla de un toque, y el Calendario recuerda las fechas del curso y los
   festivos locales. Un fallo real que salió al probarlo: había **dos** manejadores para
   «Restaurar horario», y el viejo (sin plantilla) se quedaba el clic; se eliminó.
+- **Horario que se cambia solo, calendario escolar y app sin exámenes (v57):**
+  el horario pasa a ser **por fechas reales** (semana navegable con ‹ / Hoy / ›) y **solo pinta
+  clase los días lectivos** según el calendario del centro; los festivos, las vacaciones y los
+  días fuera del curso salen en blanco con el motivo escrito. La plantilla de horas **se cambia
+  sola**: en septiembre y junio aplica la temporal (16:00–21:45) y el resto del curso la de
+  15:15, al abrir la app, cada 15 s y al volver del segundo plano, conservando ids, excepciones
+  y asistencia (si has añadido clases tuyas, no toca nada y lo dice). La pestaña *Calendario*
+  del Horario es ya el **calendario escolar** septiembre 2026 → junio 2027: días lectivos,
+  festivos con nombre, vacaciones, «Sin curso» antes del 14/09, leyenda y resumen del mes.
+  Y se han retirado de la app los **exámenes** y **los deberes**: fuera las vistas Exámenes,
+  Tareas, Plan y Tablero, sus tarjetas de Inicio, sus avisos, el intérprete de frases que los
+  creaba, los widgets nativos de examen/tareas (de 24 a 19) y el .ics de entregas; el .ics
+  ahora exporta clases + festivos + vacaciones. **Notas** sigue viva, pero con la **nota de
+  cada módulo** (editable en Calificaciones o en el módulo) en lugar de notas por examen, y la
+  **Agenda** deja de repetir el horario: ahora es tu plan de estudio (bloques reservados, huecos
+  libres y minutos hechos).
 - **Ajustes más cortos (v55):** fuera la sección **«Tema visual»** (33 tarjetas y sus filtros)
   y la de **«Instalar como app»**, y de Inicio el aviso *«Ponla en la pantalla de inicio»*.
   Se mantiene el cambio claro/oscuro y el tema que ya tuvieras puesto. Con ellos se ha ido su
@@ -165,7 +181,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 
 - Notificaciones programadas reales en el APK (Android) para que suenen con la app cerrada.
 - ~~El APK no es reproducible desde el repo~~ **✅ hecho**: el flujo `.github/workflows/apk.yml`
-  compila, firma (`apk-overlay/keystore`), comprueba (firma, versión y 24 widgets) y publica
+  compila, firma (`apk-overlay/keystore`), comprueba (firma, versión y los widgets) y publica
   el APK en *Releases* en cada cambio, además de la receta manual de `apk-overlay/README.md`.
 - Refactor en módulos y poda de CSS (307 selectores redefinidos, 281 `!important`).
 - CSP, `eslint` y política de privacidad/aviso legal.

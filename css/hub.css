@@ -447,6 +447,30 @@ input[type="text"], input[type="number"], input[type="date"], input[type="time"]
 .cal-day.today .n { background: var(--invert); color: var(--invert-ink); }
 .cal-day.out { opacity: .25; }
 .cal-ev { display: none; }
+
+/* calendario escolar del curso (Horario → Calendario) */
+.cal-escuela .cal-day {
+  aspect-ratio: auto; min-height: 52px; border-radius: 12px; padding: 4px 2px 5px;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px;
+  border: 1px solid transparent; color: var(--ink-2);
+}
+.cal-escuela .cal-day .n { width: 24px; height: 24px; font-size: 12.5px; }
+.cal-escuela .cal-day.is-lectivo { background: var(--bg-2); color: var(--ink); }
+.cal-escuela .cal-day.is-hol { background: rgba(239, 68, 68, .16); border-color: rgba(239, 68, 68, .38); color: #f87171; }
+.cal-escuela .cal-day.is-vac { background: rgba(245, 158, 11, .16); border-color: rgba(245, 158, 11, .38); color: #fbbf24; }
+.cal-escuela .cal-day.is-finde, .cal-escuela .cal-day.is-fuera { opacity: .5; }
+.cal-escuela .cal-day.today { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cal-escuela .cal-hol { font-size: 9px; line-height: 1.15; text-align: center; font-weight: 700; padding: 0 1px; }
+.cal-key { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 11px; color: var(--muted); margin: 12px 0 0; }
+.cal-key .k { width: 10px; height: 10px; border-radius: 4px; display: inline-block; }
+.k-lectivo { background: var(--bg-2); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.k-hol { background: #ef4444; }
+.k-vac { background: #f59e0b; }
+.k-fuera { background: var(--muted); }
+.cal-list { display: grid; gap: 10px; }
+.cal-list .row { display: flex; gap: 10px; align-items: flex-start; }
+.cal-list .hint { display: block; margin: 2px 0 0; }
+.sch-day.is-off { opacity: .72; }
 .cal-day.has-ev::after {
   content: ""; position: absolute; bottom: 4px; width: 4px; height: 4px;
   border-radius: 50%; background: var(--green);

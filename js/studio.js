@@ -32,18 +32,16 @@
   const grantXP = (n,r) => F("grantXP")(n,r);
   const checkAchievements = () => F("checkAchievements")();
   const subjectOptions = (s) => F("subjectOptions")(s);
-  const nextExam = () => F("nextExam")();
 
-  function busyWeeks() {
-    const map = {};
-    st().exams.forEach((e) => {
-      if (!e.date) return;
-      const d = new Date(e.date + "T00:00:00");
-      const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-      const key = localISO(mon);
-      map[key] = (map[key] || 0) + 1;
-    });
-    return map;
+  const dayInfo = (iso) => F("dayInfo")(iso);
+  const esLectivo = (iso) => F("isLectivo")(iso);
+  const hoyISO = () => F("todayISO")();
+  // Bloques de estudio que te has apuntado (van en el horario, tipo "estudio")
+  function bloquesDe(iso) {
+    return clasesDe(iso, 0).filter((e) => e.type === "estudio");
+  }
+  function horasDeEstudio(iso) {
+    return st().sessions.filter((s) => s.date === iso).reduce((a, b) => a + (b.minutes || 0), 0);
   }
 
   // Clases reales de una fecha (con las excepciones de ese día aplicadas)
@@ -68,30 +66,41 @@
   }
 
   function todayStudyHint() {
-    const nx = nextExam();
-    if (!nx) return "Sin examen cerca: ficha 15 min o avanza un tema.";
-    const d = daysUntil(nx.date);
-    return `Hoy: ${d <= 2 ? "urgencia" : "avance"} de ${subjectName(nx.subjectId)} (${nx.title}, ${d} d).`;
+    const mods = st().subjects;
+    if (!mods.length) return "Añade tus módulos y empieza por el que lleves más flojo.";
+    const mins = (s) => st().sessions.filter((x) => x.subjectId === s.id).reduce((a, b) => a + (b.minutes || 0), 0);
+    const flojo = [...mods].sort((a, b) => mins(a) - mins(b))[0];
+    const d = Math.round(mins(flojo) / 60);
+    return `Hoy toca ${flojo.name}: llevas ${d} h apuntadas de este módulo. Un bloque de fichas de 20 minutos y listo.`;
   }
 
+  /* Agenda (v57): tu estudio, sin el horario (eso está en la vista Horario).
+     Día con tus bloques de estudio, los huecos libres para meter uno y lo que has estudiado. */
   function agenda() {
     const tab = st()._agendaTab || "dia";
-    const cursor = st()._agendaDay || todayISO();
+    const cursor = st()._agendaDay || hoyISO();
     const d = new Date(cursor + "T00:00:00");
-    const busy = busyWeeks();
+    const info = dayInfo(cursor);
     const tabs = [["dia", "Día"], ["semana", "Semana"], ["mes", "Mes"]];
     let body = "";
     if (tab === "dia") {
-      const wd = weekdayMon0(d);
-      const classes = clasesDe(cursor, wd);
-      const exams = st().exams.filter((e) => e.date === cursor);
-      const tasks = st().tasks.filter((t) => t.due === cursor);
-      const gaps = freeSlots(wd, cursor);
+      const bloques = bloquesDe(cursor);
+      const gaps = info.kind === "lectivo" ? freeSlots(weekdayMon0(d), cursor) : [];
+      const mins = horasDeEstudio(cursor);
       body = `<p class="hint">${esc(todayStudyHint())}</p>
-        <h3>Clases</h3>${classes.length ? classes.map((e) => `<div class="row"><span class="dot" style="background:${subjectColor(e.subjectId)}"></span><div>${esc(e.title || subjectName(e.subjectId))} ${e.moved ? `<span class="badge">movida</span>` : ""} ${e.extra ? `<span class="badge">extra</span>` : ""}</div><div class="meta">${e.start}–${e.end}${e.room ? " · " + esc(e.room) : ""}</div></div>`).join("") : "<div class='empty'>Sin clases.</div>"}
-        <h3>Exámenes / entregas</h3>${exams.map((e) => `<div class="row"><b>${esc(e.title)}</b><div class="meta">${e.time || ""}</div></div>`).join("") || "<p class='muted'>Ninguno.</p>"}
-        <h3>Tareas</h3>${tasks.map((t) => `<div class="task"><div class="tt">${esc(t.title)}</div></div>`).join("") || "<p class='muted'>Ninguna.</p>"}
-        <h3>Huecos para estudiar</h3>${gaps.map((g) => `<div class="row"><div>${g.start}–${g.end}</div><button class="btn btn-sm" data-action="slot-study" data-day="${wd}" data-start="${g.start}" data-end="${g.end}">Bloquear estudio</button></div>`).join("") || "<p class='muted'>Día lleno.</p>"}`;
+        ${info.kind !== "lectivo" ? `<p class="idle-note">${esc(info.label)} · no hay clase</p>` : ""}
+        <h3>Bloques de estudio</h3>
+        ${bloques.length ? bloques.map((e) => `<div class="row">
+            <span class="dot" style="background:${subjectColor(e.subjectId)}"></span>
+            <div style="flex:1"><b>${esc(subjectName(e.subjectId))}</b>${e.room ? `<small class="hint">${esc(e.room)}</small>` : ""}</div>
+            <div class="meta">${e.start}–${e.end}</div>
+          </div>`).join("") : `<div class="empty">Ninguno. Reserva un hueco libre y aparece aquí.</div>`}
+        <h3>Huecos libres</h3>
+        ${gaps.length ? gaps.map((g) => `<div class="row"><div>${g.start}–${g.end}</div>
+            <button class="btn btn-sm" data-action="slot-study" data-day="${weekdayMon0(d)}" data-start="${g.start}" data-end="${g.end}">Reservar estudio</button></div>`).join("")
+          : `<p class="muted">${info.kind === "lectivo" ? "Día lleno o sin huecos claros." : "Hoy no hay clases: todo el día es tuyo."}</p>`}
+        <h3>Estudiado hoy</h3>
+        <p><b>${mins}</b> min ${mins ? "· ¡bien!" : "· todavía nada"}</p>`;
     } else if (tab === "semana") {
       const mon = new Date(d); mon.setDate(d.getDate() - weekdayMon0(d));
       const days = Array.from({ length: 7 }, (_, i) => {
@@ -99,15 +108,16 @@
         return localISO(x);
       });
       body = `<div class="week-agenda">${days.map((iso, i) => {
-        const exams = st().exams.filter((e) => e.date === iso);
-        const n = exams.length;
-        return `<div class="wa-day ${iso === todayISO() ? "today" : ""} ${n >= 2 ? "hot" : ""}">
+        const inf = dayInfo(iso);
+        const bloques = bloquesDe(iso);
+        return `<div class="wa-day ${iso === hoyISO() ? "today" : ""} ${inf.kind === "lectivo" ? "" : "off"}">
           <b>${DAYS()[i] || DAYS_SHORT()[i]} ${iso.slice(8)}</b>
-          ${clasesDe(iso, i).map((e) => `<div class="wa-ev" style="border-left:3px solid ${subjectColor(e.subjectId)}">${e.start} ${esc(subjectName(e.subjectId))}${e.moved ? " ↔" : ""}${e.extra ? " +" : ""}</div>`).join("")}
-          ${exams.map((e) => `<div class="wa-ex">EX ${esc(e.title)}</div>`).join("")}
+          ${inf.kind === "lectivo" ? bloques.map((e) => `<div class="wa-ev">${e.start} ${esc(subjectName(e.subjectId))}</div>`).join("") || `<div class="wa-ev" style="opacity:.6">Libre</div>`
+            : `<div class="wa-ev" style="opacity:.7">${esc(inf.short)}</div>`}
+          <small>${horasDeEstudio(iso) ? horasDeEstudio(iso) + " min" : ""}</small>
         </div>`;
       }).join("")}</div>
-      <p class="hint">Las semanas en rojo tienen 2+ exámenes (carga alta).</p>`;
+      <p class="hint">Aquí ves lo que te has apuntado para estudiar y los días sin clase. El horario de clases está en su pestaña.</p>`;
     } else {
       const y = d.getFullYear(), m = d.getMonth();
       const first = new Date(y, m, 1);
@@ -119,8 +129,13 @@
       body = `<div class="cal">${DAYS_SHORT().map((x) => `<div class="dow">${x}</div>`).join("")}
         ${cells.map((iso) => {
           if (!iso) return `<div class="cal-day out"></div>`;
-          const evs = st().exams.filter((e) => e.date === iso);
-          return `<div class="cal-day ${iso === todayISO() ? "today" : ""}" data-action="agenda-day" data-date="${iso}"><div class="n">${Number(iso.slice(8))}</div>${evs.map((e) => `<div class="cal-ev" style="background:${subjectColor(e.subjectId)}">${esc(e.title)}</div>`).join("")}</div>`;
+          const inf = dayInfo(iso);
+          const bloques = bloquesDe(iso);
+          return `<div class="cal-day ${iso === hoyISO() ? "today" : ""} ${inf.kind === "lectivo" ? "" : "out"}" data-action="agenda-day" data-date="${iso}" title="${esc(inf.label || "Clase")}">
+            <div class="n">${Number(iso.slice(8))}</div>
+            ${bloques.length ? `<div class="cal-ev" style="display:block">${esc(subjectName(bloques[0].subjectId)).slice(0, 12)}</div>` : ""}
+            ${inf.kind === "festivo" || inf.kind === "vacaciones" ? `<small style="font-size:9px">${esc(inf.short)}</small>` : ""}
+          </div>`;
         }).join("")}</div>`;
     }
     return `<div class="tabs">
@@ -128,51 +143,32 @@
       <button class="btn btn-sm" data-action="agenda-prev">‹</button>
       <button class="btn btn-sm" data-action="agenda-next">›</button>
     </div>
-    <p><strong>${fmtDateLong(cursor)}</strong></p>
+    <p><strong>${fmtDateLong(cursor)}</strong>${info.kind === "lectivo" ? "" : " · " + esc(info.label)}</p>
     ${body}`;
   }
 
-  function kanban() {
-    const cols = [
-      { id: "todo", name: "Pendiente" },
-      { id: "doing", name: "En curso" },
-      { id: "done", name: "Entregado" },
-    ];
-    const tasks = st().tasks.map((t) => {
-      const left = t.due ? daysUntil(t.due) : null;          // días que quedan (no la fecha)
-      const auto = t.done ? "done" : left != null && left < 0 ? "todo" : left != null && left <= 2 ? "doing" : "todo";
-      return { ...t, left, col: t.done ? "done" : (t.kanban || auto) };
-    });
-    const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d); })();
-    const lateY = st().tasks.filter((t) => !t.done && t.due && t.due <= yesterday);
-    return `${lateY.length ? `<div class="card urg-0" style="margin-bottom:12px"><strong>Pendientes de ayer</strong>${lateY.map((t) => `<div class="task"><div class="tt">${esc(t.title)}</div><span>${fmtDate(t.due)}</span></div>`).join("")}</div>` : ""}
-      <div class="kanban">
-        ${cols.map((c) => `<div class="kan-col"><h3>${c.name}</h3>
-          ${tasks.filter((t) => t.col === c.id).sort((a, b) => (a.left == null ? 99 : a.left) - (b.left == null ? 99 : b.left)).map((t) => `<div class="kan-card">
-            <b>${esc(t.title)}</b>
-            <small>${esc(subjectName(t.subjectId))} · ${t.due ? fmtDate(t.due) : "sin fecha"}${t.left != null && t.left < 0 ? " · atrasada" : t.left === 0 ? " · hoy" : ""}</small>
-            <div class="kan-move">
-              ${cols.map((x) => `<button class="btn btn-sm ${x.id === t.col ? "btn-primary" : ""}" data-action="kan-move" data-id="${t.id}" data-col="${x.id}">${x.name}</button>`).join("")}
-            </div>
-            <input type="date" value="${t.due || ""}" data-action="kan-date" data-id="${t.id}" aria-label="Fecha de entrega de ${esc(t.title)}" title="Fecha de entrega" />
-          </div>`).join("") || `<div class="empty">Vacío</div>`}
-        </div>`).join("")}
-      </div>`;
-  }
 
   function localBrain(q) {
     q = (q || "").trim();
     const low = q.toLowerCase();
-    if (!q) return "Pregunta por tu semana, un examen o un concepto de tus notas.";
-    if (/qu[eé] tengo|esta semana|agenda/.test(low)) {
+    if (!q) return "Pregunta por tu horario, por los festivos o por un concepto de tus apuntes.";
+    if (/qu[eé] tengo|esta semana|horario|clase/.test(low)) {
       const wr = weekRange();
-      const ex = st().exams.filter((e) => e.date >= wr.from && e.date <= wr.to);
-      const tk = st().tasks.filter((t) => t.due >= wr.from && t.due <= wr.to && !t.done);
-      return `Esta semana (${fmtDate(wr.from)}–${fmtDate(wr.to)}):\n- Exámenes: ${ex.map((e) => e.title + " (" + e.date + ")").join("; ") || "ninguno"}\n- Tareas: ${tk.map((t) => t.title).join("; ") || "ninguna"}\n- Consejo: ${todayStudyHint()}`;
+      const hoy = hoyISO();
+      const inf = dayInfo(hoy);
+      const list = inf.kind === "lectivo" ? Aula.eventsOnDate(hoy) : [];
+      const manana = (() => { const x = new Date(hoy + "T12:00:00"); x.setDate(x.getDate() + 1); return localISO(x); })();
+      const infM = dayInfo(manana);
+      const listM = infM.kind === "lectivo" ? Aula.eventsOnDate(manana) : [];
+      return `Hoy (${fmtDate(hoy)}): ${inf.kind === "lectivo" ? list.map((e) => e.start + " " + subjectName(e.subjectId)).join(", ") || "sin clases" : inf.label}
+Mañana (${fmtDate(manana)}): ${infM.kind === "lectivo" ? listM.map((e) => e.start + " " + subjectName(e.subjectId)).join(", ") || "sin clases" : infM.label}
+Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     }
-    if (/pr[oó]ximo examen|cuando es|cu[aá]ndo/.test(low)) {
-      const n = nextExam();
-      return n ? `Próximo: ${n.title} el ${fmtDateLong(n.date)} (${daysUntil(n.date)} días).` : "No hay exámenes pendientes.";
+    if (/festivo|vacacion|no hay clase|sin clase/.test(low)) {
+      const prox = F("diasSinClase")(4);
+      return prox.length
+        ? "Lo próximo sin clase:\n" + prox.map((x) => `- ${x.info.label}: ${fmtDateLong(x.iso)}`).join("\n")
+        : "No quedan festivos ni vacaciones por delante.";
     }
     if (/qu[eé] estudiar|hoy/.test(low)) return todayStudyHint();
     const words = low.split(/\s+/).filter((w) => w.length > 3);
@@ -254,31 +250,6 @@
     </div>`;
   }
 
-  function simulator() {
-    const max = Number(st().settings.gradeMax) || 10;
-    const rows = st().subjects.map((s) => {
-      const exams = st().exams.filter((e) => e.subjectId === s.id);
-      const known = exams.filter((e) => e.grade !== "" && !Number.isNaN(Number(e.grade)));
-      const rest = exams.filter((e) => e.grade === "");
-      const wKnown = known.reduce((a, e) => a + (Number(e.weight) || 0), 0);
-      const pts = known.reduce((a, e) => a + Number(e.grade) * (Number(e.weight) || 0), 0);
-      const wLeft = rest.reduce((a, e) => a + (Number(e.weight) || 0), 0) || Math.max(0, 100 - wKnown);
-      const need = (target) => {
-        if (wLeft <= 0) return null;
-        return (target * (wKnown + wLeft) - pts) / wLeft;
-      };
-      const n5 = need(5), n9 = need(9);
-      const warn = n5 != null && n5 > max * 0.85;
-      return { s, n5, n9, warn, known, rest, wKnown };
-    });
-    return `<div class="card"><p class="hint">«¿Qué necesito en lo que falta para aprobar o sacar un 9?». Usa el peso de cada examen.</p></div>
-      ${rows.map((r) => `<div class="card ${r.warn ? "urg-0" : ""}">
-        <h3>${esc(r.s.name)}</h3>
-        <p>Peso ya evaluado: ${r.wKnown}%. ${r.warn ? "<strong>Va justa: el final pide mucho.</strong>" : ""}</p>
-        <p>Para aprobar (5): <b>${r.n5 == null ? "—" : r.n5.toFixed(2)}</b> · para un 9: <b>${r.n9 == null ? "—" : r.n9.toFixed(2)}</b></p>
-      </div>`).join("")}`;
-  }
-
   function habits() {
     const list = st().habits || [];
     const today = todayISO();
@@ -310,8 +281,8 @@
   function examode() {
     const notes = st().notes.slice(0, 8);
     return `<div class="card">
-      <h3>Modo examen</h3>
-      <p>Solo lectura, temporizador y sin captura. Ideal en el aula.</p>
+      <h3>Modo concentración</h3>
+      <p>Solo lectura, temporizador y sin captura. Ideal para el aula o para estudiar sin tocar nada más.</p>
       <div class="hero-actions">
         <button class="btn btn-primary" data-action="examode-on">Activar 90 min</button>
         <button class="btn" data-action="examode-off">Desactivar</button>
@@ -321,12 +292,13 @@
   }
 
   function quickreview() {
-    const nx = nextExam();
-    const sid = nx?.subjectId || (st().subjects[0] || {}).id;
+    const mins = (s) => st().sessions.filter((x) => x.subjectId === s.id).reduce((a, b) => a + (b.minutes || 0), 0);
+    const flojo = [...st().subjects].sort((a, b) => mins(a) - mins(b))[0];
+    const sid = flojo ? flojo.id : "";
     const notes = st().notes.filter((n) => n.subjectId === sid).slice(0, 3);
     const cards = st().cards.filter((c) => c.subjectId === sid).slice(0, 6);
     return `<div class="card">
-      <h3>Repaso rápido ${nx ? "· " + esc(nx.title) : ""}</h3>
+      <h3>Repaso rápido ${flojo ? "· " + esc(flojo.name) : ""}</h3>
       <p class="hint">${esc(todayStudyHint())}</p>
       <button class="btn btn-primary" data-action="go" data-to="cards">Fichas</button>
       <button class="btn" data-action="go" data-to="chatbot">Preguntar al asistente</button>
@@ -381,16 +353,12 @@
       st()._agendaDay = localISO(cur); render();
     }
     if (action === "slot-study") {
-      const nx = nextExam();
-      st().events.push({ id: uid(), subjectId: nx?.subjectId || (st().subjects[0] || {}).id, day: Number(btn.dataset.day), start: btn.dataset.start, end: btn.dataset.end, room: "Estudio", type: "estudio" });
-      grantXP(5, "Bloque de estudio"); checkAchievements(); save(); render(); toast("Hueco reservado");
-    }
-    if (action === "kan-move") {
-      const t = st().tasks.find((x) => x.id === id);
-      if (t) { t.kanban = btn.dataset.col; t.done = btn.dataset.col === "done"; if (t.done) grantXP(15, "Entrega"); checkAchievements(); save(); render(); }
-    }
-    if (action === "kan-date") {
-      /* change handler below */
+      const mins = (st().subjects || []).length ? 45 : 45;
+      const inicio = btn.dataset.start || "16:00";
+      const finM = minutesOf(inicio) + mins;
+      st().events.push({ id: uid(), subjectId: (st().subjects[0] || {}).id, day: Number(btn.dataset.day) || 0,
+        start: inicio, end: pad(Math.floor(finM / 60) % 24) + ":" + pad(finM % 60), room: "Estudio", type: "estudio" });
+      grantXP(5, "Bloque de estudio"); checkAchievements(); save(); render(); toast("Hueco reservado (" + mins + " min)");
     }
     if (action === "chat-send") {
       const q = ($("#chat-q") || {}).value || "";
@@ -462,13 +430,13 @@
       st().progress.flags = Object.assign({}, st().progress.flags, { examLockUntil: hasta });
       document.body.classList.add("focus-mode", "exam-lock");
       save();
-      toast("Modo examen 90 min (sobrevive al recargar)");
+      toast("Concentración: 90 min sin distracciones");
     }
     if (action === "examode-off") {
       st().progress.flags = Object.assign({}, st().progress.flags, { examLockUntil: 0 });
       document.body.classList.remove("exam-lock");
       save(); render();
-      toast("Modo examen desactivado");
+      toast("Modo concentración desactivado");
     }
     if (action === "sheet-print") window.print();
     if (action === "ollama-save" || action === "ollama-test" || action === "ollama-local") {
@@ -507,7 +475,7 @@
       const dump = JSON.stringify(st());
       if (dump.length > 900_000) { toast("Los datos ocupan demasiado para una instantánea"); return; }
       const id = uid();
-      snaps.unshift({ id, t: Date.now(), n: st().notes.length + st().exams.length + st().tasks.length, data: dump });
+      snaps.unshift({ id, t: Date.now(), n: st().notes.length, data: dump });
       // Antes se guardaban 5 copias completas: con fotos eso llenaba el almacén.
       if (snaps.length > 3) snaps.length = 3;
       try {
@@ -707,15 +675,11 @@
       };
       r.readAsText(e.target.files[0]);
     }
-    if (e.target.dataset.action === "kan-date") {
-      const t = st().tasks.find((x) => x.id === e.target.dataset.id);
-      if (t) { t.due = e.target.value; save(); toast("Fecha cambiada"); }
-    }
   });
 
   window.AulaStudio = {
-    agenda, kanban, chatbot, simulator, habits, glossary,
-    examode, quickreview, admin, click, todayStudyHint, busyWeeks,
+    agenda, chatbot, habits, glossary,
+    examode, quickreview, admin, click, todayStudyHint, hoyISO, dayInfo, esLectivo, bloquesDe,
     // Herramientas que también viven en la sección de utilidades (buscador global)
     toolCatalog() {
       const out = [];

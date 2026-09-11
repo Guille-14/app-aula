@@ -13,10 +13,10 @@ import org.json.JSONObject;
 public final class WidgetStore {
   public static final String PREFS = "aula.widget";
   public static final String[] ALL_IDS = {
-    "clase", "examen", "hoy", "horario", "examenes", "tareas",
+    "clase", "hoy", "horario", "festivos",
     "media", "racha", "estudio", "semana", "xp", "fichas",
-    "pendientes", "atrasadas", "asistencia", "curso", "bandeja",
-    "foco", "festivo", "hint", "mini_clase", "mini_examen", "mini_racha", "duo"
+    "asistencia", "curso", "bandeja",
+    "foco", "festivo", "hint", "mini_clase", "mini_racha", "duo"
   };
 
   private WidgetStore() {}
@@ -71,27 +71,22 @@ public final class WidgetStore {
     if (id == null) return "WidgetHoy";
     switch (id) {
       case "clase": return "WidgetClase";
-      case "examen": return "WidgetExamen";
       case "hoy": return "WidgetHoy";
       case "horario": return "WidgetHorario";
-      case "examenes": return "WidgetExamenes";
-      case "tareas": return "WidgetTareas";
       case "media": return "WidgetMedia";
       case "racha": return "WidgetRacha";
       case "estudio": return "WidgetEstudio";
       case "semana": return "WidgetSemana";
       case "xp": return "WidgetXp";
       case "fichas": return "WidgetFichas";
-      case "pendientes": return "WidgetPendientes";
-      case "atrasadas": return "WidgetAtrasadas";
       case "asistencia": return "WidgetAsistencia";
       case "curso": return "WidgetCurso";
       case "bandeja": return "WidgetBandeja";
       case "foco": return "WidgetFoco";
       case "festivo": return "WidgetFestivo";
       case "hint": return "WidgetHint";
+      case "festivos": return "WidgetFestivos";
       case "mini_clase": return "WidgetMiniClase";
-      case "mini_examen": return "WidgetMiniExamen";
       case "mini_racha": return "WidgetMiniRacha";
       case "duo": return "WidgetDuo";
       default: return "WidgetHoy";
@@ -110,14 +105,11 @@ public final class WidgetStore {
     if (id == null) id = "hoy";
     switch (id) {
       case "clase": return claseViews(ctx);
-      case "examen": return examenViews(ctx);
       case "hoy": return hoyViews(ctx);
       case "horario":
-      case "examenes":
-      case "tareas":
+      case "festivos":
         return listViews(ctx, id);
       case "mini_clase":
-      case "mini_examen":
       case "mini_racha":
         return tinyViews(ctx, id);
       case "duo":
@@ -154,24 +146,14 @@ public final class WidgetStore {
     return v;
   }
 
-  public static RemoteViews examenViews(Context ctx) {
-    JSONObject d = get(ctx);
-    RemoteViews v = new RemoteViews(ctx.getPackageName(), R.layout.widget_examen);
-    v.setTextViewText(R.id.w_kicker, str(d, "exam.kicker", "PRÓXIMO EXAMEN"));
-    v.setTextViewText(R.id.w_title, str(d, "exam.title", "Abre Aula SMR"));
-    v.setTextViewText(R.id.w_sub, str(d, "exam.sub", "Los datos salen al abrir la app"));
-    v.setOnClickPendingIntent(R.id.widget_root, openApp(ctx, 12));
-    return v;
-  }
-
   public static RemoteViews hoyViews(Context ctx) {
     JSONObject d = get(ctx);
     RemoteViews v = new RemoteViews(ctx.getPackageName(), R.layout.widget_hoy);
     v.setTextViewText(R.id.w_clase, str(d, "clase.title", "Sin clase"));
     v.setTextViewText(R.id.w_clase_sub, str(d, "clase.sub", ""));
     v.setTextViewText(R.id.w_clase_k, str(d, "clase.kicker", "CLASE"));
-    v.setTextViewText(R.id.w_exam, str(d, "exam.title", "Sin examen"));
-    v.setTextViewText(R.id.w_exam_sub, str(d, "exam.sub", ""));
+    v.setTextViewText(R.id.w_exam, str(d, "festivo.title", "Sin clase"));
+    v.setTextViewText(R.id.w_exam_sub, str(d, "festivo.sub", ""));
     v.setOnClickPendingIntent(R.id.widget_root, openApp(ctx, 13));
     return v;
   }
@@ -210,8 +192,8 @@ public final class WidgetStore {
     RemoteViews v = new RemoteViews(ctx.getPackageName(), R.layout.widget_duo);
     v.setTextViewText(R.id.w_lk, box(d, "duo", "lk", "CLASE"));
     v.setTextViewText(R.id.w_lt, box(d, "duo", "lt", str(d, "clase.title", "—")));
-    v.setTextViewText(R.id.w_rk, box(d, "duo", "rk", "EXAMEN"));
-    v.setTextViewText(R.id.w_rt, box(d, "duo", "rt", str(d, "exam.title", "—")));
+    v.setTextViewText(R.id.w_rk, box(d, "duo", "rk", "SIN CLASE"));
+    v.setTextViewText(R.id.w_rt, box(d, "duo", "rt", str(d, "festivo.title", "—")));
     v.setOnClickPendingIntent(R.id.widget_root, openApp(ctx, 14));
     return v;
   }

@@ -19,7 +19,7 @@ El APK lo compila y lo firma GitHub Actions en cada cambio (`.github/workflows/a
 las versiones nuevas se instalan **encima** de la anterior sin perder nada.
 
 - Id de paquete: `es.aula.smr.hub`. Si Android dice **conflicto de paquete**, desinstala antes cualquier Aula SMR o PWA antigua (por ejemplo `Aula-SMR-v48.apk`).
-- **Widgets:** mantén pulsado el escritorio → *Widgets* → **Aula SMR** (hay 24: clase, examen, hoy, nota media, racha…).
+- **Widgets:** mantén pulsado el escritorio → *Widgets* → **Aula SMR** (hay 19: clase, hoy, horario, días sin clase, nota media, racha, fichas…)
 - **Compilar el APK desde este repositorio:** receta completa en [`apk-overlay/README.md`](apk-overlay/README.md) (Capacitor + `apk-overlay/apply.py` + Gradle, y cómo firmarlo y publicarlo).
 - Sin APK también funciona: instálala como PWA desde Chrome (ver abajo).
 
@@ -44,6 +44,17 @@ En el móvil, misma Wi‑Fi: `http://IP-DEL-PC:8080`.
 - **Borrar todo** pide confirmación dentro de la app y borra también las copias automáticas (hay un botón aparte para borrar solo las copias).
 - Copia automática: cada 6 h se guarda una copia del estado anterior (`aula.smr.v4.bak`) y se puede recuperar desde Ajustes.
 - Las fotos de las notas se reducen antes de guardarse y viven en **IndexedDB**, no dentro del estado.
+## Horario y calendario del centro
+
+- El **horario es el del centro**: L–V con los 7 tramos reales, el aula de cada clase y la
+  **plantilla que cambia sola** en septiembre y junio (entrada a las **16:00**) y el resto del
+  curso a las **15:15**. Se cambia al abrir la app, cada 15 s y al volver del segundo plano.
+- El horario solo enseña clase **los días que toca**: si es festivo, vacaciones, fin de semana o
+  el curso no ha empezado, ese día sale en blanco con el motivo.
+- La pestaña **Calendario** del Horario es el **calendario escolar 2026-27** (septiembre a junio):
+  días lectivos, festivos con su nombre, vacaciones y las fechas de inicio y fin de curso.
+- Puedes exportar todo a **.ics** (clases semanales + festivos y vacaciones) desde Ajustes.
+
 ## Asistente (Ollama local, opcional)
 
 El chat responde **sin red** con tus apuntes, tu horario y tu calendario. Si tienes Ollama

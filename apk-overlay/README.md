@@ -4,7 +4,7 @@ Esta carpeta **no es la app**: es el *overlay* que se aplica encima de un proyec
 Android de [Capacitor](https://capacitorjs.com/) para convertirlo en el Aula SMR de verdad.
 `apply.py` copia dentro del proyecto:
 
-- **24 widgets nativos** (`WidgetClase`, `WidgetHoy`, `WidgetMedia`, `WidgetMiniRacha`…):
+- **19 widgets nativos** (`WidgetClase`, `WidgetHoy`, `WidgetHorario`, `WidgetFestivos`, `WidgetMedia`, `WidgetMiniRacha`…):
   layouts (`layout/widget_*.xml`), descriptores (`xml/widget_*_info.xml`), los `receiver`
   del `AndroidManifest.xml` y sus textos en `strings.xml`.
 - **Iconos de lanzador intercambiables**: 23 `activity-alias` (uno por cada skin/avatar:
@@ -46,7 +46,7 @@ npx cap copy android          # copia www/ dentro del proyecto Android
 
 # 3. El overlay: widgets, iconos y alias
 python3 apk-overlay/apply.py android
-#    -> overlay ok 24 widgets
+#    -> overlay ok 19 widgets
 
 # 4. Compilar
 cd android && ./gradlew assembleDebug

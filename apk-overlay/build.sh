@@ -35,7 +35,7 @@ if [ -n "$SDK" ] && [ -d "$SDK" ]; then
   echo "sdk.dir=$SDK" > android/local.properties
 fi
 
-echo "-- 3/5  overlay: 24 widgets, iconos y alias"
+echo "-- 3/5  overlay: 19 widgets, iconos y alias"
 python3 apk-overlay/apply.py android
 
 echo "-- 4/5  versión y firma"
