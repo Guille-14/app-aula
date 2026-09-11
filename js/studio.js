@@ -387,13 +387,19 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     if (action === "agenda-tab") { st()._agendaTab = btn.dataset.tab; render(); }
     if (action === "agenda-day") { st()._agendaDay = btn.dataset.date; st()._agendaTab = "dia"; render(); }
     if (action === "agenda-prev" || action === "agenda-next") {
-      const cur = new Date((st()._agendaDay || todayISO()) + "T00:00:00");
-      cur.setDate(cur.getDate() + (action === "agenda-next" ? 1 : -1) * (st()._agendaTab === "mes" ? 30 : st()._agendaTab === "semana" ? 7 : 1));
+      const paso = action === "agenda-next" ? 1 : -1;
+      const tab = st()._agendaTab || "dia";
+      const cur = new Date((st()._agendaDay || todayISO()) + "T12:00:00");
+      // Un mes es un mes: antes se sumaban 30 días y el calendario se iba de fecha
+      if (tab === "mes") { cur.setDate(1); cur.setMonth(cur.getMonth() + paso); }
+      else cur.setDate(cur.getDate() + paso * (tab === "semana" ? 7 : 1));
       st()._agendaDay = localISO(cur); render();
     }
     if (action === "slot-study") {
-      const mins = (st().subjects || []).length ? 45 : 45;
+      // El bloque dura lo que dura el hueco (entre 10 y 180 minutos)
       const inicio = btn.dataset.start || "16:00";
+      const finHueco = minutesOf(btn.dataset.end || "") || (minutesOf(inicio) + 45);
+      const mins = Math.max(10, Math.min(180, finHueco - minutesOf(inicio)));
       const finM = minutesOf(inicio) + mins;
       st().events.push({ id: uid(), subjectId: (st().subjects[0] || {}).id, day: Number(btn.dataset.day) || 0,
         start: inicio, end: pad(Math.floor(finM / 60) % 24) + ":" + pad(finM % 60), room: "Estudio", type: "estudio" });

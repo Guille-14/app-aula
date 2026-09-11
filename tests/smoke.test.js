@@ -853,6 +853,38 @@ async function testAuditoria() {
     check(!/examen/i.test(env.doc.getElementById("view").textContent), "textos: la primera pantalla tampoco habla de exámenes");
   }
 
+  // --- Agenda: el bloque de estudio dura el hueco entero y los meses avanzan de mes ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.go("agenda");
+    const d = new Date();
+    const dia = new Date(d.getTime() - ((d.getDay() + 6) % 7) * 86400000).toISOString().slice(0, 10);
+    env.A.state._agendaDay = dia;
+    env.A.state._agendaTab = "dia";
+    env.A.render();
+    const reservar = env.doc.querySelector('[data-action="slot-study"]');
+    const hueco = reservar ? (env.A.minutesOf ? 0 : Number(reservar.dataset.end.slice(0, 2)) * 60 + Number(reservar.dataset.end.slice(3)) - Number(reservar.dataset.start.slice(0, 2)) * 60 - Number(reservar.dataset.start.slice(3))) : 0;
+    if (reservar) {
+      const antes = env.A.state.events.length;
+      act(env, "slot-study", { start: reservar.dataset.start, end: reservar.dataset.end, day: reservar.dataset.day });
+      const nuevo = env.A.state.events[env.A.state.events.length - 1];
+      check(env.A.state.events.length === antes + 1 && nuevo.type === "estudio", "agenda: el hueco libre se reserva como bloque de estudio");
+      const mins = Number(nuevo.end.slice(0, 2)) * 60 + Number(nuevo.end.slice(3)) - Number(nuevo.start.slice(0, 2)) * 60 - Number(nuevo.start.slice(3));
+      check(mins === Math.max(10, Math.min(180, hueco)), "agenda: el bloque dura el hueco entero (" + mins + " de " + hueco + " min)");
+    } else {
+      check(true, "agenda: ese día no tenía huecos libres (no se prueba la reserva)");
+    }
+    const mesAntes = env.A.state._agendaDay;
+    env.A.state._agendaTab = "mes";
+    env.A.render();
+    act(env, "agenda-next");
+    const trasMes = env.A.state._agendaDay;
+    check(Number(trasMes.slice(5, 7)) === (Number(mesAntes.slice(5, 7)) % 12) + 1, "agenda: el mes siguiente es el mes que toca (" + mesAntes + " → " + trasMes + ")");
+    act(env, "agenda-prev");
+    check(Number(env.A.state._agendaDay.slice(5, 7)) === Number(mesAntes.slice(5, 7)), "agenda: el mes anterior vuelve al mes de partida");
+  }
+
   // --- Sin restos de la navegación antigua ---
   {
     const env = boot();
