@@ -40,16 +40,30 @@ for linea in firma.splitlines():
         if re.fullmatch(r"[0-9a-fA-F]{64}", cola):
             digest = cola.lower()
             break
-esquemas = ",".join(sorted(set(re.findall(r"Verified using (v\d) scheme[^:]*: true", firma))))
+lineas_esquema = [l.strip() for l in firma.splitlines() if "Verified using" in l]
+esquemas = []
+for l in lineas_esquema:
+    if re.search(r":\s*true\s*$", l, re.I):
+        m = re.search(r"\bv\d\b", l, re.I)
+        esquemas.append(m.group(0).lower() if m else "?")
+esquemas = ",".join(sorted(set(esquemas)))
 print("FIRMA")
 ok(bool(firma), "apksigner dio su veredicto")
 ok(bool(dn), "certificado con nombre", dn)
 ok(bool(digest), "SHA-256 del certificado", digest)
-ok(bool(esquemas), "esquemas de firma verificados", esquemas or "ninguno")
+ok(bool(esquemas), "esquemas de firma verificados",
+   esquemas or ("apksigner dijo: " + " | ".join(lineas_esquema[:4]) if lineas_esquema else "apksigner no dijo nada de esquemas"))
 
 # ---------------------------------------------------------------- contenido
 print("CONTENIDO")
-z = zipfile.ZipFile(apk)
+if not Path(apk).exists():
+    print("FALLO  no existe el APK:", apk)
+    sys.exit(1)
+try:
+    z = zipfile.ZipFile(apk)
+except zipfile.BadZipFile:
+    print("FALLO  el fichero no es un APK (zip) válido:", apk)
+    sys.exit(1)
 nombres = z.namelist()
 
 man = z.read("AndroidManifest.xml")
@@ -73,7 +87,7 @@ ok(paginas, "index.html empaquetado")
 ok(bool(app), "js/app.js empaquetado")
 ok(media, "js/media.js empaquetado (fotos en IndexedDB)")
 ok(bool(ver), "versión de la web dentro del APK", ver or "no encontrada")
-ok(widgets_xml >= 24 or widgets_man >= 24, "los 24 widgets van dentro", "res/xml: %d · manifest: %d" % (len(widgets_xml), widgets_man))
+ok(len(widgets_xml) >= 24 or widgets_man >= 24, "los 24 widgets van dentro", "res/xml: %d · manifest: %d" % (len(widgets_xml), widgets_man))
 ok(paquete, "paquete es.aula.smr.hub")
 
 # ---------------------------------------------------------------- datos

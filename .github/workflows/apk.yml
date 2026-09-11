@@ -82,7 +82,7 @@ jobs:
           "$BT/apksigner" verify --print-certs "$APK" > firma.txt || true
           if python3 apk-overlay/comprobar-apk.py "$APK" firma.txt 2>&1 | tee comprobacion.txt; then
             while IFS= read -r linea; do
-              case "$linea" in *=*) echo "${linea%%=*}${linea#${linea%%=*}}" >> "$GITHUB_OUTPUT";; esac
+              echo "$linea" >> "$GITHUB_OUTPUT"
             done < .datos-apk
           else
             grep -E "FALLO|Traceback|Error" comprobacion.txt | head -10 | while IFS= read -r l; do
