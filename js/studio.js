@@ -717,6 +717,20 @@ Local: ${st().subjects.length} módulos, ${st().exams.length} exámenes, ${st().
       };
       inp.click();
     }
+    if (action === "rollover-week") {
+      const s = st();
+      s.progress = s.progress || {};
+      openModal("Empezar semana nueva", `<p>Se cierra la semana actual, el contador vuelve a cero y recibes un comodín si te queda alguno.</p>
+        <p class="hint">Tus sesiones, exámenes, fichas y notas no se tocan.</p>`, {
+        confirm: "Empezar semana",
+        onSubmit() {
+          s.progress.weekStart = todayISO();
+          s.progress.lastWeek = s.progress.lastWeek || "";
+          if ((s.progress.freeze || 0) < 1) s.progress.freeze = 1;
+          closeModal(); save(); render(); toast("Semana nueva: a por ella");
+        },
+      });
+    }
     if (action === "note-lock") {
       const pin = st().settings.pin;
       if (!pin) { toast("Antes pon un PIN en Ajustes"); return; }

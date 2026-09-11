@@ -297,7 +297,6 @@
         (dueN ? dueN + " tareas hoy" : "Sin tareas hoy") + (nx ? " · próximo examen: " + nx.title : ""));
     }
   }
-  function maybeNotify() { tickNotify(); }
 
 
   function defaultState() {
@@ -1044,7 +1043,8 @@
     const dateOpts = { weekday: "long", day: "numeric", month: "long" };
     const dateStr = new Date().toLocaleDateString("es-ES", dateOpts).replace(/^\w/, (c) => c.toUpperCase());
     if (view === "dashboard") {
-      $("#view-title").textContent = state.settings.name ? ("Hola, " + state.settings.name) : "Inicio";
+      const hola = greeting();
+      $("#view-title").textContent = state.settings.name ? (hola + ", " + state.settings.name) : hola;
       $("#view-sub").textContent = dateStr;
     } else if (view === "subject") {
       $("#view-title").textContent = subjectById(subjectFocus)?.name || "Módulo";
@@ -1117,7 +1117,7 @@
 
   function greeting() {
     const h = new Date().getHours();
-    const skin = state.settings.skin || "redes";
+    const skin = state.settings.skin || "hub";
     if (skin === "ciberseg" || skin === "terminal" || skin === "soc") return "Sesión iniciada";
     if (skin === "redteam") return "Acceso autorizado";
     if (skin === "shonen") return "Hora de entrenar";
@@ -1158,7 +1158,13 @@
     }
     return { xp, level: lv, into: xp - spent, need, title: rankTitle(lv) };
   }
-  function levelOf(xp) { return levelInfo().level; }
+  // Nivel para un XP concreto; sin argumento, el nivel actual.
+  function levelOf(xp) {
+    if (xp == null || xp === "" || Number.isNaN(Number(xp))) return levelInfo().level;
+    let restante = Math.max(0, Number(xp)), lv = 1, need = 80, gastado = 0;
+    while (restante >= gastado + need && lv < 40) { gastado += need; lv += 1; need = Math.round(70 + lv * 32 + lv * lv * 3); }
+    return lv;
+  }
   const ACH_CATS = [
     { id: "estudio", name: "Estudio" },
     { id: "constancia", name: "Constancia" },
@@ -1230,9 +1236,6 @@
       { id: "lvl5", cat: "exploracion", ico: "Lv5", name: "Especialista", desc: "Alcanza el nivel 5.", xp: 40, on: levelOf() >= 5 },
       { id: "lvl10", cat: "exploracion", ico: "Lv10", name: "Referente", desc: "Nivel 10. Ya mandas en el ciclo.", xp: 90, on: levelOf() >= 10 },
     ];
-  }
-  function medals() {
-    return ACHIEVEMENTS().filter((a) => a.on).slice(0, 8).map((a) => ({ id: a.id, on: true, label: a.name }));
   }
   function grantXP(n, reason) {
     ensureProgress();
@@ -1319,21 +1322,6 @@
       d.setDate(d.getDate() + 1);
     }
     return out;
-  }
-  function todayTimeline() {
-    if (isNonTeaching(todayISO())) return [];
-    const dow = weekdayMon0(new Date());
-    const items = state.events.filter((e) => e.day === dow).map((e) => ({
-      t: e.start, end: e.end, title: subjectName(e.subjectId), sub: `${e.room || ""} · ${e.type || ""}`, color: subjectColor(e.subjectId), kind: "clase",
-    }));
-    const today = todayISO();
-    state.exams.filter((e) => e.date === today).forEach((e) => {
-      items.push({ t: e.time || "09:00", end: "", title: e.title, sub: "Examen", color: subjectColor(e.subjectId), kind: "exam" });
-    });
-    state.tasks.filter((t) => t.due === today && !t.done).forEach((t) => {
-      items.push({ t: "23:59", end: "", title: t.title, sub: "Tarea", color: subjectColor(t.subjectId), kind: "task" });
-    });
-    return items.sort((a, b) => a.t.localeCompare(b.t));
   }
   function skinCards(list) {
     return `<div class="skin-grid">${list.map((s) => `<button type="button" class="skin-card ${s.id === (state.settings.skin || "hub") ? "is-on" : ""}" data-action="set-skin" data-id="${s.id}">
@@ -1449,10 +1437,10 @@
       <button class="btn ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify" style="width:100%;margin-bottom:12px">
         ${st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos"}
       </button>
-      <label class="check"><input id="set-nclass" type="checkbox" ${st.notifyClass !== false ? "checked" : ""}/> Clase (10 min antes)</label>
-      <label class="check"><input id="set-nex" type="checkbox" ${st.notifyExams !== false ? "checked" : ""}/> Exámenes</label>
-      <label class="check"><input id="set-nta" type="checkbox" ${st.notifyTasks !== false ? "checked" : ""}/> Tareas</label>
-      <label class="check"><input id="set-nca" type="checkbox" ${st.notifyCards !== false ? "checked" : ""}/> Fichas de repaso</label>
+      ${chk("set-nclass", st.notifyClass !== false, "Clase (10 min antes)")}
+      ${chk("set-nex", st.notifyExams !== false, "Exámenes")}
+      ${chk("set-nta", st.notifyTasks !== false, "Tareas")}
+      ${chk("set-nca", st.notifyCards !== false, "Fichas de repaso")}
       ${foot(true, "Listo")}
     </div>`;
     return `<div class="onboard-full">
@@ -1997,6 +1985,10 @@
         <div class="stat"><div class="k">Asistencia</div><div class="v">${attStats().pct == null ? "—" : attStats().pct + "%"}</div></div>
       </div>
       <div class="grid grid-2" style="margin-top:16px">
+        <div class="card"><h3>Últimos 28 días</h3>
+          <div class="heat">${heatDays().map((d) => `<i class="h${d.v}" title="${d.iso}${d.v ? "" : " · sin estudio"}"></i>`).join("")}</div>
+          <p class="hint" style="margin:8px 0 0">Cada cuadro es un día, de más flojo a más estudiado.</p>
+        </div>
         <div class="card"><h3>Horas por módulo (semana)</h3><div class="chart-box"><canvas id="chart-bar"></canvas></div></div>
         <div class="card"><h3>Boletín</h3>
           ${state.subjects.map((s) => {
@@ -2165,8 +2157,9 @@
     `;
   }
 
-  function chk(id, on) {
-    return `<label class="check"><input id="${id}" type="checkbox" ${on ? "checked" : ""}/> `;
+  // (se usa en la vista de Ajustes para no repetir el HTML de cada casilla)
+  function chk(id, on, label) {
+    return `<label class="check"><input id="${id}" type="checkbox" ${on ? "checked" : ""}/> ${label}</label>`;
   }
   function avatarSrc(ic) {
     ic = ic || state.settings.avatarIcon || "letter";
@@ -2461,12 +2454,12 @@
             ${["dashboard", "schedule", "exams", "tasks", "timer", "review", "achievements"].map((v) =>
               `<option value="${v}" ${st.startView === v ? "selected" : ""}>${esc((titles[v] || [v])[0])}</option>`).join("")}
           </select></div>
-        <label class="check"><input id="set-compact" type="checkbox" ${st.compact ? "checked" : ""}/> Modo compacto</label>
-        <label class="check"><input id="set-motion" type="checkbox" ${st.reduceMotion ? "checked" : ""}/> Reducir animaciones</label>
-        <label class="check"><input id="set-autoth" type="checkbox" ${st.autoTheme ? "checked" : ""}/> Tema automático (claro de día)</label>
-        <label class="check"><input id="set-showxp" type="checkbox" ${st.showXp !== false ? "checked" : ""}/> Mostrar XP</label>
-        <label class="check"><input id="set-showmedals" type="checkbox" ${st.showMedals !== false ? "checked" : ""}/> Mostrar medallas</label>
-        <label class="check"><input id="set-showweek" type="checkbox" ${st.showWeekStrip !== false ? "checked" : ""}/> Tira de la semana en Inicio</label>
+        ${chk("set-compact", st.compact, "Modo compacto")}
+        ${chk("set-motion", st.reduceMotion, "Reducir animaciones")}
+        ${chk("set-autoth", st.autoTheme, "Tema automático (claro de día)")}
+        ${chk("set-showxp", st.showXp !== false, "Mostrar XP")}
+        ${chk("set-showmedals", st.showMedals !== false, "Mostrar medallas")}
+        ${chk("set-showweek", st.showWeekStrip !== false, "Tira de la semana en Inicio")}
         <button class="btn ${st.uiTheme === "dark" ? "" : "btn-primary"}" type="button" data-action="toggle-theme" style="width:100%;margin-top:10px">
           Cambiar a tema ${st.uiTheme === "dark" ? "claro" : "oscuro"}
         </button>
@@ -2505,12 +2498,12 @@
             <option value="media" ${!st.defaultPrio || st.defaultPrio === "media" ? "selected" : ""}>Media</option>
             <option value="baja" ${st.defaultPrio === "baja" ? "selected" : ""}>Baja</option>
           </select></div>
-        <label class="check"><input id="set-sound" type="checkbox" ${st.sound !== false ? "checked" : ""}/> Sonido al terminar el bloque</label>
-        <label class="check"><input id="set-vibrate" type="checkbox" ${st.vibrate !== false ? "checked" : ""}/> Vibración</label>
-        <label class="check"><input id="set-confetti" type="checkbox" ${st.confetti !== false ? "checked" : ""}/> Confeti en logros</label>
-        <label class="check"><input id="set-autonext" type="checkbox" ${st.autoNext ? "checked" : ""}/> Encadenar bloques automáticamente</label>
-        <label class="check"><input id="set-awake" type="checkbox" ${st.keepAwake !== false ? "checked" : ""}/> Mantener la pantalla encendida</label>
-        <label class="check"><input id="set-tbar" type="checkbox" ${st.showTimerBar !== false ? "checked" : ""}/> Barra del temporizador siempre visible</label>
+        ${chk("set-sound", st.sound !== false, "Sonido al terminar el bloque")}
+        ${chk("set-vibrate", st.vibrate !== false, "Vibración")}
+        ${chk("set-confetti", st.confetti !== false, "Confeti en logros")}
+        ${chk("set-autonext", st.autoNext, "Encadenar bloques automáticamente")}
+        ${chk("set-awake", st.keepAwake !== false, "Mantener la pantalla encendida")}
+        ${chk("set-tbar", st.showTimerBar !== false, "Barra del temporizador siempre visible")}
       </div>
 
       <p class="tools-kicker">Agenda y horario</p>
@@ -2519,9 +2512,9 @@
           <div class="field"><label for="set-starth">Jornada: inicio</label><input id="set-starth" type="number" min="0" max="23" value="${st.startHour || 8}"></div>
           <div class="field"><label for="set-endh">Jornada: fin</label><input id="set-endh" type="number" min="1" max="24" value="${st.endHour || 21}"></div>
         </div>
-        <label class="check"><input id="set-sat" type="checkbox" ${st.includeSaturday ? "checked" : ""}/> Incluir sábado en el horario</label>
-        <label class="check"><input id="set-att" type="checkbox" ${st.showAttendance !== false ? "checked" : ""}/> Pasar lista (presente / retraso / falta)</label>
-        <label class="check"><input id="set-hideok" type="checkbox" ${st.hideCompleted ? "checked" : ""}/> Ocultar tareas hechas</label>
+        ${chk("set-sat", st.includeSaturday, "Incluir sábado en el horario")}
+        ${chk("set-att", st.showAttendance !== false, "Pasar lista (presente / retraso / falta)")}
+        ${chk("set-hideok", st.hideCompleted, "Ocultar tareas hechas")}
         <button class="btn" type="button" data-action="restore-timetable" style="width:100%;margin-top:10px">Restaurar el horario oficial 2.º SMR</button>
         <p class="hint" style="margin:6px 0 0">Esto <b>sustituye</b> tus clases actuales por la plantilla del ciclo. Te pedirá confirmación.</p>
       </div>
@@ -2532,17 +2525,21 @@
         <button class="btn ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify" style="width:100%">
           ${st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos"}
         </button>
-        <label class="check"><input id="set-nclass" type="checkbox" ${st.notifyClass !== false ? "checked" : ""}/> Clase (10 min antes)</label>
-        <label class="check"><input id="set-nex" type="checkbox" ${st.notifyExams !== false ? "checked" : ""}/> Exámenes</label>
-        <label class="check"><input id="set-nta" type="checkbox" ${st.notifyTasks !== false ? "checked" : ""}/> Tareas</label>
-        <label class="check"><input id="set-nca" type="checkbox" ${st.notifyCards !== false ? "checked" : ""}/> Fichas de repaso</label>
-        <label class="check"><input id="set-night" type="checkbox" ${st.nightRemind !== false ? "checked" : ""}/> Aviso nocturno para no romper la racha</label>
-        <label class="check"><input id="set-morn" type="checkbox" ${st.morningSummary !== false ? "checked" : ""}/> Resumen por la mañana</label>
+        ${chk("set-nclass", st.notifyClass !== false, "Clase (10 min antes)")}
+        ${chk("set-nex", st.notifyExams !== false, "Exámenes")}
+        ${chk("set-nta", st.notifyTasks !== false, "Tareas")}
+        ${chk("set-nca", st.notifyCards !== false, "Fichas de repaso")}
+        ${chk("set-night", st.nightRemind !== false, "Aviso nocturno para no romper la racha")}
+        ${chk("set-morn", st.morningSummary !== false, "Resumen por la mañana")}
         <div class="form-row" style="margin-top:10px">
           <div class="field"><label for="set-remindh">Hora del resumen</label><input id="set-remindh" type="number" min="5" max="12" value="${st.remindHour || 8}"></div>
           <div class="field"><label for="set-lead">Días de antelación (examen)</label><input id="set-lead" type="number" min="0" max="30" value="${st.examLeadDays || 1}"></div>
         </div>
         <div class="field" style="margin-top:12px">
+          <label for="set-inact">Avisar si paso días sin abrirla</label>
+          <input id="set-inact" type="number" min="1" max="30" value="${st.inactivityDays || 5}" />
+        </div>
+        <div class="field">
           <label for="set-pin">PIN de notas (opcional)</label>
           <input id="set-pin" type="password" inputmode="numeric" autocomplete="off" value="${esc(st.pin || "")}" placeholder="Solo en este móvil">
         </div>
@@ -2595,8 +2592,8 @@
 
       <p class="tools-kicker">Avanzado</p>
       <div class="card">
-        <label class="check"><input id="set-confirm" type="checkbox" ${st.confirmDelete !== false ? "checked" : ""}/> Preguntar antes de borrar</label>
-        <label class="check"><input id="set-avatar" type="checkbox" ${st.avatarOn !== false ? "checked" : ""}/> Foto de perfil en la cabecera</label>
+        ${chk("set-confirm", st.confirmDelete !== false, "Preguntar antes de borrar")}
+        ${chk("set-avatar", st.avatarOn !== false, "Foto de perfil en la cabecera")}
         <button class="btn" data-action="undo" style="width:100%;margin-top:10px">Deshacer el último borrado</button>
       </div>
 
@@ -3068,6 +3065,7 @@
     acc("Deshacer el último cambio", undo);
     acc("Cambiar a tema claro/oscuro", () => { state.settings.uiTheme = state.settings.uiTheme === "light" ? "dark" : "light"; applyTheme(); save(); toast(state.settings.uiTheme === "light" ? "Tema claro" : "Tema oscuro"); });
     acc("Iniciar bloque de estudio", () => { go("timer"); toggleTimer(); });
+    acc("Siguiente tema visual", cycleSkin);
 
     if (q) {
       state.notes.forEach((n) => {
@@ -3129,7 +3127,7 @@
     });
   }
   function cycleSkin() {
-    const i = SKINS.findIndex((s) => s.id === (state.settings.skin || "redes"));
+    const i = SKINS.findIndex((s) => s.id === (state.settings.skin || "hub"));
     state.settings.skin = SKINS[(i + 1) % SKINS.length].id;
     applyTheme(); save();
     toast(SKINS.find((s) => s.id === state.settings.skin).name);
@@ -3251,7 +3249,6 @@
     toast(n ? `${n} tareas` : "Ya estaban");
     go("tasks");
   }
-  function val(id) { return $(id); }
   function num(id, fb) { const el = $(id); if (!el) return fb; const n = Number(el.value); return Number.isFinite(n) ? n : fb; }
   function on(id) { const el = $(id); return el ? !!el.checked : undefined; }
   function saveSettings() {
@@ -3972,6 +3969,7 @@
       </div>
       <div class="sec-head"><h3>Por asignatura</h3>
         <button class="hub-round" data-action="add-exam" title="Registrar nota" aria-label="Registrar nota">+</button></div>
+      ${radarSVG()}
       ${boletin}
       <div class="sim-box">
         <h3 style="margin:0 0 8px;font-size:14px;font-weight:800">Simulador del final</h3>

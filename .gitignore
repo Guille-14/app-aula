@@ -6,3 +6,6 @@ data/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Dependencias de las pruebas (jsdom)
+node_modules/
