@@ -11,15 +11,6 @@
     { id: "oral", label: "Oral" },
     { id: "entrega", label: "Entrega" },
   ];
-  const SKIN_CATS = [
-    { id: "all", name: "Todas" },
-    { id: "smr", name: "SMR / técnica" },
-    { id: "hacker", name: "Ciberseguridad" },
-    { id: "mundo", name: "Universos" },
-    { id: "juego", name: "Juegos" },
-    { id: "sencilla", name: "Sencillas" },
-    { id: "mood", name: "Ambiente" },
-  ];
   const SKINS = [
     { id: "hub", name: "SMR Hub", tag: "Trade Republic", cat: "sencilla", colors: ["#000000", "#ffffff", "#10B981"] },
     { id: "redes", name: "Rack SMR", tag: "Switch y VLAN", cat: "smr", colors: ["#0b1220", "#3b82f6", "#f59e0b"] },
@@ -60,7 +51,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v54";
+  const APP_VERSION = "v55";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -795,7 +786,6 @@
   let cardFilter = "all", cardFlip = false, cardQueue = [];
   let subjectFocus = null, cmdOpen = false, cmdIndex = 0, cmdItems = [];
   let deferredInstall = null, wakeLock = null;
-  let skinCat = "all";
   let schView = "week";
   let exDate = "";
   let schDay = weekdayMon0(new Date());
@@ -1446,13 +1436,6 @@
     }
     return out;
   }
-  function skinCards(list) {
-    return `<div class="skin-grid">${list.map((s) => `<button type="button" class="skin-card ${s.id === (state.settings.skin || "hub") ? "is-on" : ""}" data-action="set-skin" data-id="${s.id}">
-      <div class="skin-swatch">${s.colors.map((c) => `<i style="background:${c}"></i>`).join("")}</div>
-      <b>${esc(s.name)}</b><small>${esc(s.tag)}</small>
-    </button>`).join("")}</div>`;
-  }
-
   function collectOnboard() {
     const st = state.settings;
     if ($("#on-name")) st.name = $("#on-name").value.trim();
@@ -1684,10 +1667,6 @@
       ${state.settings.onboarded && typeof Notification !== "undefined" && Notification.permission !== "granted" ? `<div class="idle-note" style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left">
         <span>Activa avisos: clase, examen y tareas.</span>
         <button class="btn btn-sm btn-primary" data-action="enable-notify">Activar</button>
-      </div>` : ""}
-      ${state.settings.onboarded && !isStandalone() ? `<div class="idle-note" style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left">
-        <span>Ponla en la pantalla de inicio como app.</span>
-        <button class="btn btn-sm btn-primary" data-action="install-pwa">${deferredInstall ? "Instalar" : "Cómo"}</button>
       </div>` : ""}
       <div class="bento">
         <button class="bento-card" data-action="go" data-to="rendimiento">
@@ -2619,7 +2598,6 @@
   let mediaInfo = { n: 0, bytes: 0 };
   function renderSettings() {
     const st = state.settings;
-    const skins = skinCat === "all" ? SKINS : SKINS.filter((s) => s.cat === skinCat);
     const kb = (storageBytes() / 1024).toFixed(0);
     const fotosKb = (mediaInfo.bytes / 1024).toFixed(0);
     const lleno = storageBytes() / (4.5 * 1024 * 1024);   // los navegadores dan ~5 MB
@@ -2670,15 +2648,6 @@
         <button class="btn ${st.uiTheme === "dark" ? "" : "btn-primary"}" type="button" data-action="toggle-theme" style="width:100%;margin-top:10px">
           Cambiar a tema ${st.uiTheme === "dark" ? "claro" : "oscuro"}
         </button>
-      </div>
-
-      <p class="tools-kicker" id="set-skin-zone">Tema visual · ${SKINS.length} estilos</p>
-      <div class="card">
-        <div class="skin-cats">
-          ${SKIN_CATS.map((c) => `<button class="chip ${skinCat === c.id ? "is-on" : ""}" data-action="skin-cat" data-id="${c.id}">${esc(c.name)}</button>`).join("")}
-        </div>
-        ${skinCards(skins)}
-        <p class="hint" style="margin:10px 0 0">El tema se aplica al momento. Puedes combinarlo con claro/oscuro arriba.</p>
       </div>
 
       <p class="tools-kicker">Estudio</p>
@@ -2775,12 +2744,6 @@
         ).join("")}</div>
         <p class="hint">Si no sale el diálogo: mantén pulsado el escritorio → Widgets → Aula SMR.</p>`
         : `<p class="hint" style="margin:0">Los widgets van con el <b>APK de Android</b>. En Chrome no se pueden poner en el escritorio.</p>`}
-      </div>
-
-      <p class="tools-kicker">Instalar como app</p>
-      <div class="card">
-        ${isStandalone() ? `<p class="hint" style="margin:0">Ya está instalada. Ábrela desde el icono <b>Aula SMR</b> de la pantalla de inicio. Funciona sin internet.</p>` : `<p class="hint" style="margin-top:0">${esc(installHint().detail)}</p>
-        <button class="btn btn-primary" data-action="install-pwa" style="width:100%">${deferredInstall ? "Instalar Aula SMR" : "Cómo instalar"}</button>`}
       </div>
 
       <p class="tools-kicker">Datos (este dispositivo)</p>
@@ -3628,7 +3591,6 @@
     }
     const action = btn.dataset.action, id = btn.dataset.id;
     if (action === "close-modal") closeModal();
-    if (action === "skin-cat") { skinCat = id; render(); }
     if (action === "ex-cancel") {
       const fecha = $("#ex-date")?.value || todayISO();
       const ev = $("#ex-event")?.value;
@@ -3784,7 +3746,6 @@
     if (action === "agenda-filter") { agendaFilter = id; render(); }
     if (action === "open-mod") { subjectFocus = id; go("subject"); }
     if (action === "sim-run") { /* live via input */ }
-    if (action === "set-skin") { state.settings.skin = id; applyTheme(); checkAchievements(); save(); render(); }
     if (action === "add-exam") addExam();
     if (action === "edit-exam") addExam(state.exams.find((x) => x.id === id));
     if (action === "delete-exam") { const goDel = () => { pushUndo(); state.exams = state.exams.filter((x) => x.id !== id); render(); }; state.settings.confirmDelete === false ? goDel() : ask("Eliminar examen", "Se quita de la lista.", goDel); }
@@ -3975,7 +3936,6 @@
       const item = ex?.checklist?.find((c) => c.id === id);
       if (item) { item.done = !item.done; save(); render(); }
     }
-    if (action === "skin-cat") { skinCat = id; render(); }
     if (action === "restore-backup") restoreBackup();
     if (action === "dismiss-load-problem") { loadProblem = ""; render(); }
     if (action === "restore-timetable") {

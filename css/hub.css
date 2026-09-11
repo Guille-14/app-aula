@@ -605,15 +605,6 @@ input[type="text"], input[type="number"], input[type="date"], input[type="time"]
 .set-nav { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 12px; }
 .set-nav a { color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 800; padding: 8px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); white-space: nowrap; }
 .set-block { margin-bottom: 12px; }
-.skin-toolbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.skin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.skin-card { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--surface); text-align: left; padding: 0; width: 100%; }
-.skin-card.is-on { outline: 2px solid var(--ink); }
-.skin-swatch { height: 44px; display: flex; }
-.skin-swatch i { flex: 1; display: block; }
-.skin-card b { display: block; padding: 8px 10px 2px; font-size: 13px; }
-.skin-card small { display: block; padding: 0 10px 10px; color: var(--muted); font-size: 11px; }
-.skin-section { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 12px 0 8px; }
 
 .profile-card {
   display: flex; align-items: center; gap: 14px; padding: 18px;

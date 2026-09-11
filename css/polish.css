@@ -116,13 +116,6 @@ button:focus-visible, a:focus-visible, [data-action]:focus-visible { outline-off
 .lock-screen b { font-size: 15px; }
 .lock-screen .field { width: 100%; max-width: 240px; margin: 0 auto; }
 
-/* Elección de skin por categorías */
-.skin-cats { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; }
-.skin-cats .chip { white-space: nowrap; }
-.skin-grid { grid-template-columns: 1fr 1fr; }
-.skin-card { position: relative; }
-.skin-card.is-on::after { content: "✓"; position: absolute; right: 8px; top: 6px; font-weight: 900; color: var(--ink); }
-
 /* Regla de estudio en el horario */
 .class-row.is-study .class-stripe { background: repeating-linear-gradient(45deg, var(--c) 0 4px, transparent 4px 8px); }
 

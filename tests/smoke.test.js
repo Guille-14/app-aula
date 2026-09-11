@@ -313,16 +313,19 @@ async function testSettings() {
   ready(env.A);
   env.A.go("settings");
   const vista = env.doc.getElementById("view");
-  check(vista.querySelectorAll(".skin-card").length > 10, "Ajustes: por fin se ve el selector de temas (" + vista.querySelectorAll(".skin-card").length + " tarjetas)");
-  check(!!vista.querySelector('[data-action="skin-cat"]'), "Ajustes: filtros por categoría de tema");
+  check(!/Tema visual/.test(vista.textContent) && !vista.querySelector('[data-action="set-skin"]'), "Ajustes: la sección de temas visuales ya no está");
+  check(!/Instalar como app/.test(vista.textContent) && !vista.querySelector('[data-action="install-pwa"]'), "Ajustes: fuera la sección de instalar como app");
+  check(!!vista.querySelector('[data-action="toggle-theme"]'), "Ajustes: se mantiene el cambio claro/oscuro");
   const campos = [...vista.querySelectorAll("input,select,textarea")].filter((el) => el.type !== "hidden");
   const sinNombre = campos.filter((el) => !(el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("title") || (el.id && vista.querySelector(`label[for="${el.id}"]`)) || el.closest("label")));
   check(sinNombre.length === 0, "Ajustes: todos los campos tienen etiqueta (" + sinNombre.length + " sin ella)");
   const botones = [...vista.querySelectorAll("button")].filter((b) => !(b.textContent.trim() || b.getAttribute("aria-label") || b.getAttribute("title")));
   check(botones.length === 0, "Ajustes: todos los botones tienen nombre accesible (" + botones.length + " sin él)");
-  const card = vista.querySelector('[data-action="set-skin"]');
-  act(env, "set-skin", { id: card.dataset.id });
-  check(env.A.state.settings.skin === card.dataset.id, "elegir tema aplica el cambio");
+  // Inicio: ni rastro del aviso de «ponla en la pantalla de inicio»
+  env.A.go("dashboard");
+  const inicio = env.doc.getElementById("view");
+  check(!/pantalla de inicio/i.test(inicio.textContent), "Inicio: ya no propone instalar la app ni ponerla en el escritorio");
+  check(!inicio.querySelector('[data-action="install-pwa"]'), "Inicio: sin botones de instalación");
 }
 
 // ------------------------------------- 11. fichas: repetición espaciada SM-2

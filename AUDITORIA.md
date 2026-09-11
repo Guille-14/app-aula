@@ -48,7 +48,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 **Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas),
 `7d2d814` (herramientas y red), `ee04323` (accesibilidad y detalles), `5654dd6`
 (fotos en IndexedDB, repetición espaciada real y excepciones de horario), `718e69d`
-(receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados) y `v53` (fuera la vista Cuatrimestre) y `v54` (fuera Guía docente y Papelera).
+(receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados) y `v53` (fuera la vista Cuatrimestre) y `v54` (fuera Guía docente y Papelera) y `v55` (Ajustes más cortos).
 
 | Bug | Estado | Cómo se ha arreglado |
 |---|---|---|
@@ -125,6 +125,11 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
   contesta sigue el motor local. Se añadió `capacitor.config.json` para que el APK sea
   reproducible, y dentro del APK (`isNativeShell()`) no se registra Service Worker: los
   ficheros ya van dentro y una caché solo serviría versiones viejas.
+- **Ajustes más cortos (v55):** fuera la sección **«Tema visual»** (33 tarjetas y sus filtros)
+  y la de **«Instalar como app»**, y de Inicio el aviso *«Ponla en la pantalla de inicio»*.
+  Se mantiene el cambio claro/oscuro y el tema que ya tuvieras puesto. Con ellos se ha ido su
+  código (SKIN_CATS, skinCards, filtros por categoría, acciones `set-skin`/`skin-cat`) y el CSS
+  que solo usaban (`.skin-grid`, `.skin-card`, `.skin-swatch`, `.skin-cats`, `.skin-toolbar`).
 - **Vistas retiradas (v54):** fuera **«Guía docente»** (importaba PDF/TXT y sacaba fechas y
   pesos) y **«Papelera»**. Al quitar la papelera, borrar una nota es definitivo pero avisa
   («Se borra del todo…») y sigue estando el botón *Deshacer el último borrado* de Ajustes, con

@@ -32,7 +32,6 @@
 }
 .tl-body b { display: block; }
 .tl-body small { color: var(--muted); }
-.skin-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .skin-section { margin: 18px 0 8px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 800; }
 .heat-wrap { display: flex; gap: 3px; flex-wrap: wrap; }
 .heat-wrap i { width: 14px; height: 14px; border-radius: 3px; background: var(--bg-2); display: block; }
