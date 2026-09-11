@@ -863,6 +863,23 @@ borrarlas en vez de seguir resetando.
 
 ---
 
+## Ronda v62-b (bis) · El control del APK tumbó la entrega por la versión con puntos
+
+Al publicar la v62.1, el flujo del APK **falló en el paso de comprobación** (el APK se compiló
+bien, pero no se publicó la Release): el comprobador buscaba `APP_VERSION = "v<dígitos>"` y la
+versión era `"v62.1"`, con punto. Resultado: «FALLO versión de la web dentro del APK».
+
+**Arreglo.** El comprobador acepta ahora versiones con puntos (`v[\d.]+`) y, además, **contrasta
+la versión de la web con la del `package.json`** (de la que sale la etiqueta de la Release): si
+la web dice `v61` y el paquete es 62, avisa con el detalle en vez de dar el visto bueno. Se
+publican también `app_esperada` y `paquete` en `.datos-apk` para poder verlo en el resumen.
+
+**Y una prueba más** (`npm test`): la versión de `js/app.js` tiene que coincidir con la del
+`package.json`, y la caché del service worker tiene que llevar ese número. Es justo el fallo que
+acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compilar el APK.
+
+---
+
 ## Anexo B · Cómo reproducir los hallazgos críticos
 
 ```bash

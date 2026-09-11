@@ -919,6 +919,20 @@ async function testAuditoria() {
     check(/curso hasta el/.test(r.querySelector(".cal-title small").textContent), "calendario: el subtítulo cabe (" + r.querySelector(".cal-title small").textContent.trim() + ")");
   }
 
+  // --- v62: la versión de la web y la del paquete no se separan (rompía el APK) ---
+  {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
+    const app = fs.readFileSync(path.join(ROOT, "js", "app.js"), "utf8");
+    const m = app.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+    check(!!m, "versión: js/app.js declara APP_VERSION");
+    check(!!m && m[1].split(".")[0] === "v" + pkg.split(".")[0], "versión: APP_VERSION coincide con package.json (" + (m ? m[1] : "?") + " · paquete " + pkg + ")");
+    const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
+    const c = sw.match(/CACHE\s*=\s*"([^"]+)"/);
+    check(!!c && c[1].includes(pkg.split(".")[0]), "versión: la caché del service worker lleva el número de la versión (" + (c ? c[1] : "?") + ")");
+    const comp = fs.readFileSync(path.join(ROOT, "apk-overlay", "comprobar-apk.py"), "utf8");
+    check(comp.includes(String.raw`v[\d.]`), "versión: el comprobador del APK acepta versiones con puntos (v62.1)");
+  }
+
   // --- v62: los diálogos no heredan la caja centrada de la hoja antigua ---
   {
     const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");

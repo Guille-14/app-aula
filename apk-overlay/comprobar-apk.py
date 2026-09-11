@@ -91,8 +91,22 @@ try:
     app = z.read("assets/public/js/app.js").decode("utf-8", "ignore")
 except KeyError:
     app = ""
-m = re.search(r'APP_VERSION\s*=\s*"(v\d+)"', app)
+m = re.search(r'APP_VERSION\s*=\s*"(v[\d.]+)"', app)
 ver = m.group(1) if m else ""
+# La versión de la web tiene que ser la misma que la del paquete (de ahí sale la etiqueta
+# de la Release): v62 y v62.1 valen para 62.0.1, pero «v61» dentro de un APK 62 ya no.
+esperada = ""
+try:
+    import json
+    pkg_ver = json.loads(Path("package.json").read_text(encoding="utf-8"))["version"]
+    esperada = "v" + pkg_ver.split(".")[0]
+except Exception:
+    pkg_ver = ""
+if ver and esperada and ver.split(".")[0] != esperada:
+    fallos_ver = "la web dice %s y el paquete es %s" % (ver, pkg_ver)
+else:
+    fallos_ver = ""
+
 media = "assets/public/js/media.js" in nombres
 paginas = "assets/public/index.html" in nombres
 paquete = "es.aula.smr.hub" in man_txt
@@ -102,7 +116,7 @@ info("ficheros res/xml con nombre de widget: %d (en release se acortan: es norma
 ok(paginas, "index.html empaquetado")
 ok(bool(app), "js/app.js empaquetado")
 ok(media, "js/media.js empaquetado (fotos en IndexedDB)")
-ok(bool(ver), "versión de la web dentro del APK", ver or "no encontrada")
+ok(bool(ver) and not fallos_ver, "versión de la web dentro del APK", fallos_ver or (ver or "no encontrada"))
 ok(bool(esperados) and not faltan, "los %d widgets van dentro (clases en el dex)" % len(esperados),
    ("faltan: " + ", ".join(faltan)) if faltan else "todos")
 ok(paquete, "paquete es.aula.smr.hub")
@@ -116,7 +130,7 @@ print("  ·     %s MB · sha256 %s" % (mb, sha))
 with open(".datos-apk", "w", encoding="utf-8") as f:
     for k, v in {
         "sha": sha, "mb": mb, "firma": digest, "firma_dn": dn, "esquemas": esquemas or "n/d",
-        "app": ver, "widgets": len(esperados) - len(faltan),
+        "app": ver, "app_esperada": esperada, "paquete": pkg_ver, "widgets": len(esperados) - len(faltan),
         "media": "sí" if media else "NO",
     }.items():
         f.write("%s=%s\n" % (k, v))
