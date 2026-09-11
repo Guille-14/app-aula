@@ -1,0 +1,507 @@
+# Auditoría completa de Aula SMR
+
+**Fecha:** 11 de septiembre de 2026
+**Alcance:** todo el repositorio (`index.html`, `js/app.js`, `js/studio.js`, `js/tools.js`, `sw.js`, `server.py`, 7 hojas CSS, `manifest.webmanifest`, `apk-overlay/`, README).
+**Commit auditado:** `e820a3a` (rama `arena/01a0902e-app-aula`, creada desde `main`).
+**Tamaño analizado:** 9.225 líneas / 454 KB (189 KB de `app.js`, 148 KB de CSS).
+
+## Cómo se ha auditado (para que te fíes de los hallazgos)
+
+No es una lectura por encima. He hecho esto:
+
+1. **Lectura completa** de los 3 archivos JS, las 7 hojas CSS, el Service Worker, el servidor y el overlay Android.
+2. **Arranque real de la app** en un DOM headless (jsdom) con el HTML y los tres scripts: 28 vistas renderizadas, ~40 interacciones simuladas (formularios, modales, timer, filtros, importación…).
+3. **Barrido estático** cruzado: acciones `data-action` manejadas vs. botones realmente pintados, clases CSS usadas vs. definidas, skins del JS vs. CSS, ajustes leídos vs. campos existentes, funciones nunca llamadas.
+4. **Pruebas de estrés**: estado corrupto, estado con tipos inválidos, cuota de `localStorage` agotada, examen sin fecha, minutos negativos, cálculo de contraste WCAG de las 33 skins.
+5. **Servidor en marcha** (`python3 server.py --pin 1234`) y peticiones con `curl` para comprobar autenticación y CORS.
+
+Cada hallazgo marcado como **[verificado]** tiene una reproducción concreta.
+
+---
+
+## Resumen ejecutivo: lo que yo arreglaría mañana mismo
+
+| # | Problema | Gravedad |
+|---|---|---|
+| 1 | `save()` se traga los errores de cuota → la app parece guardar y **pierde todo** en silencio | 🔴 Crítico |
+| 2 | Un JSON corrupto en `localStorage` **destruye los datos** y los sustituye por los de ejemplo, sin avisar | 🔴 Crítico |
+| 3 | No hay validación al importar: un examen sin fecha **rompe la pantalla de Exámenes** y no hay forma de salir | 🔴 Crítico |
+| 4 | `server.py` sirve `data/state.json` **sin PIN** por HTTP estático (+ listado de directorios) | 🔴 Crítico (si usas sync) |
+| 5 | El Kanban muestra **"NaN de undefined"** en la fecha y el campo de fecha sale vacío | 🟠 Alto |
+| 6 | El selector de temas (**33 skins**) no existe en la UI: `skinCards()` nunca se llama | 🟠 Alto |
+| 7 | "Borrar todo" **no borra** las 5 copias de seguridad (`aula.snaps`): tus notas siguen ahí | 🟠 Alto |
+| 8 | El PIN de notas es decorativo: `n.locked` se escribe pero **nunca se lee** | 🟠 Alto |
+| 9 | El horario oficial hardcodeado **machaca el tuyo** cada vez que cambia `timetableId` | 🟠 Alto |
+| 10 | 31 ajustes existen en el código pero **no hay ningún control** para cambiarlos | 🟡 Medio |
+| 11 | Los avisos solo funcionan **con la app abierta** (no hay notificaciones programadas en Android) | 🟡 Medio |
+| 12 | 11 funcionalidades están implementadas pero **sin botón** (voz, modo escritura de fichas, importar CSV, exportar Anki/Markdown, saltar bloque del timer, rejilla del horario…) | 🟡 Medio |
+
+---
+
+## 1. Bugs confirmados (reproducidos)
+
+### 🔴 BUG-01 · `save()` silencia los errores de cuota — pérdida de datos silenciosa
+`js/app.js:500-503`
+
+```js
+function save() {
+  if (state.settings && state.settings.guest) return;
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}   // ← se traga TODO
+  pushWidgets();
+}
+```
+
+`localStorage` tiene ~5 MB. Con **dos fotos** en apuntes (cada una hasta 1,8 MB en base64) ya se puede llenar. Cuando se llena, `setItem` lanza `QuotaExceededError` y aquí se ignora: la app sigue funcionando como si hubiera guardado, el usuario trabaja horas y al cerrar la app **todo desaparece**.
+
+**[verificado]** Simulé `setItem` lanzando `QuotaExceededError`: `save()` no lanza, no avisa, no hace nada.
+
+**Arreglo:** capturar el error, mostrar un aviso persistente ("No se puede guardar: memoria llena"), sugerir exportar JSON y bloquear la adición de fotos nuevas. Además: mover adjuntos a IndexedDB y dejar en `localStorage` solo el texto.
+
+---
+
+### 🔴 BUG-02 · Un JSON corrupto destruye los datos y los sustituye por los de ejemplo
+`js/app.js:489-497`
+
+```js
+try {
+  const raw = localStorage.getItem(KEY);
+  ...
+} catch { return seedDemo(); }     // ← y después render() → save() sobreescribe la clave
+```
+
+`load()` está dentro de un `try` que abarca **todo** (parseo, normalización, migraciones). Cualquier fallo —JSON corrupto, un campo con el tipo cambiado, un `subjects` que no es array— devuelve los datos de demo. Como `render()` termina llamando a `save()` (`js/app.js:889`), la clave se sobrescribe: **el dato original ya no se puede recuperar ni con herramientas**.
+
+**[verificado]** Con la clave `aula.smr.v4` = `{roto`, tras arrancar la app el valor guardado es el estado de ejemplo.
+
+**Arreglo:** separar el parseo (con su propio try/catch) de la normalización; ante error, **no guardar**, mostrar un diálogo con "Exportar copia cruda / Empezar de cero"; y mantener una copia de seguridad rotativa (`aula.smr.v4.bak`) antes de sobrescribir.
+
+---
+
+### 🔴 BUG-03 · Importar o arrastrar datos sin validar rompe vistas y no hay salida
+`js/app.js:1450`
+
+```js
+const items = [...state.exams].sort((a, b) => a.date.localeCompare(b.date))   // ← a.date puede no existir
+```
+
+`importJSON()` (`js/app.js:2674-2690`) hace `{...defaultState(), ...p}` **sin comprobar ni un solo campo**: ni que `exams`/`tasks` sean arrays, ni que cada examen tenga `date` y `title`. Tampoco hay `try/catch` alrededor de `render()`.
+
+**[verificado]** Añadiendo un examen sin fecha, la vista Exámenes lanza `Cannot read properties of undefined (reading 'localeCompare')`. Lo mismo ocurre en `renderTasks` (`app.js:1630`), `renderPlan` (`app.js:1763`) y `collectCmd` (`app.js:2589`, `e.title.toLowerCase()`).
+
+**Arreglo:** `sanitize(state)` que normalice cada colección (arrays + campos obligatorios con valores por defecto), `render()` envuelto en try/catch con pantalla de recuperación ("algo se ha roto → exportar / restaurar copia"), y una pantalla "Modo seguro" que no dependa de datos.
+
+---
+
+### 🟠 BUG-04 · Kanban: "NaN de undefined" y campo de fecha vacío
+`js/studio.js:193-208`
+
+```js
+const due = t.due ? daysUntil(t.due) : 99;          // 193: due pasa a ser un NÚMERO
+return { ...t, col: ..., due };                     // 195: sobrescribe la fecha original
+...
+<small>${esc(subjectName(t.subjectId))} · ${t.due ? fmtDate(t.due) : "sin fecha"}</small>   // 205
+<input type="date" value="${t.due || ""}" ... />    // 208: "5" no es una fecha válida
+```
+
+`fmtDate()` espera un ISO y recibe un número → `new Date("5T00:00:00")` → `NaN`.
+
+**[verificado]** Con una tarea que vence dentro de 5 días, la tarjeta del tablero dice literalmente `Seguridad informática · NaN de undefined`; con vencimiento hoy dice "sin fecha"; el input de fecha sale en blanco (y al tocarlo machaca la fecha buena con "hoy").
+
+**Arreglo:** guardar `daysLeft` en otra propiedad (`left`) y dejar `due` intacto.
+
+---
+
+### 🟠 BUG-05 · El servidor sirve los datos sin PIN
+`server.py:97` + `server.py:184`
+
+```python
+super().__init__(*args, directory=str(ROOT), **kwargs)   # sirve TODO el repo
+...
+sys.path → super().do_GET()                              # cualquier ruta desconocida → fichero estático
+```
+
+`/api/state` exige PIN, pero `/data/state.json` es un fichero normal dentro del directorio servido.
+
+**[verificado]** Con el servidor arrancado con `--pin 1234`:
+- `GET /api/state` → `401` ✅
+- `GET /data/state.json` → **200 con todo el estado** (nombre, exámenes, notas) ❌
+- `GET /data/` → **listado de directorios** con los backups rotados ❌
+
+**Arreglo:** bloquear en `Handler` cualquier ruta que empiece por `/data/` (404), desactivar `list_directory()` y, a ser posible, sacar `data/` fuera de `ROOT`.
+
+---
+
+### 🟠 BUG-06 · La sincronización no puede funcionar desde el APK (CORS mal)
+`server.py:208-214`
+
+Solo `do_OPTIONS()` manda `Access-Control-Allow-Origin`. Las respuestas de `GET /api/state`, `PUT /api/state` y `/api/health` **no** lo llevan.
+
+**[verificado]** `curl -D - http://127.0.0.1:8099/api/health -H "Origin: …"` → no aparece ninguna cabecera CORS.
+
+Consecuencia: si abres Aula desde el APK (`capacitor://localhost`) o desde otro origen y quieres sincronizar con `server.py`, el navegador bloquea la lectura. Y al revés, `Access-Control-Allow-Origin: *` en un servidor con PIN por cabecera es un olor raro: mejor mismo origen o un token de verdad.
+
+**Arreglo:** añadir las cabeceras CORS en `end_headers()` (no solo en OPTIONS), restringir el origen si se puede y documentarlo.
+
+---
+
+### 🟠 BUG-07 · El horario oficial machaca el del usuario
+`js/app.js:406-418` y `js/app.js:495`
+
+```js
+if (out.settings.timetableId !== TIMETABLE_ID) applyOfficialTimetable(out);
+```
+
+`applyOfficialTimetable()` **reemplaza `st.events` entero**, renombra módulos por coincidencia de alias, fuerza `startHour=15`, `endHour=23` y `remindHour=14`. Se ejecuta en cada `load()` si `timetableId` no coincide (por ejemplo, al importar un JSON antiguo o si cambias el ID del centro). No pregunta, no avisa, no guarda copia.
+
+Además, el horario real de un grupo concreto (clase `2CFM`, profesores con nombre y apellidos, festivos de Villena) está **hardcodeado** en el código: es un dato personal dentro del repo, y si el instituto cambia un aula o un profesor, cada usuario recibe el cambio a la fuerza o ninguno.
+
+**Arreglo:** mover el horario a un JSON de "plantillas" importables; aplicar la plantilla solo en el onboarding o con un botón explícito ("Restaurar horario oficial"), nunca en `load()`.
+
+---
+
+### 🟠 BUG-08 · "PIN de notas" decorativo y PIN en claro
+`js/app.js:2781` (se guarda el PIN), `js/studio.js:678-682`:
+
+```js
+if (action === "note-lock") {
+  const pin = st().settings.pin;
+  if (!pin) { toast("Pon un PIN en Ajustes"); return; }
+  const n = ...; if (n) { n.locked = !n.locked; toast(n.locked ? "Nota protegida" : "Nota libre"); }
+}
+```
+
+`locked` **no se lee en ningún otro sitio** del código. Una nota "protegida" se ve igual en la lista, en la búsqueda, en el asistente y en el JSON exportado (donde va también el PIN en texto plano).
+
+**[verificado]** `grep -rn "locked" js/` → 1 sola aparición (la que lo escribe).
+
+**Arreglo:** o implementarlo de verdad (cifrar el contenido con AES-GCM derivando clave del PIN con PBKDF2 y pedirla al abrir), o quitar el botón. Un candado que no cierra nada es peor que no tenerlo.
+
+---
+
+### 🟡 BUG-09 · Los avisos solo suenan con la app abierta
+`js/app.js:249-297` (`tickNotify`) + `js/app.js:3351` (`setInterval` de 15 s) + `js/app.js:3312` (`visibilitychange`).
+
+No hay `AlarmManager`/`WorkManager` en el overlay Android ni `showTrigger`/Notification Triggers en el SW. Fuera de la app (pantalla bloqueada, app cerrada) no llega nada. La UI lo vende como "Clase (10 min antes)" y "Racha en peligro" sin matizar que hay que tener la app abierta.
+
+**Arreglo a corto:** ponerlo claro en la UI ("avisos mientras la app está abierta o en segundo plano reciente"). **A medio:** programar notificaciones nativas desde el plugin Capacitor (AlarmManager + BroadcastReceiver) y/o `periodicSync` en el APK.
+
+---
+
+### 🟡 BUG-10 · El Pomodoro no sobrevive a un recambio de app ni al background
+`js/app.js:2437-2497`
+
+- El estado del temporizador **no se guarda**: si recargas o el móvil cierra la pestaña, la sesión en curso se pierde sin más.
+- El conteo es `setInterval` restando 1 por tick; con la pestaña en segundo plano los navegadores móviles lo estrangulan → **el tiempo real diverge del mostrado**.
+- `completeTimer()` acredita `timer.total / 60` minutos completos, sin comprobar cuánto ha pasado de verdad.
+- `navigator.wakeLock` se pide una vez; si la app pasa a segundo plano Android libera el lock y no se vuelve a pedir (falta re-pedirlo en `visibilitychange`).
+
+**Arreglo:** guardar `startedAt`, `endsAt`, `mode` y `subjectId` en `localStorage` y calcular `remaining` desde la hora del sistema (`endsAt - Date.now()`); recuperar la sesión al abrir; re-pedir el wake lock al volver visible.
+
+---
+
+### 🟡 BUG-11 · Se pueden registrar minutos negativos (y bajar tu XP)
+`js/app.js:2615-2623`, campo `minutes` sin `min` efectivo en la validación del submit:
+
+```js
+state.sessions.push({ ..., minutes: Number(data.minutes) || 0, type: "manual" });
+```
+
+**[verificado]** Insertando una sesión de `-500` min, el total de estudio pasa de **838 → 338** min y el XP/racha/nivel con él.
+
+**Arreglo:** `clamp(Number(data.minutes), 1, 600)` y fecha no futura.
+
+---
+
+### 🟡 BUG-12 · El intérprete de lenguaje natural asigna el módulo equivocado y nunca avisa
+`js/app.js:3129-3135` (`matchSubject`): busca la primera asignatura que comparta **una palabra de más de 3 letras**.
+
+**[verificado]** Reproduciendo su lógica exacta con tus 10 módulos:
+
+| Frase | Módulo asignado | Debería ser |
+|---|---|---|
+| "examen de redes el viernes" | Proyecto intermodular Sistemas microinformáticos y redes | Servicios en red |
+| "practica de word mañana" | Seguridad informática (fallback a `subjects[0]`) | Aplicaciones web |
+| "entrega de apache y dns" | Seguridad informática | Servicios en red |
+| "examen de ipv6" / "subnetting y vlan" | Seguridad informática | Servicios en red |
+
+Y `parseWhen()` (`app.js:3116-3128`) pone **+3 días por defecto** cuando no entiende la fecha, así que una captura sin fecha acaba en una fecha inventada sin decírtelo.
+
+**Arreglo:** (a) tabla de sinónimos por módulo (ya existe `aliases` en `OFFICIAL_MODS`, se puede reutilizar), (b) puntuación por número de coincidencias y longitud, (c) **previsualizar** la captura interpretada ("Examen · Servicios en red · vie 18 sep") antes de guardar, en vez de crear el registro y confiar en que acierte.
+
+---
+
+### 🟡 BUG-13 · Exportación .ics mal formada
+`js/app.js:2523-2538`
+
+Falta lo que exige el RFC 5545: `UID`, `DTSTAMP`, `DTEND` (solo se emite `DTSTART`), plegado de líneas de más de 75 caracteres y escapado de `;` y saltos de línea en `SUMMARY`. Solo se escapan las comas.
+
+Resultado: Outlook/Google Calendar pueden rechazar los eventos o importarlos como instantáneos sin duración.
+
+**Arreglo:** generar `UID` estable (`id@aula-smr`), `DTSTAMP` con la hora de export, `DTEND` = hora + 1 h (o campo de duración), plegar líneas y escapar `\ ; , \n`.
+
+---
+
+### 🟡 BUG-14 · Las fotos en apuntes quedan rotas y engordan el almacenamiento
+`js/studio.js:656-672`
+
+```js
+n.attachments.push({ id, name: f.name, data: r.result, kind: "img" });       // base64 completo
+n.content += `\n\n![foto](${r.result.slice(0, 32)}…)\n`;                    // ← recortado a 32 chars
+n.content += `\n<!--img:${n.attachments.length - 1}-->\n`;
+```
+
+- El markdown de la imagen está **truncado a 32 caracteres**: en la vista previa se ve basura, nunca la foto.
+- El adjunto real (hasta 1,8 MB → ~2,4 MB en base64) va dentro del JSON de estado, que se guarda entero en `localStorage` en **cada tecla** que escribes (ver BUG-20).
+- No hay OCR, aunque el mensaje invita a "escribir el texto a mano".
+
+**Arreglo:** guardar adjuntos en IndexedDB y referenciarlos por id; renderizar la imagen desde el id; opción de comprimir a ~1200 px antes de guardar.
+
+---
+
+### 🟡 BUG-15 · Los "puntos de restauración" pueden reventar (y no se borran nunca)
+`js/studio.js:594-603`: guarda **hasta 5 copias completas del estado** dentro de `localStorage`, sin `try/catch`. Con fotos o muchas sesiones, `setItem` lanza `QuotaExceededError` → excepción no capturada en medio del manejador de clic (rompe esa acción y puede dejar la UI a medias).
+
+Y como `doWipe()` (`js/app.js:2659-2665`) solo hace `state = defaultState()`, las copias de `aula.snaps` **sobreviven al "Borrar todo"**.
+
+**[verificado leyendo código]** `doWipe()` no toca `aula.snaps` ni las claves `aula.nt.*`.
+
+**Arreglo:** snapshots fuera de `localStorage` (IndexedDB o descarga a fichero), `try/catch` con aviso, y limpieza de **todas** las claves de la app en el borrado total (con aviso explícito de qué se borra).
+
+---
+
+### 🟡 BUG-16 · "Modo invitado" que pierde el trabajo
+`js/studio.js:615-616` + `js/app.js:501`
+
+`guest-on` pone `settings.guest = true` pero **no lo guarda** (save() sale antes), así que al recargar vuelves a modo normal sin avisar. Mientras estás en invitado, todo lo que edites se descarta en silencio (y si pulsas "Salir", `save()` guarda de golpe lo que creías no persistente).
+
+**Arreglo:** que el invitado sea una sesión explícita con banner fijo ("Modo invitado: no se guarda") y un botón "Guardar ahora"; o eliminar la función.
+
+---
+
+### 🟡 BUG-17 · "Bajar estado" del servidor machaca sin preguntar
+`js/studio.js:572-591`: `Object.assign(st(), j.state)` sustituye arrays completos sin confirmación, sin merge, sin copia previa. Un clic y tus apuntes locales desaparecen si el servidor tenía otro estado.
+
+**Arreglo:** diálogo de confirmación con resumen ("el servidor tiene 3 exámenes y 12 notas; lo local tiene 8 y 40"), snapshot automático antes de aplicar y aviso de conflicto.
+
+---
+
+### 🟡 BUG-18 · El asistente (Ollama) puede colgarse y nadie se entera
+`js/studio.js:243-258`: `fetch` sin `AbortController`/timeout, sin estado de "pensando…", sin indicador de error salvo el fallback local. Si la URL no responde, el usuario ve el botón "Preguntar" sin reacción durante minutos.
+
+**Arreglo:** timeout de 20 s con `AbortController`, spinner/bloqueo del botón, mensaje de error claro y aviso de privacidad ("tus apuntes se envían a esta URL").
+
+---
+
+### 🟡 BUG-19 · "Importar guía docente" promete más de lo que hace
+`js/studio.js:80-105` (`extractPdfStrings`) convierte el PDF a texto quedándose con los bytes ASCII imprimibles. En PDFs reales (comprimidos con Flate) eso produce ruido, no texto. Con ese ruido, `guide-apply` crea exámenes cuyo **título son 40 caracteres de contexto** alrededor de la fecha.
+
+**Arreglo:** usar `pdf.js` (una sola dependencia, empaquetada local para seguir siendo offline) o pedir TXT/MD. Y limpiar los títulos antes de proponerlos.
+
+---
+
+### ⚪ BUG-20 y menores (pero conviene arreglarlos)
+
+| ID | Problema | Dónde |
+|---|---|---|
+| BUG-20 | `persistNote()` se dispara en **cada pulsación de tecla** → `JSON.stringify` de todo el estado + una versión nueva en el historial por letra | `js/app.js:3051`, `2397-2410` |
+| BUG-21 | `render()` llama a `save()` al final de **cada** render (navegar = reescribir todo) | `js/app.js:889` |
+| BUG-22 | El botón atrás de Android sale de la app: se usa `history.replaceState`, así que las vistas no entran en el historial y el listener `hashchange` rara vez actúa | `js/app.js:2607`, `3325-3329` |
+| BUG-23 | `document.title` alterna `Aula SMR` y `Aula` según el temporizador | `js/app.js:2479` |
+| BUG-24 | Versión `v48` duplicada a mano en `README.md`, `sw.js` (nombre de caché), `index.html` (pie) y `app.js` | — |
+| BUG-25 | FOUC: `<html class="dark" data-theme="dark" data-skin="hub">` está fijo en el HTML; quien use tema claro ve un flash negro en cada apertura, y `theme-color` (#000000 fijo) descuadra con el manifest (`background_color: #8daed9`, un azul que no pega con nada) | `index.html:2`, `manifest.webmanifest` |
+| BUG-26 | `esc()` no se aplica a valores interpolados en `style="background:${subjectColor(...)}"` → un JSON importado con `"color": "red;background-image:url(...)"` inyecta CSS | `js/app.js` (varias) |
+| BUG-27 | SW: ante el fallo de **cualquier** JS/CSS devuelve `index.html` (HTML servido como JS → pantalla en blanco), y `addAll(...).catch(()=>{})` deja el precache incompleto sin que nadie lo sepa | `sw.js:46`, `140`, `154` |
+| BUG-28 | Los logros "Cambio de look" se desbloquea solo (compara con el skin `"redes"` pero el skin por defecto es `"hub"`) | `js/app.js:1000` |
+| BUG-29 | Código muerto en los logros: `early` se calcula con un `return false` hardcodeado | `js/app.js:955` |
+| BUG-30 | `crypto.subtle` (SHA-256 de la caja de herramientas) **no existe en contexto no seguro**: sirviendo por `http://IP:8080` —justo el método que recomienda el README— la herramienta falla con excepción no capturada | `js/tools.js:801` |
+| BUG-31 | Al cerrar un bloque, `confetti()` y `buzz()` se disparan también al marcar una tarea, con `state.settings.confetti` de por medio pero `confetti()` llamada directa en un sitio | `js/app.js:2890` |
+| BUG-32 | El generador de contraseñas usa módulo directo sobre el buffer aleatorio (sesgo estadístico) y no garantiza que salga al menos un carácter de cada conjunto marcado | `js/tools.js:186-198` |
+| BUG-33 | `RAID 10` con número impar de discos calcula capacidad como si fuera par | `js/tools.js:784` |
+| BUG-34 | "GB vs GiB" y "tiempo de copia" mezclan base 10 y base 2 sin decirlo (`1e9` bits), y `toPrecision(6)` imprime `1.00000` | `js/tools.js:755-772` |
+| BUG-35 | `expandV6()` tiene código muerto (`parts`, filtro sin usar) y acepta hex inválidos (`gggg::`) | `js/tools.js:606-625` |
+| BUG-36 | Regex de la caja de herramientas sin flags y sin límite → una expresión catastrófica congela la pestaña | `js/tools.js:827-834` |
+| BUG-37 | `applyOctal()` hace `padStart(3,"0")` tras recortar a 3 dígitos: `chmod 7777` o `chmod 4` se interpretan mal sin avisar | `js/tools.js:176-186` |
+| BUG-38 | El cronómetro del modo examen (`exam-lock`) se activa con un `setTimeout` de 90 min: si cierras la app, el modo se queda "puesto" sin control visible | `js/studio.js:511-514` |
+| BUG-39 | El bloque de bienvenida de `renderDashboard` (`finish-onboard`) **no tiene manejador** y encima es inalcanzable (la vista hace `return` antes si no está onboarded) | `js/app.js:1339` |
+| BUG-40 | Al terminar el onboarding siempre se pone `demo = false`, así que el aviso "Datos de ejemplo / Empezar de cero" **nunca** aparece aunque hayas elegido el ejemplo | `js/app.js:2928` (skip/finish) y `2942` (on-next) |
+
+---
+
+## 2. Funciones implementadas que no se pueden usar (sin botón)
+
+Comprobado renderizando las 28 vistas y contando botones en el DOM: **123 acciones pintadas para 170 manejadores**. Estas están programadas pero no tienen ningún botón que las invoque:
+
+| Función | Estado | Dónde está el código |
+|---|---|---|
+| **Selector de 33 temas/skins** (`skinCards`) | Función nunca llamada. En Ajustes hay **0 botones** `set-skin`. Solo puedes alternar claro/oscuro | `app.js:1112`, `514` (`skinCat`) |
+| **Dictado por voz** (`voice-fab` / `toggleVoice`) | 0 botones en toda la app; el micrófono nunca se puede pulsar | `app.js:2856`, `3163` |
+| **Saltar bloque del Pomodoro** (`timer-skip`) | handler sin botón | `app.js:2901` |
+| **Modo escritura de fichas** (`card-mode` / `card-typed` / `_cardMode === "type"`) | El bloque de "Escribe la respuesta" está tras una condición que nadie puede activar | `app.js:1605`, `studio.js:693` |
+| **Importar horario CSV** (`csv-import`) | El `change` de `#csv-file` existe, pero no hay forma de abrir el selector | `studio.js:620` |
+| **Exportar a Anki** (`export-anki`) | sin botón | `studio.js:627` |
+| **Exportar apuntes a Markdown** (`export-md`) | sin botón | `studio.js:621` |
+| **Imprimir/PDF de apuntes** (`export-pdf-notes`) | sin botón (solo existe "chuleta" en Repaso rápido) | `studio.js:634` |
+| **Añadir clase en la rejilla horaria** (`slot-add`) | El horario es una lista, no una rejilla: el handler nunca recibe clic | `app.js:2874` |
+| **Abrir módulo** (`open-mod`) | Duplicado de `open-subject`, nunca pintado | `app.js:2861` |
+| **Filtro de tareas** (`task-filter`) y **pestaña de exámenes** (`exam-tab`) | Variables de estado y manejadores sin UI | `app.js:2891`, `2867` |
+
+Y **9 funciones muertas** en `app.js`: `maybeNotify`, `greeting`, `medals`, `heatDays`, `todayTimeline`, `skinCards`, `chk`, `cycleSkin`, `radarSVG` (+ `val`). Consecuencia visible: el menú "Más" promete **"Calificaciones · Radar, media y simulador"**, pero `radarSVG()` no se llama en ningún sitio → **el radar no existe**; tampoco el mapa de calor de estudio ni el saludo personalizado.
+
+---
+
+## 3. Cosas que están bien (no todo va a ser palos)
+
+- **Offline de verdad**: el Service Worker precachea HTML, CSS, JS e iconos; la app arranca sin red. La estrategia network-first con fallback es correcta para este caso.
+- **Sin dependencias ni build**: 454 KB en total, cero npm, cero CDN. Se abre en cualquier navegador. Para el público objetivo (móvil justo de recursos, wifi del instituto) es una decisión acertada.
+- **Datos portables**: export/import JSON + `.ics` + snapshots internos. Buen instinto.
+- **Herramientas SMR**: 37 utilidades. El subnetting está **correcto** (probado con /0, /31, /32, clases, wildcard), chmod octal/simbólico, RAID 0/1/5/6/10 y conversión de unidades funcionan bien.
+- **Detalles de plataforma bien resueltos**: `env(safe-area-inset-*)`, `100dvh`, `prefers-reduced-motion`, `color-scheme`, `theme-color` dinámico, `-webkit-tap-highlight-color`, iconos maskable en el manifest.
+- **Sistema de temas**: 33 skins con variables CSS coherentes y bien organizadas por familias; los colores de acento, líneas y sombras se recalculan solos.
+- **Gamificación bien pensada**: XP, niveles, rachas, comodín semanal, logros por categorías. Para un ciclo de FP es un gancho real.
+- **`server.py`**: backups rotados (12), escritura atómica con `.tmp` + `replace`, bloqueo con `threading.Lock` y SSE para notificar cambios. Está mejor hecho que el resto del backend.
+- **CSS de impresión y `focus-mode`** existen y funcionan.
+
+---
+
+## 4. Lo que mejoraría (no es bug: es producto)
+
+### 4.1 Datos y confianza
+1. **Copias de seguridad automáticas**: al abrir, si la última copia tiene >7 días, guardar una copia comprimida en IndexedDB y ofrecer descargarla. Hoy el usuario no tiene ninguna red.
+2. **Advertencia de "sin guardar"** cuando `localStorage` esté por encima del 80 % de cuota, con botón "Exportar y limpiar".
+3. **Versionado de datos**: `state.schemaVersion` + migraciones por versión (`v4 → v5`) en vez de parches sueltos (`if (settings.skin === "pokemon")`).
+4. **Historial de cambios global** (no solo en notas): quién cambió qué y cuándo, con "deshacer" en todas las acciones (hoy `undo` solo cubre borrados, y **no tiene botón**: la acción `undo` está manejada pero no pintada, solo funciona con Ctrl+Z).
+
+### 4.2 Estudio y utilidad real para clase
+5. **Panel "hoy" unificado** con la siguiente acción concreta ("faltan 3 días para el parcial de SOR → 40 min de estas 2 notas"), en vez de 6 tarjetas que repiten información.
+6. **Vista semanal del horario en rejilla** con horas reales (los datos y constantes `START_HOUR/SLOT_H` ya existen pero están muertos) y detección de huecos como en `freeSlots()` de studio.js.
+7. **Excepciones por fecha**: poder decir "el martes 15 no hay clase" o "esta clase se cambia al jueves". Hoy el horario es puramente semanal y los festivos son una lista fija en código.
+8. **Fichas con repetición espaciada de verdad** (SM-2 real, con `easeFactor`, `lapses` y estadísticas), en lugar del intervalo `x2 / x3.5` actual.
+9. **Estadísticas con objetivo por módulo**: "llevas 3 h de 12 h previstas para Servicios en red" con aviso cuando el ritmo no da.
+10. **Integración .ics de solo lectura** (URL de Google Calendar del instituto) además de exportar.
+
+### 4.3 UX
+11. **Buscador global real**: `Ctrl+K` funciona, pero solo busca notas y exámenes; debería indexar tareas, módulos, fichas, apuntes y herramientas (37).
+12. **Acciones masivas**: marcar todas las tareas de un módulo, borrar exámenes pasados, archivar el trimestre.
+13. **Onboarding más corto** (7 pantallas para configurar un horario que ya viene cargado es demasiado) y **skippable en un toque**.
+14. **Feedback de guardado**: un indicador discreto ("guardado hace 1 min") en vez de nada.
+15. **Estados vacíos útiles**: hoy `"<div class='empty'>Vacía.</div>"` no explica cómo llenarlo ni lleva a la acción.
+16. **Modo profesor/exportar para compartir** o al menos "copiar resumen de la semana" para pegar en el grupo de clase.
+
+### 4.4 Accesibilidad (y esto sí es importante)
+17. **Quitar `user-scalable=no` y `maximum-scale=1`** (`index.html:5`): impide el zoom y es un fallo directo de WCAG 1.4.4. Con texto de 11 px y skins densos, el zoom es una ayuda real.
+18. **`:focus-visible` en condiciones**: hay **3 reglas de `:focus` en 148 KB de CSS** y 278 `!important`. Navegando con teclado o en Android TV no se ve dónde estás.
+19. **Etiquetas de verdad**: 12 inputs de Ajustes y 27 en total no tienen `<label for>` ni `aria-label` (los `<label>` no están asociados a nada). Falta `aria-live` en la región de toasts y `aria-current="page"` en la navegación.
+20. **Botones sin nombre accesible**: los 8 selectores de color (solo color de fondo), las fotos de avatar e iconos de app (`<img>` sin texto alternativo).
+21. **Diálogos**: `openModal` pone `role="dialog"` y `aria-modal`, pero no hay **trampa de foco** ni devolución del foco al cerrar; el `Escape` está bien.
+22. **Contraste**: medidos los 30 pares `--muted`/fondo de las skins. **Fallos**: `gameboy` 2.75:1, `tokyo` 2.76:1, `kawaii` 2.94:1 (por debajo incluso del mínimo para texto grande, 3:1); y `dracula` 3.03, `isla` 3.40, `pergamino` 3.89, `cafe` 4.06, `minimal` 4.23, `azul` 4.41 quedan por debajo de AA (4.5:1) para texto normal. Como el `--muted` se usa para metadatos y ayudas, hay texto difícil de leer en 9 de 33 temas.
+23. **Área táctil**: `.att` (Presente/Retraso/Falta), `.icon-del` (×) y `.chip` están por debajo de 44×44 px en varios sitios; y "Asistencia" reacciona a un toque doble quitando el registro sin confirmación.
+
+---
+
+## 5. Rendimiento
+
+| Métrica | Valor | Comentario |
+|---|---|---|
+| `js/app.js` | 189 KB (52 KB gzip) | Se ejecuta entero al arrancar, en 3 ficheros sin módulos |
+| CSS total | 148 KB | 7 capas que se pisan entre sí: **278 `!important`** y 307 selectores redefinidos (`.modal` 7 veces, `.toasts` 8 veces…) |
+| `render()` | reescribe `innerHTML` de toda la vista | pierde foco y scroll interno, y vuelve a construir cadenas grandes |
+| `save()` | `JSON.stringify` del estado completo | se llama **en cada render** y **en cada tecla** al escribir una nota |
+| Iconos | 23 avatares × ~10 KB precacheados | bien, pero van en el bloque de instalación del SW (retrasa el primer `install`) |
+| `setInterval(15 s)` | recalcula `widgetPayload()` (con varios `sort` y `filter` sobre todo el estado) y toca el DOM | da igual si no hay widgets nativos: `pushWidgets()` sale antes, pero el resto sigue |
+
+**Mejoras concretas:** `requestAnimationFrame` + render por vista con *dirty flags*; debounce de `persistNote` (500 ms) y guardado en `visibilitychange`/`beforeunload`; separar el estado en "ajustes" (pequeño, síncrono) y "contenido" (grande, IndexedDB); minificar con esbuild en un `npm run build` opcional (sin obligar a build para desarrollo); y consolidar las 7 hojas CSS en 2 (base + temas) eliminando duplicados.
+
+---
+
+## 6. Repositorio, proceso y mantenibilidad
+
+1. **No hay `.gitignore`**: `data/` (estado sincronizado y backups), `__pycache__/`, `*.apk`, `node_modules/` acabarían dentro de Git. Es lo primero que añadiría.
+2. **No hay tests, ni linter, ni CI, ni `package.json`**. Con `app.js` de 3.368 líneas y 153 funciones, un mínimo de `eslint` + un test smoke con jsdom (el que usé para auditar) habría cazado BUG-03, BUG-04 y BUG-08 solos.
+3. **`README.md` miente en la primera línea relevante**: dice que `Aula-SMR-v48.apk` está en la carpeta y no está. Tampoco explica `apk-overlay/` ni `server.py` más allá de una línea.
+4. **El APK no es reproducible desde el repo**: `apk-overlay/apply.py` espera un proyecto Capacitor externo por parámetro (`sys.argv[1]`), y no hay instrucciones para generarlo. O se documenta el proceso completo (con versión de Capacitor, `capacitor.config`, iconos, `build.gradle`) o el overlay se marca como "no soportado".
+5. **`python3 -m http.server` no sirve para el SW**: sin `Service-Worker-Allowed`/tipos MIME correctos y sin los headers de `server.py`, el README empuja al usuario a un camino que rompe la instalación como PWA en algunos navegadores. Mejor recomendar `python3 server.py`.
+6. **Un solo `app.js` de 189 KB** con 3 capas de módulos comunicándose por `window.Aula` (getters que exponen el estado mutable) es el mayor coste de mantenimiento. Dividir en `store.js`, `ui.js`, `views/*.js`, `timer.js`, `notify.js`, `achievements.js` (o módulos ES) haría el resto del trabajo mucho más barato.
+7. **`window.Aula`** expone `state` mutable: cualquier módulo puede corromper el estado sin pasar por el `save()`. Un store con `set()`/`subscribe()` lo evita.
+8. **Sin versionado de assets** (`app.js?v=hash`): el SW cachea por URL, así que una actualización depende de que el SW haga red primero. Con nombres con hash es determinista.
+9. **Sin política de privacidad ni aviso legal**: se guardan nombres de profesores, horarios y notas de un menor. Y no hay forma de exportar/borrar "todo lo personal" de golpe (ver BUG-15).
+10. **Nada de `content-security-policy`** ni separación de estilos inline: cientos de `style="..."` embebidos. No es urgente en una app local, pero complica cualquier endurecimiento futuro.
+
+---
+
+## 7. Plan de trabajo propuesto (por orden de dolor)
+
+### Sprint 1 — "que no se pierdan datos" (medio día)
+- [ ] BUG-01 `save()` con aviso de cuota + bloqueo de fotos si no cabe
+- [ ] BUG-02 no sobrescribir nunca el JSON roto + copia `.bak` rotativa
+- [ ] BUG-03 `sanitize()` + `try/catch` en `render()` + pantalla de recuperación
+- [ ] BUG-15/16 borrado total completo (`aula.snaps`, `aula.nt.*`, cachés) + snapshots con try/catch
+- [ ] BUG-04 Kanban (arreglo de 3 líneas)
+- [ ] BUG-11 validación de minutos
+
+### Sprint 2 — "que lo que existe se pueda usar" (1 día)
+- [ ] BUG-06/BUG-05 servidor: CORS correcto + bloquear `/data/`
+- [ ] BUG-07 sacar el horario oficial de `load()` y convertirlo en plantilla importable
+- [ ] Selector de temas en Ajustes (`skinCards` + categorías) — 30 min de trabajo, 33 funciones recuperadas
+- [ ] Botones para: saltar bloque, modo escritura de fichas, exportar Anki/MD, importar CSV, voz
+- [ ] BUG-08 decidir PIN: implementarlo o quitarlo
+- [ ] BUG-17 confirmación antes de "Bajar estado"
+
+### Sprint 3 — "que se sienta bien" (2-3 días)
+- [ ] Temporizador persistente y fiable (BUG-10)
+- [ ] Avisos: dejar claro el alcance + notificaciones nativas en el APK (BUG-09)
+- [ ] Accesibilidad: zoom, `:focus-visible`, labels, nombres accesibles, contraste de las 9 skins flojas (sección 4.4)
+- [ ] NLP con sinónimos y previsualización antes de guardar (BUG-12)
+- [ ] `.ics` correcto (BUG-13), fotos en IndexedDB (BUG-14)
+- [ ] Limpieza: 9 funciones muertas, 40 ajustes fantasma, redefiniciones CSS, `!important`
+
+### Sprint 4 — "que aguante el curso" (a decidir)
+- [ ] Refactor en módulos + store con `subscribe()`
+- [ ] Tests (jsdom) + GitHub Actions + `eslint`
+- [ ] `.gitignore` + README real (APK reproducible o retirado del README)
+- [ ] CSP, adjuntos en IndexedDB, export/borrado completo de datos personales
+
+---
+
+## Anexo A · Métricas medidas
+
+| Métrica | Valor |
+|---|---|
+| Ficheros versionados | 61 (22 avatares + 3 iconos + resto de código y capas CSS) |
+| Líneas totales | 9.225 (`wc -l`): JS 5.002, CSS 3.586, HTML 237, SW 156, Python 244 |
+| Vistas / pantallas | 28 |
+| Herramientas SMR | 37 |
+| Skins definidas | 33 (+ 2 temas claro/oscuro) |
+| Acciones `data-action` manejadas | 170 (123 con botón) |
+| Funciones nunca llamadas en `app.js` | 9 (+ `val`) |
+| Ajustes leídos por `saveSettings()` sin control en la UI | 31 (6 de ellos no se usan en ninguna parte) |
+| `!important` en CSS | 278 |
+| Selectores CSS redefinidos | 307 |
+| Reglas `:focus` en CSS | 3 |
+| `try/catch` vacíos en app.js + studio.js | 15 |
+| Skins con contraste `--muted` < 4.5:1 | 9 (3 de ellas < 3:1) |
+
+## Anexo B · Cómo reproducir los hallazgos críticos
+
+```bash
+# BUG-05: fuga de datos del servidor sin PIN
+mkdir -p data && echo '{"notas":"secretas"}' > data/state.json
+python3 server.py --pin 1234 &
+curl -i http://127.0.0.1:8080/api/state        # 401 ✅
+curl -i http://127.0.0.1:8080/data/state.json  # 200 con los datos ❌
+curl -i http://127.0.0.1:8080/data/            # listado de directorios ❌
+rm -rf data
+
+# BUG-06: falta CORS (solo en OPTIONS)
+curl -s -D - -o /dev/null http://127.0.0.1:8080/api/health -H "Origin: http://otro-origen" | grep -i access-control
+
+# BUG-02 y BUG-03: estado corrupto y examen sin fecha
+#   DevTools → Application → localStorage → aula.smr.v4 = "{roto"  → recargar
+#   DevTools → pegar en consola: Aula.state.exams.push({id:'x',title:'sin fecha'}); Aula.go('exams')
+
+# BUG-04: kanban
+#   Crear una tarea con fecha a 5 días → menú Más → Tablero → leer la fecha de la tarjeta
+```
+
+---
+
+**Conclusión honesta:** la app tiene muchísimo producto dentro (28 vistas, 37 herramientas, 33 temas, XP, hábitos, sync, widgets Android) construido encima de una base frágil: un único fichero de 189 KB, sin validación de datos, sin tests y con un `save()` que miente. No hay que rehacerla: hay que **blindar la capa de datos** (Sprint 1) y **terminar de conectar lo que ya está programado** (Sprint 2). Con eso se pasa de "demo muy ambiciosa" a "app que puedes usar todo el curso sin miedo".
