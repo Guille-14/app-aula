@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v60";
+  const APP_VERSION = "v61";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -319,7 +319,7 @@
       },
       subjects: [], notes: [], events: [], sessions: [], cards: [], inbox: [], attendance: [],
       progress: { bonusXp: 0, unlocked: {}, daily: "", log: [], flags: {}, freeze: 1, lastFreezeWeek: "" },
-      habits: [], glossary: [],
+      habits: [], glossary: [], exams: [],
     };
   }
 
@@ -558,7 +558,6 @@
     delete settings.syncPin;
     delete out._guide;   // el borrador de la guía docente se retiró
     delete out.trash;    // la papelera se retiró (lo que hubiera dentro ya está en out.notes)
-    delete out.exams;    // los exámenes se retiraron (v57): lo que hubiera guardado ya no se carga
     delete out.tasks;    // y los deberes también: la app es horario + estudio, sin pendientes
     if (!Number.isFinite(Number(settings.dailyGoal)) || Number(settings.dailyGoal) <= 0) settings.dailyGoal = 90;
     settings.pomodoroWork = clamp(Number(settings.pomodoroWork) || 25, 1, 180);
@@ -640,6 +639,17 @@
     }));
 
     out.glossary = asArray(src.glossary).filter(isObj).filter((g) => g.term).map((g) => ({ id: asText(g.id) || uid(), term: asText(g.term), def: asText(g.def), subjectId: hasSub(g.subjectId) ? g.subjectId : "" }));
+
+    // Pruebas y exámenes (vuelven en la v61, con su pestaña en la barra de abajo)
+    const maxNota = Number(settings.gradeMax) || 10;
+    out.exams = asArray(src.exams).filter(isObj).filter((e) => asText(e.title) || asText(e.subjectId)).map((e) => ({
+      id: asText(e.id) || uid(), subjectId: subOf(e.subjectId),
+      title: asText(e.title, "Prueba"), kind: asText(e.kind, "Examen"),
+      date: asISO(e.date) || todayISO(), time: /^\d{1,2}:\d{2}$/.test(String(e.time)) ? String(e.time) : "",
+      room: asText(e.room), topics: asText(e.topics),
+      grade: (e.grade === "" || e.grade == null || !Number.isFinite(Number(e.grade))) ? "" : clamp(Number(e.grade), 0, maxNota),
+      createdAt: Number(e.createdAt) || Date.now(),
+    }));
 
     const prog = isObj(src.progress) ? src.progress : {};
     out.progress = {
@@ -772,6 +782,7 @@
   let subjectFocus = null, cmdOpen = false, cmdIndex = 0, cmdItems = [];
   let deferredInstall = null, wakeLock = null;
   let schView = "week";
+  let examFilter = "proximos";          // proximos · todos · pasados
   let schWeek = 0;                       // 0 = semana actual; -1 y +1 las de al lado
   const plantillaAuto = syncPlantilla(state);
   let exDate = "";
@@ -1089,6 +1100,7 @@
     quickreview: ["Repaso rápido", "Un módulo a fondo"],
     admin: ["Datos locales", "Copias y estado"],
     rendimiento: ["Calificaciones", "Boletín de cada módulo"],
+    exams: ["Exámenes", "Fechas y temario de cada prueba"],
     notes: ["Apuntes", "Texto del ciclo"],
     tools: ["Herramientas SMR", "Hub técnico, estudio y sistema"],
   };
@@ -1163,7 +1175,7 @@
       agenda: () => S("agenda"), chatbot: () => S("chatbot"),
       habits: () => S("habits"), glossary: () => S("glossary"),
       examode: () => S("examode"), quickreview: () => S("quickreview"), admin: () => S("admin"),
-      rendimiento: renderRendimiento,
+      rendimiento: renderRendimiento, exams: renderExams,
       tools: () => (window.AulaTools && typeof window.AulaTools.view === "function")
         ? window.AulaTools.view()
         : `<div class="empty"><b>Herramientas</b>Recarga la página.</div>`,
@@ -1611,6 +1623,17 @@
             </div>`).join("")}</div>`
           : `<p class="hint">No quedan festivos ni vacaciones por delante.</p>`}
       </div>`;
+    // Próxima prueba: una tira fina, solo si hay algo apuntado por delante
+    const proxExam = asArray(state.exams).filter((e) => e.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0];
+    const dExam = proxExam ? daysUntil(proxExam.date) : null;
+    const proxExamenHtml = proxExam
+      ? `<button class="exam-strip" data-action="go" data-to="exams">
+          <span class="k">${dExam === 0 ? "Prueba hoy" : dExam === 1 ? "Prueba mañana" : "En " + dExam + " días"}</span>
+          <b>${esc(proxExam.title)}</b>
+          <small>${esc(subjectName(proxExam.subjectId))} · ${esc(fmtDate(proxExam.date))}${proxExam.time ? " · " + esc(proxExam.time) : ""}</small>
+          <span class="exam-strip-x" aria-hidden="true">›</span>
+        </button>`
+      : "";
     const pills = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(mon); d.setDate(mon.getDate() + i);
@@ -1627,6 +1650,7 @@
       </div>` : ""}
       ${courseHtml}
       ${(startD != null && startD > 0) ? "" : liveHtml}
+      ${proxExamenHtml}
       ${todayList}
       ${state.settings.onboarded && typeof Notification !== "undefined" && Notification.permission !== "granted" ? `<div class="idle-note note-action">
         <span>Activa avisos: clase y fichas de repaso.</span>
@@ -1883,7 +1907,7 @@
         <button class="cal-arrow" data-action="cal-prev" aria-label="Mes anterior" ${enElPrimero ? "disabled" : ""}>‹</button>
         <div class="cal-title">
           <b>${MONTHS[m]}</b>
-          <small>${y} · curso del ${fmtDate(COURSE.start)} al ${fmtDate(COURSE.end)}</small>
+          <small>${y} · curso hasta el ${fmtDate(COURSE.end)}</small>
         </div>
         <button class="cal-arrow" data-action="cal-next" aria-label="Mes siguiente" ${enElUltimo ? "disabled" : ""}>›</button>
       </div>
@@ -2236,6 +2260,131 @@
         ${notes.slice(0, 6).map((n) => `<button class="row is-tap" data-action="open-note" data-id="${n.id}">
           <span class="dot" style="background:${safeColor(s.color)}"></span><div>${esc(n.title)}</div><div class="meta">${esc(fmtDate(localISO(new Date(n.updatedAt || Date.now()))))}</div>
         </button>`).join("")}</div>` : ""}
+    `;
+  }
+
+  // ————————————————— Pruebas y exámenes (pestaña de la barra desde la v61)
+  const EXAM_KINDS = ["Examen", "Prueba", "Práctico", "Recuperación"];
+
+  function examForm(e = {}) {
+    const max = Number(state.settings.gradeMax) || 10;
+    const tipo = String(e.kind || "Examen");
+    return `
+      <div class="field"><label>Módulo</label><select name="subjectId">${subjectOptions(e.subjectId || subjectFocus || (state.subjects[0] || {}).id)}</select></div>
+      <div class="field"><label>Título</label><input name="title" required value="${esc(e.title || "")}" placeholder="Tema 3 · Subnetting" /></div>
+      <div class="form-row">
+        <div class="field"><label>Tipo</label><select name="kind">${EXAM_KINDS.map((k) => `<option${k.toLowerCase() === tipo.toLowerCase() ? " selected" : ""}>${k}</option>`).join("")}</select></div>
+        <div class="field"><label>Fecha</label><input name="date" type="date" required value="${esc(e.date || todayISO())}" /></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Hora</label><input name="time" type="time" value="${esc(e.time || "")}" /></div>
+        <div class="field"><label>Aula</label><input name="room" value="${esc(e.room || "")}" /></div>
+      </div>
+      <div class="field"><label>Temas que entran</label><textarea name="topics" rows="2" placeholder="Tema 1 y 2, práctica de VLSM…">${esc(e.topics || "")}</textarea></div>
+      <div class="field"><label>Nota (si ya la sabes)</label><input name="grade" type="number" min="0" max="${max}" step="0.1" value="${e.grade === "" || e.grade == null ? "" : esc(String(e.grade))}" /></div>
+    `;
+  }
+
+  function addExam(e, preset = {}) {
+    if (!needSubjects()) return;
+    const borrar = e ? `<p><button type="button" class="btn btn-danger btn-sm" data-action="delete-exam" data-id="${e.id}">Eliminar</button></p>` : "";
+    openModal(e ? "Editar prueba" : "Nueva prueba", examForm({ ...preset, ...e }) + borrar, {
+      confirm: e ? "Guardar" : "Apuntar",
+      onSubmit(data) {
+        const titulo = String(data.title || "").trim();
+        if (!titulo) { toast("Ponle un título a la prueba"); return; }
+        const max = Number(state.settings.gradeMax) || 10;
+        const bruto = String(data.grade || "").trim();
+        const row = {
+          id: (e && e.id) || uid(),
+          subjectId: data.subjectId || "",
+          title: titulo,
+          kind: data.kind || "Examen",
+          date: asISO(data.date) || todayISO(),
+          time: /^\d{1,2}:\d{2}$/.test(String(data.time || "")) ? String(data.time) : "",
+          room: String(data.room || "").trim(),
+          topics: String(data.topics || "").trim(),
+          grade: bruto === "" || !Number.isFinite(Number(bruto)) ? "" : clamp(Number(bruto), 0, max),
+          createdAt: (e && e.createdAt) || Date.now(),
+        };
+        if (e) state.exams = state.exams.map((x) => (x.id === e.id ? row : x));
+        else {
+          state.exams = Array.isArray(state.exams) ? state.exams.concat(row) : [row];
+          grantXP(4, "Prueba apuntada"); checkAchievements();
+        }
+        closeModal(); render();
+        toast(e ? "Prueba actualizada" : "Apuntada: " + row.title);
+      },
+    });
+  }
+
+  function renderExams() {
+    const hoy = todayISO();
+    const todos = asArray(state.exams).slice().sort((a, b) => String(a.date + (a.time || "")).localeCompare(String(b.date + (b.time || ""))));
+    const proximos = todos.filter((e) => e.date >= hoy);
+    const pasados = todos.filter((e) => e.date < hoy).reverse();
+    const lista = examFilter === "todos" ? todos : examFilter === "pasados" ? pasados : proximos;
+    const nota = (e) => (e.grade === "" || e.grade == null ? null : Number(e.grade));
+    const conNota = todos.filter((e) => nota(e) != null);
+    const media = conNota.length ? conNota.reduce((a, e) => a + nota(e), 0) / conNota.length : null;
+    const next = proximos[0];
+    const dNext = next ? daysUntil(next.date) : null;
+    const cuando = (e) => {
+      const d = daysUntil(e.date);
+      if (d === 0) return "Hoy";
+      if (d === 1) return "Mañana";
+      if (d > 1) return "En " + d + " días";
+      return d === -1 ? "Ayer" : "Hace " + Math.abs(d) + " días";
+    };
+    const tarjeta = (e) => {
+      const f = new Date(e.date + "T12:00:00");
+      const n = nota(e);
+      const d = daysUntil(e.date);
+      const sub = subjectById(e.subjectId);
+      return `<button type="button" class="exam-card${d === 0 ? " is-hoy" : ""}${d < 0 ? " is-pasado" : ""}" data-action="edit-exam" data-id="${e.id}">
+        <span class="exam-date"><b>${f.getDate()}</b><small>${MONTHS[f.getMonth()].slice(0, 3)}</small></span>
+        <span class="exam-body">
+          <b>${esc(e.title)}</b>
+          <small>${esc(sub ? sub.name : "Sin módulo")} · ${esc(e.kind || "Examen")}${e.time ? " · " + esc(e.time) : ""}${e.room ? " · " + esc(e.room) : ""}</small>
+          ${e.topics ? `<small class="exam-topics">${esc(e.topics)}</small>` : ""}
+        </span>
+        <span class="exam-right">
+          <span class="badge ${d < 0 ? "" : "soon"}">${esc(cuando(e))}</span>
+          ${n == null ? "" : `<b class="exam-nota ${n >= 5 ? "is-ok" : "is-bad"}">${n.toFixed(1)}</b>`}
+        </span>
+      </button>`;
+    };
+    const hero = next
+      ? `<div class="exam-hero${dNext === 0 ? " is-hoy" : ""}">
+          <span class="k">${dNext === 0 ? "Es hoy" : dNext === 1 ? "Es mañana" : "Próxima prueba"}</span>
+          <b>${esc(next.title)}</b>
+          <small>${esc(subjectName(next.subjectId))} · ${esc(fmtDateLong(next.date))}${next.time ? " · " + esc(next.time) : ""}${next.room ? " · " + esc(next.room) : ""}</small>
+          <div class="exam-count"><b>${dNext}</b><span>${dNext === 1 ? "día" : "días"}</span></div>
+          ${next.topics ? `<p class="hint exam-topics-hero">Entra: ${esc(next.topics)}</p>` : ""}
+        </div>`
+      : `<div class="exam-hero vacio">
+          <span class="k">Sin pruebas apuntadas</span>
+          <b>Nada a la vista</b>
+          <small>Cuando el profe diga fecha, la apuntas aquí y te cuenta los días.</small>
+        </div>`;
+    const filtros = [["proximos", "Próximas", proximos.length], ["pasados", "Pasadas", pasados.length], ["todos", "Todas", todos.length]];
+    return `
+      ${hero}
+      <div class="mini-stats">
+        <div><b>${proximos.length}</b><small>por delante</small></div>
+        <div><b>${conNota.length}</b><small>con nota</small></div>
+        <div><b>${media == null ? "—" : media.toFixed(1)}</b><small>nota media</small></div>
+      </div>
+      <div class="filters">
+        ${filtros.map(([id, txt, n]) => `<button class="chip ${examFilter === id ? "is-on" : ""}" data-action="exam-filter" data-f="${id}">${txt} · ${n}</button>`).join("")}
+      </div>
+      <div class="exam-list">
+        ${lista.length ? lista.map(tarjeta).join("")
+          : `<div class="empty"><b>${examFilter === "pasados" ? "Todavía no hay pruebas pasadas" : "Nada apuntado aquí"}</b>
+              <p>${examFilter === "pasados" ? "Cuando pase la fecha, la prueba baja a este montón." : "Apunta la fecha del examen y la app te lleva la cuenta."}</p>
+              <button class="btn btn-primary" data-action="add-exam">Añadir prueba</button></div>`}
+      </div>
+      <button class="btn btn-primary btn-block" data-action="add-exam">+ Añadir prueba</button>
     `;
   }
 
@@ -3080,6 +3229,31 @@
         "END:VEVENT",
       );
     });
+    // Pruebas y exámenes que ha apuntado el alumno
+    const pruebas = asArray(state.exams).filter((e) => asISO(e.date));
+    pruebas.forEach((e) => {
+      const sub = subjectById(e.subjectId);
+      const hora = /^\d{1,2}:\d{2}$/.test(String(e.time || "")) ? e.time : "";
+      const evento = [
+        "BEGIN:VEVENT",
+        "UID:aula-exam-" + e.id + "@aula-smr",
+        "DTSTAMP:" + stamp,
+        "SUMMARY:" + icsEscape((e.kind || "Examen") + ": " + e.title + (sub ? " · " + sub.name : "")),
+      ];
+      if (hora) {
+        const finM = minutesOf(hora) + 90;
+        evento.push("DTSTART;TZID=Europe/Madrid:" + evDe(e.date, hora));
+        evento.push("DTEND;TZID=Europe/Madrid:" + evDe(e.date, pad(Math.floor(finM / 60) % 24) + ":" + pad(finM % 60)));
+      } else {
+        const sig = new Date(e.date + "T12:00:00"); sig.setDate(sig.getDate() + 1);
+        evento.push("DTSTART;VALUE=DATE:" + e.date.replace(/-/g, ""));
+        evento.push("DTEND;VALUE=DATE:" + localISO(sig).replace(/-/g, ""));
+      }
+      if (e.topics) evento.push("DESCRIPTION:" + icsEscape("Entra: " + e.topics));
+      if (e.room) evento.push("LOCATION:" + icsEscape(e.room));
+      evento.push("END:VEVENT");
+      lineas.push(...evento);
+    });
     lineas.push("END:VCALENDAR");
     // Cada línea se pliega si pasa de 75 octetos (los nombres largos de módulo lo hacían)
     const blob = new Blob([lineas.map(icsFold).join("\r\n")], { type: "text/calendar;charset=utf-8" });
@@ -3092,7 +3266,7 @@
     state.progress.flags.exported = true;
     save();
     const nClases = state.events.filter((e) => !e.type || e.type === "clase").length;
-    toast("Calendario exportado (" + nClases + " clases + " + dias.length + " días sin clase)");
+    toast("Calendario exportado (" + nClases + " clases + " + dias.length + " días sin clase" + (pruebas.length ? " + " + pruebas.length + " pruebas" : "") + ")");
   }
 
   function noteToCards() {
@@ -3138,6 +3312,10 @@
     acc("Temporizador", () => go("timer"));
     acc("Calendario y horario", () => go("schedule"));
     acc("Calificaciones", () => go("rendimiento"));
+    acc("Exámenes", () => go("exams"));
+    acc("Apuntar un examen", () => addExam());
+    acc("Apuntes", () => go("notes"));
+    acc("Chat con Ollama", () => go("chatbot"));
     acc("Estadísticas", () => go("stats"));
     acc("Logros", () => go("achievements"));
     acc("Repaso rápido", () => go("quickreview"));
@@ -3639,6 +3817,12 @@
       render();
       toast("Semana del " + fmtDate(dia) + " · cambios de ese día abajo");
     }
+    if (action === "add-exam") addExam();
+    if (action === "edit-exam") addExam(state.exams.find((x) => x.id === id));
+    if (action === "exam-filter") { examFilter = btn.dataset.f || "proximos"; render(); }
+    if (action === "delete-exam") ask("Eliminar prueba", "Se quita de la lista y de la cuenta atrás.", () => {
+      pushUndo(); state.exams = state.exams.filter((x) => x.id !== id); closeModal(); render(); toast("Prueba eliminada");
+    });
     if (action === "add-event") addEvent();
     if (action === "edit-event") addEvent(state.events.find((x) => x.id === id));
     if (action === "slot-add") { const h = Number(btn.dataset.hour); addEvent(null, { day: Number(btn.dataset.day), start: `${pad(h)}:00`, end: `${pad(h + 1)}:00` }); }
@@ -4161,7 +4345,7 @@
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },
   };
-  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, habits: 1, glossary: 1, examode: 1, quickreview: 1, admin: 1, achievements: 1, rendimiento: 1, tools: 1 };
+  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, habits: 1, glossary: 1, examode: 1, quickreview: 1, admin: 1, achievements: 1, rendimiento: 1, tools: 1, exams: 1 };
   const esVista = (v) => !!(v && (titles[v] || EXTRA_VIEWS[v]));
   const hash = (location.hash || "").replace("#", "");
   if (esVista(hash)) view = hash;

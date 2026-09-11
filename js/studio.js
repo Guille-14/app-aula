@@ -212,7 +212,8 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       : "Ahora mismo: motor local, sin red.";
   }
 
-  async function probarOllama() {
+  // Pregunta a Ollama qué modelos tienes descargados (lo único que sale a la red)
+  async function modelosOllama() {
     const url = (st().settings.ollamaUrl || "").replace(/\/$/, "");
     if (!url) throw new Error("sin url");
     const ctrl = new AbortController();
@@ -221,11 +222,15 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       const r = await fetch(url + "/api/tags", { signal: ctrl.signal });
       if (!r.ok) throw new Error("respuesta " + r.status);
       const j = await r.json().catch(() => ({}));
-      const modelos = (j.models || []).length;
-      return modelos
-        ? "Ollama responde · " + modelos + " modelo(s) disponibles"
-        : "Ollama responde, pero no veo ningún modelo descargado";
+      return (j.models || []).map((m) => String(m.name || m.model || "")).filter(Boolean);
     } finally { clearTimeout(reloj); }
+  }
+
+  async function probarOllama() {
+    const modelos = await modelosOllama();
+    return modelos.length
+      ? "Ollama responde · " + modelos.length + " modelo(s): " + modelos.slice(0, 3).join(", ")
+      : "Ollama responde, pero no veo ningún modelo descargado";
   }
 
   async function askOllama(q) {
@@ -251,23 +256,60 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     } finally { clearTimeout(reloj); }
   }
 
+  function enviarChat() {
+    const q = ($("#chat-q") || {}).value || "";
+    if (!q.trim()) { toast("Escribe una pregunta"); return; }
+    st()._chat = st()._chat || [];
+    st()._chat.push({ role: "user", text: q });
+    recortarChat();
+    render();
+    const finish = (text) => { st()._chat.push({ role: "bot", text }); recortarChat(); render(); };
+    askOllama(q).then(finish).catch(() => finish(localBrain(q) + "\n\n(Ollama no respondió; respondió el motor local.)"));
+  }
+
   function chatbot() {
     const log = st()._chat || [];
-    const ia = st().settings.ollamaUrl
-      ? "Ollama en " + esc(st().settings.ollamaUrl) + " (si no contesta, responde el motor local)"
-      : "motor local (sin red)";
-    return `<div class="card">
-      <p class="hint">Responde con <strong>tus apuntes y tu calendario</strong>, todo dentro del móvil. Ahora mismo: ${ia}. <button class="linkish" data-action="go" data-to="admin">Configurar Ollama en «Datos locales»</button>.</p>
-      <div class="chat-log" id="chat-log">${log.map((m) => `<div class="chat-msg ${m.role}"><b>${m.role === "user" ? "Tú" : "Aula"}</b><pre>${esc(m.text)}</pre></div>`).join("") || "<div class='empty'>Prueba: «¿qué tengo esta semana?»</div>"}</div>
-      <textarea id="chat-q" rows="3" placeholder="¿Qué tengo esta semana? Explica DHCP…"></textarea>
-      <div class="hero-actions">
-        <button class="btn btn-primary" data-action="chat-send">Preguntar</button>
-        <button class="btn" data-action="chat-quiz">Generar test del tema abierto</button>
-        <button class="btn" data-action="chat-sum">Resumir nota abierta</button>
-        <button class="btn" data-action="chat-map">Esquema / mapa</button>
-        <button class="btn" data-action="chat-speak">Leer último (audio)</button>
+    const url = st().settings.ollamaUrl || "";
+    const modelo = st().settings.ollamaModel || "llama3.2";
+    const conectado = !!url;
+    const atajos = ["¿Qué tengo mañana?", "Resume el tema abierto", "Hazme 5 preguntas de DHCP", "¿Cuándo es el próximo examen?"];
+    return `
+      <div class="card chat-ia">
+        <div class="card-head">
+          <div>
+            <b>${conectado ? "Tu Ollama" : "Motor local"}</b>
+            <div class="hint">${conectado ? esc(url) + " · " + esc(modelo) : "Tus apuntes y tu calendario, sin salir del móvil."}</div>
+          </div>
+          <span class="badge ${conectado ? "done" : ""}">${conectado ? "Conectado" : "Sin red"}</span>
+        </div>
+        <details class="chat-cfg"${conectado ? "" : " open"}>
+          <summary>${conectado ? "Cambiar servidor o modelo" : "Conectar mi Ollama"}</summary>
+          <p class="hint">Pon la dirección del ordenador donde tengas Ollama, en la misma Wi-Fi. Ejemplo: <b>http://192.168.1.10:11434</b>. Se guarda solo en este móvil.</p>
+          <div class="field"><label for="set-ollama">Dirección de Ollama</label><input id="set-ollama" type="url" inputmode="url" value="${esc(url)}" placeholder="http://192.168.1.10:11434" /></div>
+          <div class="field"><label for="set-omodel">Modelo</label><input id="set-omodel" list="ollama-modelos" value="${esc(modelo)}" placeholder="llama3.2" /><datalist id="ollama-modelos"></datalist></div>
+          <div class="hero-actions">
+            <button class="btn btn-primary" data-action="ollama-save">Guardar</button>
+            <button class="btn" data-action="ollama-test">Probar conexión</button>
+            ${conectado ? `<button class="btn" data-action="ollama-modelos">Ver modelos</button>` : ""}
+            ${conectado ? `<button class="btn btn-ghost" data-action="ollama-local">Usar solo el local</button>` : ""}
+          </div>
+          <p class="hint" id="ollama-estado">${esc(textoOllama())}</p>
+        </details>
       </div>
-    </div>`;
+      <div class="card">
+        <div class="chat-log" id="chat-log">${log.map((m) => `<div class="chat-msg ${m.role}"><b>${m.role === "user" ? "Tú" : "Aula"}</b><pre>${esc(m.text)}</pre></div>`).join("") || "<div class='empty'>Prueba con una pregunta o toca un atajo.</div>"}</div>
+        <textarea id="chat-q" rows="3" placeholder="¿Qué tengo esta semana? Explica DHCP…"></textarea>
+        <div class="chips-row chat-shortcuts">
+          ${atajos.map((t) => `<button class="chip" data-action="chat-ask" data-q="${esc(t)}">${esc(t)}</button>`).join("")}
+        </div>
+        <div class="hero-actions">
+          <button class="btn btn-primary" data-action="chat-send">Preguntar</button>
+          <button class="btn" data-action="chat-quiz">Test del tema abierto</button>
+          <button class="btn" data-action="chat-sum">Resumir nota</button>
+          <button class="btn" data-action="chat-map">Esquema</button>
+          <button class="btn" data-action="chat-speak">Leer último</button>
+        </div>
+      </div>`;
   }
 
   function habits() {
@@ -424,15 +466,12 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
         start: inicio, end: pad(Math.floor(finM / 60) % 24) + ":" + pad(finM % 60), room: "Estudio", type: "estudio" });
       grantXP(5, "Bloque de estudio"); checkAchievements(); save(); render(); toast("Hueco reservado (" + mins + " min)");
     }
-    if (action === "chat-send") {
-      const q = ($("#chat-q") || {}).value || "";
-      if (!q.trim()) return;
-      st()._chat = st()._chat || [];
-      st()._chat.push({ role: "user", text: q });
-      recortarChat();
-      const finish = (text) => { st()._chat.push({ role: "bot", text }); recortarChat(); render(); };
-      askOllama(q).then(finish).catch(() => finish(localBrain(q) + "\n\n(Ollama no respondió; respondió el motor local.)"));
+    if (action === "chat-ask") {
+      const caja = document.getElementById("chat-q");
+      if (caja) caja.value = btn.dataset.q || "";
+      enviarChat();
     }
+    if (action === "chat-send") enviarChat();
     if (action === "chat-quiz" || action === "chat-sum" || action === "chat-map") {
       const n = st().notes[0];
       if (!n) { toast("Crea una nota"); return; }
@@ -504,6 +543,21 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       toast("Modo concentración desactivado");
     }
     if (action === "sheet-print") window.print();
+    if (action === "ollama-modelos") {
+      const marca = document.getElementById("ollama-estado");
+      if (marca) marca.textContent = "Preguntando a Ollama…";
+      modelosOllama().then((ms) => {
+        const dl = document.getElementById("ollama-modelos");
+        if (dl) dl.innerHTML = ms.map((m) => `<option value="${esc(m)}"></option>`).join("");
+        const msg = ms.length ? ms.length + " modelo(s): " + ms.slice(0, 4).join(", ") : "Ollama responde, pero no hay modelos descargados";
+        if (marca) marca.textContent = msg;
+        toast(msg);
+      }).catch(() => {
+        const msg = "No responde en " + st().settings.ollamaUrl + " · revisa la dirección y la Wi-Fi";
+        if (marca) marca.textContent = msg;
+        toast(msg);
+      });
+    }
     if (action === "ollama-save" || action === "ollama-test" || action === "ollama-local") {
       if (action === "ollama-local") {
         st().settings.ollamaUrl = "";

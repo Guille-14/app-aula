@@ -959,7 +959,9 @@ html[data-reduce-motion="1"] *::after { animation: none !important; transition: 
 .confetti i { position: absolute; top: -12px; width: 7px; height: 11px; border-radius: 2px; animation: fall 1.1s ease-in forwards; }
 @keyframes fall { to { transform: translateY(900px) rotate(420deg); opacity: .15; } }
 .focus-fab { position: absolute; right: 14px; bottom: calc(var(--nav-h) + 12px); z-index: 28; }
-body.focus-mode .hub-header, body.focus-mode .hub-nav, body.focus-mode .timer-bar { display: none; }
+/* En foco se esconde la barra y la barra del temporizador; la cabecera se queda
+   con el botón de salir (si no, no habría forma de volver desde el móvil). */
+body.focus-mode .hub-nav, body.focus-mode .timer-bar { display: none; }
 body.hide-att .att { display: none !important; }
 body.examode .att { display: none !important; }
 
@@ -1155,9 +1157,12 @@ body.examode .att { display: none !important; }
 .att-legend { margin: 0; font-size: 12px; color: var(--muted); }
 .att-legend b { color: var(--ink); font-weight: 620; }
 
-/* ============================================== 21. Calendario escolar */
-.cal-escuela { display: flex; flex-direction: column; gap: 16px; }
-.cal-head { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; gap: 8px; }
+/* ============================================== 21. Calendario escolar
+   La rejilla se dimensiona sola: cada casilla es un cuadrado de 46 px como
+   mucho, centrado en su columna. Así no se sale de la tarjeta ni se corta,
+   ni en pantallas de 320 px. */
+.cal-escuela { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+.cal-head { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; align-items: center; gap: 8px; }
 .cal-arrow {
   width: 40px; height: 40px;
   display: grid; place-items: center;
@@ -1172,14 +1177,20 @@ body.examode .att { display: none !important; }
 .cal-arrow:active { transform: scale(.92); }
 .cal-arrow:disabled { opacity: .28; pointer-events: none; }
 .cal-title { min-width: 0; text-align: center; }
-.cal-title b { display: block; font-size: 20px; font-weight: 660; letter-spacing: -0.03em; text-transform: capitalize; }
-.cal-title small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cal-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.cal-sum > div { padding: 12px 8px; border-radius: 16px; background: var(--surface-2); text-align: center; }
-.cal-sum b { display: block; font-size: 21px; font-weight: 660; letter-spacing: -0.04em; line-height: 1.05; font-variant-numeric: tabular-nums; }
-.cal-sum small { display: block; margin-top: 4px; font-size: 10.5px; color: var(--muted); font-weight: 560; }
-.cal-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.cal-actions .chip { min-height: 32px; font-size: 12px; padding: 6px 12px; }
+.cal-title b { display: block; font-size: 19px; font-weight: 660; letter-spacing: -0.03em; text-transform: capitalize; line-height: 1.15; }
+.cal-title small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--muted);
+}
+.cal-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.cal-sum > div { min-width: 0; padding: 9px 6px; border-radius: 14px; background: var(--surface-2); text-align: center; }
+.cal-sum b { display: block; font-size: 19px; font-weight: 660; letter-spacing: -0.04em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.cal-sum small { display: block; margin-top: 3px; font-size: 10px; color: var(--muted); font-weight: 560; line-height: 1.2; }
+.cal-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cal-actions .chip { min-height: 30px; font-size: 11.5px; padding: 5px 11px; }
 .cal-hoy { cursor: pointer; }
 .chip.is-vac {
   background: color-mix(in srgb, var(--amber) 13%, transparent);
@@ -1187,31 +1198,40 @@ body.examode .att { display: none !important; }
   color: var(--amber);
   font-weight: 600;
 }
-.cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
 .cal .dow, .cal-weekdays .dow {
+  min-width: 0;
   text-align: center;
-  font-size: 10.5px; font-weight: 620;
-  letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 10px; font-weight: 620;
+  letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--muted-2);
 }
-.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  justify-items: center;
+}
 button.cal-day {
   position: relative;
-  display: grid; place-items: center;
+  width: min(100%, 46px);
   aspect-ratio: 1 / 1;
+  display: grid; place-items: center;
   padding: 0;
-  border: 0; border-radius: 50%;
+  border: 0;
+  border-radius: 999px;
   background: transparent;
   color: var(--ink);
   font: inherit;
+  overflow: hidden;
   transition: background .16s ease, transform .14s ease, box-shadow .18s ease;
 }
-button.cal-day .n { font-size: 13.5px; font-weight: 560; font-variant-numeric: tabular-nums; }
+button.cal-day .n { font-size: 13px; font-weight: 560; line-height: 1; font-variant-numeric: tabular-nums; }
 button.cal-day.out { visibility: hidden; }
 button.cal-day:active { transform: scale(.9); }
 button.cal-day.is-lectivo:hover, button.cal-day.is-finde:hover { background: var(--surface-2); }
 button.cal-day.is-finde { color: var(--muted-2); }
-button.cal-day.is-fuera { color: var(--muted-2); opacity: .4; }
+button.cal-day.is-fuera { color: var(--muted-2); opacity: .45; }
 button.cal-day.is-hol {
   background: color-mix(in srgb, var(--red) 16%, transparent);
   color: color-mix(in srgb, var(--red) 86%, var(--ink));
@@ -1228,14 +1248,16 @@ button.cal-day.is-hoy {
   background: var(--invert);
   color: var(--invert-ink);
   font-weight: 680;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 12%, transparent);
 }
 button.cal-day.is-hoy .n { font-weight: 700; }
+@supports not (aspect-ratio: 1 / 1) {
+  button.cal-day { height: 40px; }
+}
 .cal-key {
   display: flex; flex-wrap: wrap; align-items: center;
-  gap: 6px 14px;
+  gap: 5px 12px;
   margin: 0;
-  font-size: 11.5px; color: var(--muted);
+  font-size: 11px; color: var(--muted);
 }
 .cal-key .k { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
 .k-lectivo { background: color-mix(in srgb, var(--ink) 62%, transparent); }
@@ -2001,3 +2023,124 @@ button.row { width: 100%; text-align: left; }
 .wa-day .wa-ev.is-soft { opacity: .6; }
 .agenda-head { display: flex; flex-direction: column; gap: 10px; }
 .agenda-head .hub-seg { align-self: flex-start; }
+
+/* ============================ 38. Exámenes y modo foco (ronda v61) ===== */
+
+/* — Salir de foco: integrado en la cabecera, y solo cuando estás en foco — */
+.focus-exit { display: none; }
+body.focus-mode .focus-exit { display: grid; }
+body.focus-mode .hub-actions > .hub-round:not(.focus-exit) { display: none; }
+body.focus-mode #view-sub { display: none; }
+body.focus-mode .hub-nav { display: none; }
+body.focus-mode .hub-scroll { padding-bottom: 28px; }
+
+/* — Próxima prueba: cabecera de la vista de exámenes — */
+.exam-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--card-bd, var(--line));
+  background: linear-gradient(160deg, color-mix(in srgb, var(--blue) 13%, transparent), var(--surface) 64%);
+  box-shadow: var(--card-in, none), var(--card-sh, 0 0 #0000);
+}
+.exam-hero.is-hoy {
+  border-color: color-mix(in srgb, var(--red) 34%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--red) 14%, transparent), var(--surface) 64%);
+}
+.exam-hero.vacio { background: var(--surface); }
+.exam-hero > b { font-size: 21px; font-weight: 660; letter-spacing: -0.03em; line-height: 1.15; padding-right: 74px; }
+.exam-hero > small { color: var(--muted); font-size: 12.5px; padding-right: 74px; }
+.exam-count { position: absolute; top: 14px; right: 16px; text-align: center; }
+.exam-count b { display: block; font-size: 32px; font-weight: 680; letter-spacing: -0.05em; line-height: 1; font-variant-numeric: tabular-nums; }
+.exam-count span { display: block; margin-top: 3px; font-size: 9.5px; font-weight: 640; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.exam-topics-hero { margin: 8px 0 0; padding-right: 74px; }
+
+/* — Lista de pruebas — */
+.exam-list { display: flex; flex-direction: column; gap: 8px; }
+.exam-card {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--card-bd, var(--line));
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  box-shadow: var(--card-in, none), var(--card-sh, 0 0 #0000);
+  transition: background .18s ease, transform .14s ease;
+}
+.exam-card:hover { background: var(--surface-2); }
+.exam-card.is-hoy { border-color: color-mix(in srgb, var(--red) 36%, transparent); }
+.exam-card.is-pasado { opacity: .7; }
+.exam-date {
+  width: 46px; height: 46px;
+  display: grid; place-content: center;
+  text-align: center;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.exam-date b { display: block; font-size: 17px; font-weight: 660; line-height: 1; font-variant-numeric: tabular-nums; }
+.exam-date small { display: block; margin-top: 2px; font-size: 9.5px; font-weight: 620; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.exam-card.is-hoy .exam-date { background: color-mix(in srgb, var(--red) 14%, transparent); }
+.exam-card.is-hoy .exam-date b { color: var(--red); }
+.exam-body { min-width: 0; }
+.exam-body b { display: block; font-size: 14.5px; font-weight: 620; letter-spacing: -0.015em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exam-body small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exam-body .exam-topics { color: var(--muted-2); }
+.exam-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.exam-nota { font-size: 15px; font-weight: 680; font-variant-numeric: tabular-nums; }
+.exam-nota.is-bad { color: var(--red); }
+.exam-nota.is-ok { color: var(--green); }
+
+/* — Tira de «próxima prueba» en Inicio — */
+.exam-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "k x" "b x" "s x";
+  align-content: center;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--amber) 28%, var(--card-bd, var(--line)));
+  background: linear-gradient(150deg, color-mix(in srgb, var(--amber) 9%, transparent), var(--surface) 72%);
+  color: inherit;
+  text-align: left;
+  transition: transform .14s ease, border-color .18s ease;
+}
+.exam-strip:active { transform: scale(.99); }
+.exam-strip .k { grid-area: k; }
+.exam-strip > b { grid-area: b; font-size: 15.5px; font-weight: 640; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exam-strip > small { grid-area: s; color: var(--muted); font-size: 11.5px; }
+.exam-strip .exam-strip-x { grid-area: x; color: var(--muted-2); font-size: 18px; }
+
+/* — Caja de conexión del chat (details nativo, con nuestro estilo) — */
+.chat-cfg { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.chat-cfg > summary {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer;
+  font-size: 13.5px; font-weight: 620; color: var(--ink);
+  list-style: none;
+}
+.chat-cfg > summary::-webkit-details-marker { display: none; }
+.chat-cfg > summary::after { content: "›"; margin-left: auto; color: var(--muted); transition: transform .2s ease; }
+.chat-cfg[open] > summary::after { transform: rotate(90deg); }
+.chat-cfg[open] > summary { margin-bottom: 10px; }
+.chat-cfg .hero-actions { margin-top: 4px; }
+.chat-shortcuts { margin-top: 10px; }
+.chat-shortcuts .chip { text-align: left; white-space: normal; line-height: 1.3; }
+.chat-ia .card-head b { font-size: 15px; font-weight: 640; }
+.chat-ia .card-head .hint { margin-top: 2px; word-break: break-word; }
+
+/* — El calendario, a prueba de desbordes: nada se sale de su tarjeta — */
+.cal-escuela { max-width: 100%; }
+.cal-actions .chip { max-width: 100%; white-space: normal; text-align: left; line-height: 1.25; }
+.cal-sum small, .cal-key, .cal-title b, .cal-title small { overflow-wrap: anywhere; }
+.cal-sum > div { overflow: hidden; }

@@ -145,7 +145,7 @@ const VIEWS = ["dashboard", "schedule", "notes", "cards", "timer", "stats", "sub
   const A = env.A;
   check(A.state.settings.dailyGoal === 90, "ajustes imposibles: se corrigen (meta diaria)");
   check(Array.isArray(A.state.events), "events con basura: se convierte en lista válida");
-  check(A.state.exams === undefined && A.state.tasks === undefined, "sin exámenes ni deberes: lo viejo que hubiera guardado no se carga");
+  check(Array.isArray(A.state.exams) && A.state.tasks === undefined, "estado roto: los exámenes vuelven como lista y los deberes siguen fuera");
   check(A.state.sessions.every((s) => s.minutes >= 0 && s.minutes <= 1440), "minutos imposibles: saneados");
   check(A.state.subjects.every((s) => s.name), "módulos sin nombre: se renombran");
 }
@@ -232,7 +232,7 @@ async function testImport() {
   check(confirmModal(env), "importar: pide confirmación antes de sustituir");
   check(A.state.subjects.some((s) => s.name === "Módulo importado"), "importar: entran los datos del archivo");
   check(Array.isArray(A.state.events), "importar: se sanean los campos rotos del archivo");
-  check(A.state.exams === undefined && A.state.tasks === undefined, "importar: los exámenes y deberes de una copia vieja se descartan");
+  check(Array.isArray(A.state.exams) && A.state.tasks === undefined, "importar: los exámenes de una copia vieja se sanean y los deberes se descartan");
 }
 
 // ------------------------------------------------- 6. temporizador persistente
@@ -507,7 +507,7 @@ async function testSinRed() {
   check(enBarra.length >= 4, "navegación: la barra de abajo tiene sus vistas fijas (" + enBarra.join(", ") + ")");
   check(enHoja.length >= 10, "navegación: la hoja «Más» sigue teniendo el resto (" + enHoja.length + " vistas)");
   check(repetidas.length === 0, "navegación: nada de la barra de abajo se repite en «Más»" + (repetidas.length ? " (repetido: " + repetidas.join(", ") + ")" : ""));
-  const conocidas = VIEWS.concat(["admin", "examode", "quickreview", "inbox", "review", "achievements", "agenda", "chatbot", "habits", "glossary", "rendimiento", "tools"]);
+  const conocidas = VIEWS.concat(["admin", "examode", "quickreview", "inbox", "review", "achievements", "agenda", "chatbot", "habits", "glossary", "rendimiento", "tools", "exams"]);
   const raras = enBarra.concat(enHoja).filter((v) => !conocidas.includes(v));
   check(raras.length === 0, "navegación: todos los botones llevan a una vista que existe" + (raras.length ? " (raro: " + raras.join(", ") + ")" : ""));
 }
@@ -606,26 +606,16 @@ async function testSinRed() {
   ready(env.A);
   const A = env.A;
 
-  // Ni vistas, ni botones, ni nombres en la navegación
-  const conExamenes = ["exams", "tasks", "plan", "kanban", "simulator"];
+  // v61: los exámenes vuelven, con pestaña propia; los deberes siguen fuera
+  const fuera = ["tasks", "plan", "kanban", "simulator"];
   A.go("dashboard");
-  check(conExamenes.every((v) => {
-    for (const b of env.doc.querySelectorAll(`[data-view="${v}"]`)) return false;
-    return true;
-  }), "sin exámenes ni deberes: no hay botones a las vistas de exámenes/tareas/plan/tablero");
+  check(fuera.every((v) => !env.doc.querySelector(`[data-view="${v}"]`)), "sin deberes: no quedan vistas de tareas/plan/tablero");
+  check(!!env.doc.querySelector('#bottom-nav [data-view="exams"]'), "exámenes: la pestaña está en la barra de abajo");
+  check(!env.doc.querySelector('#bottom-nav [data-view="notes"]'), "apuntes: ya no ocupa un hueco en la barra");
 
-  // Nada de eso se ve en pantalla por ninguna vista
-  let conTexto = [];
-  for (const v of VIEWS) {
-    A.go(v);
-    const txt = env.doc.getElementById("view").textContent;
-    if (/examen|tarea|deber|entrega/i.test(txt)) conTexto.push(v);
-  }
-  A.go("dashboard");
-  check(conTexto.length === 0, "sin exámenes ni deberes: ninguna vista habla de exámenes ni de tareas" + (conTexto.length ? " (con texto: " + conTexto.join(", ") + ")" : ""));
-
-  // El estado arranca sin esas listas y el demo tampoco las trae
-  check(A.state.exams === undefined && A.state.tasks === undefined, "sin exámenes ni deberes: no hay listas de exámenes ni de tareas en el estado");
+  // El estado trae la lista, vacía de fábrica, y sin tareas
+  check(Array.isArray(A.state.exams), "exámenes: el estado trae su lista");
+  check(A.state.tasks === undefined, "sin deberes: no hay lista de tareas en el estado");
 
   // Notas por módulo (lo que sustituye a las notas de examen)
   const s0 = A.state.subjects[0];
@@ -649,7 +639,7 @@ async function testSinRed() {
   A.go("agenda");
   const ag = env.doc.getElementById("view").textContent;
   check(!/Clases/.test(ag), "agenda: ya no lista las clases del horario");
-  check(!/Exámenes|Tareas/.test(ag), "agenda: ni exámenes ni tareas");
+  check(!/Tareas/.test(ag), "agenda: sigue sin deberes ni tareas");
   check(/Bloques de estudio|Huecos libres/.test(ag), "agenda: ahora es tu plan de estudio");
 
   // Los widgets del escritorio no ofrecen exámenes ni tareas
@@ -807,6 +797,128 @@ async function testAuditoria() {
     check(/\.tool-ico \{[^}]*var\(--c/.test(ui), "herramientas: el icono se tiñe con su propio color");
   }
 
+  // --- v61: exámenes con pestaña propia en la barra de abajo ---
+  {
+    const env = boot();
+    ready(env.A);
+    const A = env.A, r = env.doc;
+    check(Array.isArray(A.state.exams) && A.state.exams.length === 0, "exámenes: el estado trae la lista vacía");
+    A.go("exams");
+    check(!!r.querySelector(".exam-hero"), "exámenes: la vista abre con su cabecera");
+    check(/Sin pruebas apuntadas/.test(r.querySelector(".exam-hero").textContent), "exámenes: sin nada apuntado lo dice claro");
+
+    // Apuntar una prueba a mano
+    act(env, "add-exam", {});
+    const form = r.getElementById("modal-form");
+    check(!!form, "exámenes: se abre el formulario");
+    form.querySelector('[name="title"]').value = "Tema 3 · Subnetting";
+    form.querySelector('[name="date"]').value = "2026-09-25";
+    form.querySelector('[name="time"]').value = "16:00";
+    form.querySelector('[name="topics"]').value = "VLSM y ACL";
+    form.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
+    check(A.state.exams.length === 1 && A.state.exams[0].title === "Tema 3 · Subnetting", "exámenes: la prueba se guarda");
+    check(!!A.state.exams[0].subjectId, "exámenes: se apunta con el módulo puesto");
+    check(/Subnetting/.test(r.querySelector(".exam-hero").textContent), "exámenes: la siguiente prueba sale en la cabecera");
+    const cajas = [...r.querySelectorAll(".exam-card")];
+    check(cajas.length === 1, "exámenes: sale en la lista (" + cajas.length + ")");
+    check(/En \d+ días|Mañana|Hoy/.test(cajas[0].textContent), "exámenes: con la cuenta atrás");
+    check(/VLSM y ACL/.test(cajas[0].textContent), "exámenes: y el temario que entra");
+
+    // La tira de Inicio avisa de la próxima
+    A.go("dashboard");
+    const tira = r.querySelector(".exam-strip");
+    check(!!tira && /Subnetting/.test(tira.textContent), "exámenes: Inicio enseña la próxima prueba en una tira");
+    check(tira.dataset.to === "exams", "exámenes: la tira lleva a la pestaña");
+
+    // Filtros
+    A.go("exams");
+    act(env, "exam-filter", { f: "pasados" });
+    check(!r.querySelector(".exam-card"), "exámenes: el filtro de pasadas no mezcla las futuras");
+    act(env, "exam-filter", { f: "todos" });
+    check(!!r.querySelector(".exam-card"), "exámenes: el filtro de todas las enseña");
+
+    // Borrar: con confirmación
+    A.go("exams");
+    act(env, "edit-exam", { id: A.state.exams[0].id });
+    check(!!r.getElementById("modal-form"), "exámenes: se puede editar la prueba");
+    act(env, "delete-exam", { id: A.state.exams[0].id });
+    check(confirmModal(env), "exámenes: borrar pide confirmación");
+    check(A.state.exams.length === 0, "exámenes: y desaparece de la lista");
+    check(env.errors.length === 0, "exámenes: sin errores de consola (" + env.errors.slice(0, 1).join("") + ")");
+  }
+
+  // --- v61: las pruebas salen en el .ics del calendario ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.state.exams.push({ id: "ex1", subjectId: env.A.state.subjects[0].id, title: "Subnetting", kind: "Examen", date: "2026-11-10", time: "16:30", room: "AULA 2", topics: "Tema 3", grade: "", createdAt: Date.now() });
+    let ics = "";
+    const BlobReal = env.window.Blob;
+    env.window.Blob = function (parts, opts) { ics = String(parts[0]); return new BlobReal(parts, opts); };
+    act(env, "export-ics", {});
+    check(/UID:aula-exam-ex1@aula-smr/.test(ics), "ics: la prueba apuntada viaja al calendario");
+    check(/DTSTART;TZID=Europe\/Madrid:20261110T163000/.test(ics), "ics: con su hora de inicio");
+    check(/DESCRIPTION:/.test(ics) && /Tema 3/.test(ics), "ics: y el temario en la descripción");
+  }
+
+  // --- v61: fuera el botón flotante de foco, con salida en la cabecera ---
+  {
+    const env = boot();
+    ready(env.A);
+    const r = env.doc;
+    const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+    check(!/focus-fab/.test(html), "foco: el botón flotante «Salir de foco» ya no está");
+    check(!!r.querySelector(".hub-header .focus-exit"), "foco: la salida vive en la cabecera");
+    check(!r.body.classList.contains("focus-mode"), "foco: la app arranca sin modo foco");
+    act(env, "toggle-focus", {});
+    check(r.body.classList.contains("focus-mode"), "foco: el botón de la vista Estudio entra en foco");
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+    check(/\.focus-exit \{ display: none; \}/.test(ui) && /body\.focus-mode \.focus-exit \{ display: grid; \}/.test(ui), "foco: la salida solo aparece dentro del modo foco");
+    check(!/body\.focus-mode \.hub-header, body\.focus-mode \.hub-nav/.test(ui), "foco: la cabecera sigue visible para poder salir");
+    act(env, "toggle-focus", {});
+    check(!r.body.classList.contains("focus-mode"), "foco: se sale con el mismo botón");
+  }
+
+  // --- v61: el chat de Ollama, en «Más» y con su configuración dentro ---
+  {
+    const env = boot();
+    ready(env.A);
+    const r = env.doc;
+    const entrada = r.querySelector('#more-sheet [data-view="chatbot"]');
+    check(!!entrada && /Ollama/i.test(entrada.textContent), "chat: «Más» tiene el acceso al chat de Ollama");
+    check(!!r.querySelector('#more-sheet [data-view="notes"]'), "apuntes: al salir de la barra, aparece en «Más»");
+    env.A.go("chatbot");
+    check(!!r.getElementById("set-ollama") && !!r.getElementById("set-omodel"), "chat: se puede poner la dirección y el modelo");
+    check(r.querySelector(".chat-cfg").open, "chat: la caja de conexión se abre sola mientras no haya servidor");
+    const atajos = [...r.querySelectorAll(".chat-shortcuts .chip")];
+    check(atajos.length >= 3, "chat: hay atajos de preguntas (" + atajos.length + ")");
+    const textoAtajo = atajos[0].textContent.trim();
+    atajos[0].click();
+    const hilo = r.querySelector("#chat-log").textContent;
+    check(hilo.includes(textoAtajo), "chat: el atajo se pregunta solo (" + textoAtajo + ")");
+    check(r.querySelectorAll("#chat-log .chat-msg.user").length === 1, "chat: la pregunta aparece en el hilo al momento");
+    check(env.errors.length === 0, "chat: sin errores de consola (" + env.errors.slice(0, 1).join("") + ")");
+  }
+
+  // --- v61: el calendario no se puede cortar (casilla acotada) ---
+  {
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+    check(/button\.cal-day \{[^}]*width: min\(100%, 46px\)/.test(ui), "calendario: cada día se acota a 46 px como mucho");
+    check(/grid-template-columns: repeat\(7, minmax\(0, 1fr\)\)/.test(ui), "calendario: las columnas no pueden desbordar la tarjeta");
+    check(!/\.cal-title small \{[^}]*text-overflow/.test(ui), "calendario: el subtítulo ya no se corta con puntos suspensivos");
+
+    const env = boot();
+    ready(env.A);
+    env.A.go("schedule");
+    act(env, "sch-view", { mode: "month" });
+    const r = env.doc;
+    const celdas = [...r.querySelectorAll(".cal .cal-day")];
+    check(celdas.length > 0 && celdas.length % 7 === 0, "calendario: siguen siendo semanas completas (" + celdas.length + ")");
+    check(r.querySelectorAll(".cal-weekdays .dow").length === 7, "calendario: la fila de días de la semana sigue ahí");
+    check(celdas.filter((c) => c.classList.contains("is-hoy") || c.classList.contains("today")).length <= 1, "calendario: hoy se marca una sola vez");
+    check(/curso hasta el/.test(r.querySelector(".cal-title small").textContent), "calendario: el subtítulo cabe (" + r.querySelector(".cal-title small").textContent.trim() + ")");
+  }
+
   // --- v59: una sola hoja de interfaz y el aviso de invitado en la cabecera ---
   {
     const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
@@ -938,16 +1050,22 @@ async function testAuditoria() {
     }
   }
 
-  // --- Textos: la app ya no habla de exámenes ni de deberes en ninguna pantalla ---
+  // --- Textos: fuera los deberes; los exámenes viven en su vista (v61) ---
   {
     const env = boot();
     ready(env.A);
     const conTexto = [];
+    const conDeberes = [];
     for (const v of VIEWS) {
       env.A.go(v);
-      if (/examen|deber|tarea/i.test(env.doc.getElementById("view").textContent)) conTexto.push(v);
+      const txt = env.doc.getElementById("view").textContent;
+      if (/deber|tarea/i.test(txt)) conDeberes.push(v);
+      if (/examen/i.test(txt) && v !== "chatbot") conTexto.push(v);   // el chat propone «¿próximo examen?»
     }
-    check(conTexto.length === 0, "textos: ninguna vista habla de exámenes, deberes ni tareas" + (conTexto.length ? " (" + conTexto.join(", ") + ")" : ""));
+    check(conDeberes.length === 0, "textos: ninguna vista habla de deberes ni tareas" + (conDeberes.length ? " (" + conDeberes.join(", ") + ")" : ""));
+    check(conTexto.length === 0, "textos: los exámenes solo salen en su vista" + (conTexto.length ? " (" + conTexto.join(", ") + ")" : ""));
+    env.A.go("exams");
+    check(/Examen/i.test(env.doc.getElementById("view").textContent), "textos: la vista de exámenes sí habla de exámenes");
     env.A.state.settings.onboarded = false;
     env.A.render();
     check(!/examen/i.test(env.doc.getElementById("view").textContent), "textos: la primera pantalla tampoco habla de exámenes");
@@ -1018,7 +1136,7 @@ async function testAuditoria() {
     await testSinRed();
     await testAuditoria();
   } catch (e) {
-    fails.push("las pruebas asíncronas fallaron: " + e.message);
+    fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");
   }
 
   console.log("\n  ✓ " + oks.length + " comprobaciones correctas");

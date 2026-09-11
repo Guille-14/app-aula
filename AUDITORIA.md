@@ -6,6 +6,7 @@
 **Ronda v58:** commits `6c70d71` y `de1c2a1` (auditoría línea a línea + arreglos, 182 pruebas ✓).
 **Ronda v59:** rediseño de interfaz (una sola hoja `css/ui.css`, calendario escolar nuevo, 198 pruebas ✓).
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
+**Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Tamaño analizado:** 9.225 líneas / 454 KB (189 KB de `app.js`, 148 KB de CSS).
 
 ## Cómo se ha auditado (para que te fíes de los hallazgos)
@@ -742,6 +743,29 @@ Se rehízo el marcado y el CSS (la v59 dejaba puntos bajo los números y una lis
 - `npm test` → **216 comprobaciones ✓** (12 nuevas: ninguna vista enseña `undefined`/`NaN`/`[object Object]` —se recorren las 20—, estructura de las tarjetas de módulos, píldoras del horario, barra de guardar de ajustes y paleta de acentos en claro y oscuro).
 - Sin IDs duplicados, sin botones sin nombre accesible y sin colores hexadecimales en línea en ninguna de las 21 vistas (comprobado sobre el DOM real con jsdom).
 - Sigue sin haber navegador headless en este entorno: la revisión es por código, DOM y comprobaciones automáticas, no por capturas.
+
+---
+
+## Ronda v61 · Exámenes, foco, calendario a prueba de cortes y chat de Ollama
+
+Peticiones del usuario, una a una:
+
+1. **El calendario del Horario «se ve cortado».** Se ha reescrito el marcado y el CSS del calendario escolar para que **no pueda** salirse de su tarjeta:
+   - Las columnas son `repeat(7, minmax(0, 1fr))` (antes `1fr`, que puede crecer con el contenido).
+   - Cada casilla es `width: min(100%, 46px)` con `aspect-ratio: 1/1` y `justify-items: center`: siempre cuadrada, nunca más ancha que su columna, y con tope de altura (antes podía estirarse).
+   - Respaldo para navegadores sin `aspect-ratio` (`height: 40px`).
+   - Se han compactado resumen, píldoras y leyenda (12 px de separación, cifras de 19 px) para que el mes entero quepa de una vez en pantallas normales.
+   - El subtítulo ya no se recorta con puntos suspensivos (`curso hasta el 18 de junio`), y las píldoras de contexto pueden partirse en dos líneas en vez de empujar la tarjeta.
+2. **Barra de abajo: fuera Apuntes, dentro Exámenes.** Los cinco huecos pasan a ser Inicio · Horario · Más · **Exámenes** · Notas. Apuntes se muda a la hoja «Más» (y sigue sin duplicarse: la regla de la v52 se mantiene).
+3. **Los exámenes vuelven** (la v57 los había retirado): vista propia con cabecera de «próxima prueba» y cuenta atrás, tres cifras (por delante, con nota, media), filtros *Próximas / Pasadas / Todas*, lista de tarjetas con día, módulo, tipo, hora, aula y temario, formulario completo (módulo, título, tipo, fecha, hora, aula, temas, nota) y borrado con confirmación. Se sanean al cargar, se guardan en el estado, **se exportan al .ics** y aparece una tira en Inicio cuando hay algo cerca. Los deberes siguen fuera (eso no se ha tocado).
+4. **Fuera el botón flotante «Salir de foco».** Ese botón se quedaba encima de la pantalla todo el rato, no solo en modo foco. Ahora la salida vive **dentro de la cabecera** y solo se ve cuando el modo foco está activo (la cabecera ya no se oculta en foco, si no no habría manera de salir desde el móvil).
+5. **Chat de Ollama en «Más».** Acceso directo en la hoja, y la vista deja de mandarte a «Datos locales»: tiene su caja de conexión con dirección del servidor, modelo (con lista de los que tengas descargados en Ollama), guardar, probar conexión y volver al motor local, además de atajos de pregunta. Sigue sin haber nube: solo se habla con la dirección que escribas tú.
+
+### Comprobaciones
+
+- `npm test` → **263 comprobaciones ✓** (45 nuevas: exámenes de punta a punta, .ics con la prueba, foco sin botón flotante, chat con su configuración y atajos, y el calendario acotado).
+- Se ha recorrido el DOM de las 23 vistas: ninguna clase pintada sin regla, ningún `undefined` en pantalla, sin errores de consola.
+- Sigue sin haber navegador headless en este entorno: la revisión es por código, DOM y pruebas automáticas.
 
 ---
 
