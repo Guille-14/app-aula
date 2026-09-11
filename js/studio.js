@@ -74,39 +74,6 @@
     return `Hoy: ${d <= 2 ? "urgencia" : "avance"} de ${subjectName(nx.subjectId)} (${nx.title}, ${d} d).`;
   }
 
-  function parseGuideText(text) {
-    const dates = [];
-    const re = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/g;
-    let m;
-    while ((m = re.exec(text))) {
-      const y = m[3].length === 2 ? "20" + m[3] : m[3];
-      const iso = `${y}-${pad(m[2])}-${pad(m[1])}`;
-      const around = text.slice(Math.max(0, m.index - 40), m.index + 40).replace(/\s+/g, " ");
-      dates.push({ iso, around, keep: true });
-    }
-    const weights = [];
-    const wr = /(\d{1,3})\s?%\s*([A-Za-zÁÉÍÓÚáéíóúñÑ ]{3,40})/g;
-    while ((m = wr.exec(text))) weights.push({ pct: Number(m[1]), label: m[2].trim(), keep: true });
-    const att = /(\d{1,2})\s?%\s*(faltas|asistencia)/i.exec(text);
-    const min = /nota m[ií]nima[^\d]{0,12}(\d(?:[.,]\d)?)/i.exec(text);
-    return {
-      dates: dates.slice(0, 20),
-      weights: weights.slice(0, 12),
-      attendanceMax: att ? Number(att[1]) : "",
-      minGrade: min ? min[1].replace(",", ".") : "",
-    };
-  }
-
-  function extractPdfStrings(buf) {
-    const u8 = new Uint8Array(buf);
-    let s = "";
-    for (let i = 0; i < u8.length; i++) {
-      const c = u8[i];
-      s += (c >= 32 && c < 127) ? String.fromCharCode(c) : " ";
-    }
-    return s.replace(/[ \t]{2,}/g, " ");
-  }
-
   function agenda() {
     const tab = st()._agendaTab || "dia";
     const cursor = st()._agendaDay || todayISO();
@@ -340,16 +307,6 @@
     </div>`;
   }
 
-  function trash() {
-    const list = st().trash || [];
-    return `<div class="card">
-      <h3>Papelera de apuntes</h3>
-      ${list.map((n) => `<div class="row"><div style="flex:1"><b>${esc(n.title)}</b><small> ${new Date(n.deletedAt).toLocaleString("es-ES")}</small></div>
-        <button class="btn btn-sm" data-action="trash-restore" data-id="${n.id}">Restaurar</button>
-        <button class="btn btn-sm btn-danger" data-action="trash-kill" data-id="${n.id}">Borrar</button></div>`).join("") || "<div class='empty'>Vacía.</div>"}
-    </div>`;
-  }
-
   function examode() {
     const notes = st().notes.slice(0, 8);
     return `<div class="card">
@@ -409,25 +366,6 @@
       <p>Consulta sin guardar (no deja rastro en este navegador).</p>
       <button class="btn" data-action="guest-on">Entrar como invitado</button>
       <button class="btn" data-action="guest-off">Salir</button>
-    </div>`;
-  }
-
-  function guide() {
-    const draft = st()._guide || null;
-    return `<div class="card">
-      <h3>Importar guía docente</h3>
-      <p class="hint">Sube el TXT o MD de la guía (o pega el texto): se buscan fechas, pesos de evaluación y normas con reglas locales, sin enviar nada a internet. Con PDF funciona solo si el texto se puede copiar: el análisis se hace sobre el texto pegado, no sobre el archivo.</p>
-      <label for="guide-file" class="sr-only">Archivo de la guía docente</label><input type="file" id="guide-file" accept=".pdf,.txt,.md" aria-label="Archivo de la guía docente" />
-      <button class="btn btn-primary" data-action="guide-parse">Analizar</button>
-      ${draft ? `<div style="margin-top:14px">
-        <h3>Fechas detectadas</h3>
-        ${draft.dates.map((d, i) => `<label class="check"><input type="checkbox" data-action="guide-tog" data-k="dates" data-i="${i}" ${d.keep ? "checked" : ""}/> ${d.iso} — ${esc(d.around)}</label>`).join("") || "<p>Ninguna.</p>"}
-        <h3>Pesos</h3>
-        ${draft.weights.map((w, i) => `<label class="check"><input type="checkbox" data-action="guide-tog" data-k="weights" data-i="${i}" ${w.keep ? "checked" : ""}/> ${w.pct}% ${esc(w.label)}</label>`).join("") || "<p>Ninguno.</p>"}
-        <p>Faltas máx.: ${draft.attendanceMax || "—"}% · nota mínima: ${draft.minGrade || "—"}</p>
-        <div class="field"><label>Módulo destino</label><select id="guide-sub">${subjectOptions()}</select></div>
-        <button class="btn btn-primary" data-action="guide-apply">Aprobar y guardar</button>
-      </div>` : ""}
     </div>`;
   }
 
@@ -519,16 +457,6 @@
       });
     }
     if (action === "gloss-del") { st().glossary = (st().glossary || []).filter((x) => x.id !== id); save(); render(); }
-    if (action === "trash-restore") {
-      const n = (st().trash || []).find((x) => x.id === id);
-      if (n) { delete n.deletedAt; st().notes.unshift(n); st().trash = st().trash.filter((x) => x.id !== id); save(); render(); }
-    }
-    if (action === "trash-kill") {
-      const n = (st().trash || []).find((x) => x.id === id);
-      if (n && window.Aula && window.Aula.soltarFotos) window.Aula.soltarFotos(n);   // sus fotos salen del almacén
-      st().trash = (st().trash || []).filter((x) => x.id !== id);
-      save(); render(); toast("Nota borrada del todo");
-    }
     if (action === "examode-on") {
       const hasta = Date.now() + 90 * 60 * 1000;
       st().progress.flags = Object.assign({}, st().progress.flags, { examLockUntil: hasta });
@@ -543,51 +471,6 @@
       toast("Modo examen desactivado");
     }
     if (action === "sheet-print") window.print();
-    if (action === "guide-parse") {
-      const inp = document.getElementById("guide-file");
-      const f = inp && inp.files && inp.files[0];
-      if (!f) { toast("Elige un archivo"); return; }
-      const reader = new FileReader();
-      reader.onload = () => {
-        let text = "";
-        if (typeof reader.result === "string") text = reader.result;
-        else text = extractPdfStrings(reader.result);
-        st()._guide = parseGuideText(text);
-        render();
-      };
-      if (/\.pdf$/i.test(f.name)) reader.readAsArrayBuffer(f);
-      else reader.readAsText(f);
-    }
-    if (action === "guide-tog") {
-      const draft = st()._guide;
-      if (!draft) return;
-      const item = draft[btn.dataset.k][Number(btn.dataset.i)];
-      if (item) item.keep = !item.keep;
-    }
-    if (action === "guide-apply") {
-      const draft = st()._guide;
-      const sid = (document.getElementById("guide-sub") || {}).value;
-      if (!draft || !sid) { toast("Elige módulo"); return; }
-      const existing = new Set(st().exams.map((e) => e.date + e.title));
-      let n = 0;
-      draft.dates.filter((d) => d.keep).forEach((d) => {
-        const title = (d.around || "Evento guía").slice(0, 60);
-        if (existing.has(d.iso + title)) return;
-        st().exams.push({ id: uid(), subjectId: sid, title, date: d.iso, time: "09:00", type: "parcial", location: "", notes: "Importado de guía", grade: "", weight: 25, hoursNeeded: 8, status: "pendiente", checklist: [] });
-        n++;
-      });
-      const wsum = draft.weights.filter((w) => w.keep);
-      if (wsum.length) {
-        st().exams.filter((e) => e.subjectId === sid && e.notes === "Importado de guía").forEach((e, i) => {
-          if (wsum[i]) e.weight = wsum[i].pct;
-        });
-      }
-      if (draft.attendanceMax) st().settings.attendanceMax = draft.attendanceMax;
-      if (draft.minGrade) st().settings.minPartGrade = draft.minGrade;
-      st()._guide = null;
-      toast(n + " fechas añadidas");
-      save(); render();
-    }
     if (action === "ollama-save" || action === "ollama-test" || action === "ollama-local") {
       if (action === "ollama-local") {
         st().settings.ollamaUrl = "";
@@ -831,8 +714,8 @@
   });
 
   window.AulaStudio = {
-    agenda, kanban, chatbot, simulator, habits, glossary, trash,
-    examode, quickreview, admin, guide, click, todayStudyHint, busyWeeks,
+    agenda, kanban, chatbot, simulator, habits, glossary,
+    examode, quickreview, admin, click, todayStudyHint, busyWeeks,
     // Herramientas que también viven en la sección de utilidades (buscador global)
     toolCatalog() {
       const out = [];

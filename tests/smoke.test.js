@@ -87,7 +87,7 @@ const confirmModal = (env) => {
 };
 const ready = (A) => { A.state.settings.onboarded = true; A.state.settings.demo = false; };
 
-const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "timer", "stats", "plan", "subjects", "settings", "inbox", "review", "achievements", "agenda", "kanban", "chatbot", "simulator", "habits", "glossary", "trash", "examode", "quickreview", "admin", "guide", "rendimiento", "tools"];
+const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "timer", "stats", "plan", "subjects", "settings", "inbox", "review", "achievements", "agenda", "kanban", "chatbot", "simulator", "habits", "glossary", "examode", "quickreview", "admin", "rendimiento", "tools"];
 
 // ------------------------------------------------------- 1. arranque y vistas
 {
@@ -105,7 +105,7 @@ const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "tim
       fails.push(`vista ${v} lanza: ${e.message}`);
     }
   }
-  check(env.errors.length === 0, "sin errores de consola al recorrer las 27 vistas (" + env.errors.slice(0, 2).join(" | ") + ")");
+  check(env.errors.length === 0, "sin errores de consola al recorrer las 25 vistas (" + env.errors.slice(0, 2).join(" | ") + ")");
 }
 
 // ------------------------------------------- 2. datos rotos: nada se pierde
@@ -413,12 +413,13 @@ async function testMedia() {
     A.go("notes");
     check(/data-media=/.test(env.doc.getElementById("view").innerHTML), "medios sin IndexedDB: la nota sigue mostrando la foto");
   }
-  // Borrar la nota del todo debe llevarse la foto del almacén
-  A.state.notes = A.state.notes.filter((n) => n.id !== "n1");
-  A.state.trash = (A.state.trash || []).concat([nota]);
-  A.go("trash");
-  act(env, "trash-kill", { id: "n1" });
+  // Borrar la nota del todo debe llevarse la foto del almacén (ya no hay papelera)
+  A.go("notes");
+  act(env, "open-note", { id: "n1" });
+  act(env, "delete-note", { id: "n1" });
+  check(confirmModal(env), "medios: borrar una nota pide confirmación");
   await new Promise((r) => setTimeout(r, 30));
+  check(!A.state.notes.some((n) => n.id === "n1"), "medios: la nota desaparece de Apuntes");
   const tras = await media.get(id);
   check(!tras, "medios: al borrar, la foto desaparece del almacén");
 }
@@ -491,9 +492,23 @@ async function testSinRed() {
   check(enBarra.length >= 4, "navegación: la barra de abajo tiene sus vistas fijas (" + enBarra.join(", ") + ")");
   check(enHoja.length >= 10, "navegación: la hoja «Más» sigue teniendo el resto (" + enHoja.length + " vistas)");
   check(repetidas.length === 0, "navegación: nada de la barra de abajo se repite en «Más»" + (repetidas.length ? " (repetido: " + repetidas.join(", ") + ")" : ""));
-  const conocidas = VIEWS.concat(["admin", "examode", "quickreview", "inbox", "review", "achievements", "agenda", "kanban", "chatbot", "simulator", "habits", "glossary", "trash", "guide", "rendimiento", "tools"]);
+  const conocidas = VIEWS.concat(["admin", "examode", "quickreview", "inbox", "review", "achievements", "agenda", "kanban", "chatbot", "simulator", "habits", "glossary", "rendimiento", "tools"]);
   const raras = enBarra.concat(enHoja).filter((v) => !conocidas.includes(v));
   check(raras.length === 0, "navegación: todos los botones llevan a una vista que existe" + (raras.length ? " (raro: " + raras.join(", ") + ")" : ""));
+}
+
+// ---------------- 17. la papelera se retiró: lo que había dentro vuelve a Apuntes
+{
+  const nota = { id: "pap1", subjectId: "s1", title: "Nota antigua", content: "estaba en la papelera", attachments: [], versions: [], createdAt: Date.now(), updatedAt: Date.now(), deletedAt: Date.now() };
+  const env = boot({
+    seed: JSON.stringify({ schemaVersion: 5, settings: { onboarded: true, demo: false }, subjects: [], notes: [], trash: [nota] }),
+  });
+  const A = env.A;
+  check(A.state.notes.some((n) => n.id === "pap1"), "papelera retirada: la nota que estaba dentro vuelve a Apuntes");
+  check(!A.state.trash, "papelera retirada: el estado ya no arrastra la lista de la papelera");
+  A.go("notes");
+  check(/Nota antigua/.test(env.doc.getElementById("view").innerHTML), "papelera retirada: la nota recuperada se ve en Apuntes");
+  check(env.errors.length === 0, "papelera retirada: sin errores al abrir con una papelera antigua");
 }
 
 // ------------------------------------------------------------- ejecución

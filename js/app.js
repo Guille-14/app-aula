@@ -60,7 +60,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v53";
+  const APP_VERSION = "v54";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -367,7 +367,7 @@
       },
       subjects: [], exams: [], notes: [], events: [], tasks: [], sessions: [], cards: [], inbox: [], attendance: [],
       progress: { bonusXp: 0, unlocked: {}, daily: "", log: [], flags: {}, freeze: 1, lastFreezeWeek: "" },
-      topics: [], habits: [], glossary: [], trash: [], backupsMeta: [],
+      topics: [], habits: [], glossary: [], backupsMeta: [],
       widgets: ["live","exams","tasks","xp"],
     };
   }
@@ -530,6 +530,7 @@
   let loadProblem = "";
   let saveProblem = "";
   let backupsRaw = "";
+  let papeleraRecuperada = 0;   // notas que volvieron de la papelera al abrir (papelera retirada en la v54)
 
   const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
   const asArray = (v) => (Array.isArray(v) ? v : []);
@@ -553,6 +554,8 @@
     // Aula ya no se sincroniza con ningún servidor: se limpian ajustes de versiones anteriores
     delete settings.syncUrl;
     delete settings.syncPin;
+    delete out._guide;   // el borrador de la guía docente se retiró
+    delete out.trash;    // la papelera se retiró (lo que hubiera dentro ya está en out.notes)
     if (!Number.isFinite(Number(settings.dailyGoal)) || Number(settings.dailyGoal) <= 0) settings.dailyGoal = 90;
     settings.pomodoroWork = clamp(Number(settings.pomodoroWork) || 25, 1, 180);
     settings.pomodoroBreak = clamp(Number(settings.pomodoroBreak) || 5, 1, 60);
@@ -605,7 +608,10 @@
       done: !!x.done, kanban: ["todo", "doing", "done"].includes(x.kanban) ? x.kanban : undefined,
     }));
 
-    out.notes = asArray(src.notes).filter(isObj).map((n) => ({
+    // La papelera se retiró (v54): si quedaba algo dentro, vuelve a Apuntes en vez de desaparecer
+    const dePapelera = asArray(src.trash).filter(isObj).filter((n) => n.title);
+    papeleraRecuperada = dePapelera.length;
+    out.notes = asArray(src.notes).concat(dePapelera).filter(isObj).map((n) => ({
       id: asText(n.id) || uid(), subjectId: hasSub(n.subjectId) ? n.subjectId : (n.subjectId || ""),
       title: asText(n.title, "Sin título"), content: typeof n.content === "string" ? n.content : "",
       pinned: !!n.pinned, locked: !!n.locked,
@@ -619,7 +625,6 @@
       })),
       versions: asArray(n.versions).filter(isObj).slice(0, 12).map((v) => ({ t: Number(v.t) || Date.now(), title: asText(v.title), content: typeof v.content === "string" ? v.content : "" })),
       createdAt: Number(n.createdAt) || Date.now(), updatedAt: Number(n.updatedAt) || Date.now(),
-      deletedAt: n.deletedAt ? Number(n.deletedAt) : undefined,
     }));
 
     out.cards = asArray(src.cards).filter(isObj).filter((c) => c.front).map((c) => ({
@@ -653,13 +658,6 @@
     }));
 
     out.glossary = asArray(src.glossary).filter(isObj).filter((g) => g.term).map((g) => ({ id: asText(g.id) || uid(), term: asText(g.term), def: asText(g.def), subjectId: hasSub(g.subjectId) ? g.subjectId : "" }));
-
-    out.trash = asArray(src.trash).filter(isObj).filter((n) => n.title).map((n) => ({
-      id: asText(n.id) || uid(), subjectId: hasSub(n.subjectId) ? n.subjectId : "", title: asText(n.title),
-      content: typeof n.content === "string" ? n.content : "", pinned: !!n.pinned,
-      attachments: asArray(n.attachments).filter(isObj), createdAt: Number(n.createdAt) || Date.now(),
-      updatedAt: Number(n.updatedAt) || Date.now(), deletedAt: Number(n.deletedAt) || Date.now(),
-    }));
 
     const prog = isObj(src.progress) ? src.progress : {};
     out.progress = {
@@ -1117,11 +1115,9 @@
     simulator: ["Simulador", "Qué necesitas en el final"],
     habits: ["Hábitos", "Repaso diario"],
     glossary: ["Glosario", "Términos del ciclo"],
-    trash: ["Papelera", "Recuperar apuntes"],
     examode: ["Modo examen", "Sin distracciones"],
     quickreview: ["Repaso rápido", "Antes del examen"],
     admin: ["Datos locales", "Copias y estado"],
-    guide: ["Guía docente", "Importar fechas y pesos"],
     rendimiento: ["Calificaciones", "Boletín de cada módulo"],
     notes: ["Apuntes", "Texto del ciclo"],
     tools: ["Herramientas SMR", "Hub técnico, estudio y sistema"],
@@ -1213,8 +1209,8 @@
       cards: renderCards, tasks: renderTasks, timer: renderTimer, stats: renderStats, plan: renderPlan,
       subjects: renderSubjects, subject: renderSubject, settings: renderSettings, inbox: renderInbox, review: renderReview, achievements: renderAchievements,
       agenda: () => S("agenda"), kanban: () => S("kanban"), chatbot: () => S("chatbot"),
-      simulator: () => S("simulator"), habits: () => S("habits"), glossary: () => S("glossary"), trash: () => S("trash"),
-      examode: () => S("examode"), quickreview: () => S("quickreview"), admin: () => S("admin"), guide: () => S("guide"),
+      simulator: () => S("simulator"), habits: () => S("habits"), glossary: () => S("glossary"),
+      examode: () => S("examode"), quickreview: () => S("quickreview"), admin: () => S("admin"),
       rendimiento: renderRendimiento,
       tools: () => (window.AulaTools && typeof window.AulaTools.view === "function")
         ? window.AulaTools.view()
@@ -3811,14 +3807,14 @@
     if (action === "note-filter") { persistNoteNow(); noteFilter = id; render(); }
     if (action === "toggle-pin") { const n = state.notes.find((x) => x.id === noteId); if (n) { n.pinned = !n.pinned; render(); } }
     if (action === "toggle-preview") { persistNoteNow(); notePreview = !notePreview; render(); }
-    if (action === "delete-note") ask("Eliminar nota", "Va a la papelera.", () => {
+    if (action === "delete-note") ask("Eliminar nota", "Se borra del todo. Si te arrepientes, en Ajustes está «Deshacer el último borrado».", () => {
       pushUndo();
       const gone = state.notes.find((x) => x.id === noteId);
-      if (gone) { gone.deletedAt = Date.now(); state.trash = state.trash || []; state.trash.unshift(gone); }
+      if (gone) soltarFotos(gone);   // sus fotos salen del almacén
       state.notes = state.notes.filter((x) => x.id !== noteId);
       noteId = state.notes[0]?.id || null;
       render();
-      toast("A la papelera: puedes recuperarla");
+      toast("Nota eliminada");
     });
     if (action === "add-task") addTask();
     if (action === "edit-task") addTask(state.tasks.find((x) => x.id === id));
@@ -4387,7 +4383,7 @@
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },
   };
-  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, kanban: 1, simulator: 1, habits: 1, glossary: 1, trash: 1, examode: 1, quickreview: 1, admin: 1, guide: 1, achievements: 1, rendimiento: 1, tools: 1 };
+  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, kanban: 1, simulator: 1, habits: 1, glossary: 1, examode: 1, quickreview: 1, admin: 1, achievements: 1, rendimiento: 1, tools: 1 };
   const esVista = (v) => !!(v && (titles[v] || EXTRA_VIEWS[v]));
   const hash = (location.hash || "").replace("#", "");
   if (esVista(hash)) view = hash;
@@ -4412,6 +4408,10 @@
       toast("Este navegador no guarda archivos: las fotos se verán cuando haya datos");
     }
   });
+  // Se retiró la papelera: lo que hubiera dentro ya está de vuelta en Apuntes
+  if (papeleraRecuperada) {
+    setTimeout(() => toast(papeleraRecuperada === 1 ? "Recuperé 1 nota que estaba en la papelera" : "Recuperé " + papeleraRecuperada + " notas que estaban en la papelera"), 900);
+  }
   dailyCheckIn();
   checkAchievements();
   render();

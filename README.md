@@ -36,6 +36,7 @@ En el móvil, misma Wi‑Fi: `http://IP-DEL-PC:8080`.
 ## Datos
 
 - **Exportar JSON** / **Importar** en Ajustes.
+- **Al borrar una nota** se pide confirmación y se borra del todo (ya no hay papelera); en Ajustes tienes **«Deshacer el último borrado»** (guarda los últimos 20 cambios).
 - **Borrar todo** pide confirmación dentro de la app y borra también las copias automáticas (hay un botón aparte para borrar solo las copias).
 - Copia automática: cada 6 h se guarda una copia del estado anterior (`aula.smr.v4.bak`) y se puede recuperar desde Ajustes.
 - Las fotos de las notas se reducen antes de guardarse y viven en **IndexedDB**, no dentro del estado.

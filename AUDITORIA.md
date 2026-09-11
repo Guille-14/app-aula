@@ -10,7 +10,7 @@
 No es una lectura por encima. He hecho esto:
 
 1. **Lectura completa** de los 3 archivos JS, las 7 hojas CSS, el Service Worker, el servidor y el overlay Android.
-2. **Arranque real de la app** en un DOM headless (jsdom) con el HTML y los tres scripts: 27 vistas renderizadas, ~40 interacciones simuladas (formularios, modales, timer, filtros, importación…).
+2. **Arranque real de la app** en un DOM headless (jsdom) con el HTML y los tres scripts: 25 vistas renderizadas, ~40 interacciones simuladas (formularios, modales, timer, filtros, importación…).
 3. **Barrido estático** cruzado: acciones `data-action` manejadas vs. botones realmente pintados, clases CSS usadas vs. definidas, skins del JS vs. CSS, ajustes leídos vs. campos existentes, funciones nunca llamadas.
 4. **Pruebas de estrés**: estado corrupto, estado con tipos inválidos, cuota de `localStorage` agotada, examen sin fecha, minutos negativos, cálculo de contraste WCAG de las 33 skins.
 5. **Servidor en marcha** (`python3 server.py --pin 1234`) y peticiones con `curl` para comprobar autenticación y CORS.
@@ -48,7 +48,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 **Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas),
 `7d2d814` (herramientas y red), `ee04323` (accesibilidad y detalles), `5654dd6`
 (fotos en IndexedDB, repetición espaciada real y excepciones de horario), `718e69d`
-(receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados) y `v53` (fuera la vista Cuatrimestre).
+(receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados) y `v53` (fuera la vista Cuatrimestre) y `v54` (fuera Guía docente y Papelera).
 
 | Bug | Estado | Cómo se ha arreglado |
 |---|---|---|
@@ -66,10 +66,10 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 | BUG-12 intérprete de frases | ✅ hecho | Sinónimos por módulo (14/15 frases de prueba acertadas) y **vista previa** antes de guardar |
 | BUG-13 .ics mal formado | ✅ hecho | CRLF, `DTSTAMP`, hora local coherente, escapado, `VALARM`, tareas con `DTEND`, plegado a 75 octetos |
 | BUG-14 fotos gigantes | ✅ hecho | Ya no viven en el estado: se guardan comprimidas (1.280 px) en **IndexedDB** (`js/media.js`) y la nota las referencia por id. La migración de las fotos antiguas es automática, la copia de seguridad las incluye, Ajustes mide lo que ocupan y avisa al 80 %; si el navegador no deja usar IndexedDB, se sigue guardando dentro del estado como antes |
-| BUG-15/16 borrado incompleto | ✅ hecho | «Borrar todo» limpia toda clave `aula.*` y cachés; las instantáneas bajan de 5 a 3 y avisan si no caben |
+| BUG-15/16 borrado incompleto | ✅ hecho (y la papelera se retiró en la v54) | «Borrar todo» limpia toda clave `aula.*` y cachés; las instantáneas bajan de 5 a 3 y avisan si no caben |
 | BUG-17 bajar estado a lo bruto | ➖ ya no aplica | El botón «Bajar estado» se ha eliminado con el resto de la sincronización: la app solo importa las copias JSON que eliges tú |
 | BUG-18 Ollama colgado | ✅ hecho | `AbortController` a 45 s con mensaje claro |
-| BUG-19 guía docente | ✅ aclarado | El texto dice lo que de verdad hace (texto pegado, reglas locales) |
+| BUG-19 guía docente | ➖ ya no aplica | La vista «Guía docente» se retiró en la v54: era la que prometía más de lo que hacía |
 | BUG-20 guardar en cada tecla | ✅ hecho | Versiones cada 2 minutos como mucho y guardado 600 ms después de dejar de escribir |
 | BUG-21 guardar en cada render | ✅ hecho | `scheduleSave()` con retardo de 400 ms |
 | BUG-22 botón atrás | ✅ hecho | `pushState` por vista y `popstate`: atrás navega por la app en lugar de cerrarla |
@@ -93,7 +93,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 
 - **Accesibilidad:** zoom permitido, `color-scheme`, foco visible, `aria-live` en los avisos,
   salto al contenido, `prefers-reduced-motion`, 11 temas con contraste AA corregido,
-  **0 botones y 0 campos sin nombre accesible** en las 27 vistas, `aria-current` en la navegación,
+  **0 botones y 0 campos sin nombre accesible** en las 25 vistas, `aria-current` en la navegación,
   foco atrapado dentro de los diálogos y devuelto al cerrar, y menos toques accidentales
   (quitar una falta o una tarea pide confirmación).
 - **Lo que estaba programado y no se podía usar:** rejilla de 33 temas con categorías,
@@ -125,6 +125,11 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
   contesta sigue el motor local. Se añadió `capacitor.config.json` para que el APK sea
   reproducible, y dentro del APK (`isNativeShell()`) no se registra Service Worker: los
   ficheros ya van dentro y una caché solo serviría versiones viejas.
+- **Vistas retiradas (v54):** fuera **«Guía docente»** (importaba PDF/TXT y sacaba fechas y
+  pesos) y **«Papelera»**. Al quitar la papelera, borrar una nota es definitivo pero avisa
+  («Se borra del todo…») y sigue estando el botón *Deshacer el último borrado* de Ajustes, con
+  las fotos liberadas del almacén. Si un móvil tenía notas dentro de la papelera, **vuelven
+  solas a Apuntes al abrir** (con un aviso), en vez de desaparecer sin dejar rastro.
 - **Vistas retiradas (v53):** fuera **«Cuatrimestre»** (la línea de fechas tipo Gantt): no
   aportaba nada que no dieran la Agenda y el Cuatrimestre del panel. Se eliminó el botón de
   «Más», la vista, sus estilos (`gantt-*` y `.timeline`) y su ruta; ahora la app tiene 27 vistas.
@@ -132,7 +137,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
   (se quitaron «Exámenes» y «Calificaciones», que duplicaban los botones de abajo), con un
   aviso en la propia hoja y una prueba que falla si vuelve a colarse un repetido.
 - **Pruebas:** `npm test` ejecuta **85 comprobaciones** con jsdom en 14 secciones (arranque de
-  las 27 vistas, datos corruptos, cuota, borrado, importación, temporizador, frases, PIN,
+  las 25 vistas, datos corruptos, cuota, borrado, importación, temporizador, frases, PIN,
   `.ics`, etiquetas, SM-2, excepciones de horario, fotos en IndexedDB, copia con fotos y
   **«sin red»** —con un espía de `fetch` que demuestra que el chat no llama a nada si no
   configuras tu Ollama— y **navegación** —que «Más» y la barra de abajo no compartan vistas—)
@@ -404,7 +409,10 @@ Y como `doWipe()` (`js/app.js:2659-2665`) solo hace `state = defaultState()`, la
 ### 🟡 BUG-19 · "Importar guía docente" promete más de lo que hace
 `js/studio.js:80-105` (`extractPdfStrings`) convierte el PDF a texto quedándose con los bytes ASCII imprimibles. En PDFs reales (comprimidos con Flate) eso produce ruido, no texto. Con ese ruido, `guide-apply` crea exámenes cuyo **título son 40 caracteres de contexto** alrededor de la fecha.
 
-**Arreglo:** usar `pdf.js` (una sola dependencia, empaquetada local para seguir siendo offline) o pedir TXT/MD. Y limpiar los títulos antes de proponerlos.
+**Arreglo (v54):** la vista se ha **retirado**. En vez de prometer un análisis de PDF que no
+puede hacer sin añadir `pdf.js`, se quita de la app: las fechas se añaden a mano o con la
+captura rápida. (`extractPdfStrings` y `parseGuideText` ya no existen.) Si algún día se
+quiere volver a ella, la vía correcta es empaquetar `pdf.js` local y limpiar los títulos.
 
 ---
 
@@ -579,7 +587,7 @@ Y **9 funciones muertas** en `app.js`: `maybeNotify`, `greeting`, `medals`, `hea
 |---|---|
 | Ficheros versionados | 61 (22 avatares + 3 iconos + resto de código y capas CSS) |
 | Líneas totales | 9.225 (`wc -l`): JS 5.002, CSS 3.586, HTML 237, SW 156, Python 244 |
-| Vistas / pantallas | 27 (la 28, «Cuatrimestre», se retiró en la v53 por no aportar nada) |
+| Vistas / pantallas | 25 (se retiraron «Cuatrimestre» en la v53 y «Guía docente» y «Papelera» en la v54) |
 | Herramientas SMR | 37 |
 | Skins definidas | 33 (+ 2 temas claro/oscuro) |
 | Acciones `data-action` manejadas | 170 (123 con botón) |
