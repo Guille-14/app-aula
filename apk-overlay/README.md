@@ -63,10 +63,18 @@ cd android && ./gradlew assembleDebug
 
 ### Firmar una versión instalable de verdad
 
-Un APK `debug` se instala, pero para publicarlo conviene firmarlo con tu clave **y guardarla**:
-Android solo deja actualizar una app si el APK nuevo va firmado con la misma clave que el
-instalado. Si cambias de clave, hay que **desinstalar antes** (el mensaje típico es
-«conflicto de paquete»).
+Android solo deja instalar un APK encima de otro si va firmado con la **misma clave**; si no,
+dice «conflicto de paquete» y hay que desinstalar antes (perdiendo los datos, así que antes
+conviene exportar la copia JSON desde Ajustes).
+
+Este repositorio ya trae una clave de firma en `apk-overlay/keystore/` y
+`apk-overlay/preparar-gradle.py` la enchufa al proyecto Android, así que los APK que genera
+el flujo son **APK de release firmados**, actualizables entre versiones. Para usar otra clave
+propia, basta con poner sus datos en las variables de entorno `AULA_KEYSTORE`,
+`AULA_KEY_ALIAS`, `AULA_STORE_PASS` y `AULA_KEY_PASS` (ver
+[`keystore/LEEME.md`](keystore/LEEME.md)).
+
+Si prefieres firmar a mano, esto sigue valiendo:
 
 ```bash
 # Una sola vez. Guarda aula.keystore en un sitio seguro y con copia: sin él no hay actualizaciones.
@@ -99,6 +107,29 @@ cd android && ./gradlew assembleRelease
 ```
 
 ---
+
+## 1-bis. Compilarlo sin ordenador: GitHub Actions
+
+El repositorio trae un flujo (`.github/workflows/apk.yml`) que hace **todo esto solo**:
+prepara `www/`, añade el proyecto Android, aplica el overlay, firma con la clave del
+repositorio, comprueba el APK y lo publica en **Releases**.
+
+- Se lanza al tocar código de la app (en `main` y en las ramas de trabajo) y a mano desde
+  la pestaña **Actions → APK → Run workflow**.
+- El APK aparece en [Releases](../../releases) como `Aula-SMR-v<versión>.apk` (y una copia
+  con nombre fijo, `Aula-SMR.apk`, para tener un enlace que no cambie nunca).
+- La página de cada release lleva el **SHA-256** del archivo y el del certificado de firma.
+- Si la publicación fallase, el APK queda igualmente como *artefacto* de la ejecución.
+
+Con esto no hace falta instalar el JDK, el SDK ni Gradle en tu ordenador: lo compila GitHub
+en sus servidores y te deja el fichero listo para descargar desde el móvil.
+
+Localmente, el mismo trabajo se hace con un solo comando:
+
+```bash
+bash apk-overlay/build.sh
+# -> android/app/build/outputs/apk/release/app-release.apk
+```
 
 ## 2. Publicar el APK en GitHub (Releases)
 

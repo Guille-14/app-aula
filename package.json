@@ -9,6 +9,9 @@
     "preview": "python3 -m http.server 8099"
   },
   "devDependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/cli": "^6.2.2",
+    "@capacitor/core": "^6.2.2",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^24.0.0"
   }

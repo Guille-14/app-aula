@@ -1,0 +1,116 @@
+name: APK
+
+# Compila el APK firmado y lo publica como Release (descarga directa desde el móvil).
+# Se ejecuta al tocar código de la app, en main y en las ramas de trabajo, y a mano.
+on:
+  push:
+    branches: [main, "arena/**"]
+    paths:
+      - "index.html"
+      - "js/**"
+      - "css/**"
+      - "assets/**"
+      - "manifest.webmanifest"
+      - "sw.js"
+      - "apk-overlay/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write        # publicar la release y subir el APK
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK (platform 34)
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          SM="$(command -v sdkmanager || echo "$SDK/cmdline-tools/latest/bin/sdkmanager")"
+          yes | "$SM" --licenses > /dev/null 2>&1 || true
+          "$SM" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1 || true
+          echo "SDK listo en $SDK"
+
+      - name: Dependencias (Capacitor y Pillow)
+        run: |
+          npm install --no-audit --no-fund
+          python3 -m pip install --quiet pillow || python3 -m pip install --quiet --break-system-packages pillow
+
+      - name: Pruebas antes de empaquetar
+        run: npm test
+
+      - name: Compilar el APK
+        run: bash apk-overlay/build.sh
+
+      - name: Comprobar el APK (firma y contenido)
+        id: comprobar
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          test -f "$APK"
+          BT="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
+          "$BT/apksigner" verify --print-certs "$APK" | tee firma.txt
+          unzip -l "$APK" | tail -3
+          echo "sha=$(sha256sum "$APK" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "mb=$(du -m "$APK" | cut -f1)" >> "$GITHUB_OUTPUT"
+          echo "firma=$(grep -m1 'SHA-256 digest' firma.txt | cut -d: -f2 | xargs)" >> "$GITHUB_OUTPUT"
+
+      - name: Guardar el APK como artefacto (por si la release falla)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aula-SMR-APK
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Publicar la Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="apk-v$VERSION"
+          ASSET="Aula-SMR-v$VERSION.apk"
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          cp "$APK" "$ASSET"
+          cp "$APK" "Aula-SMR.apk"          # nombre fijo: enlace que no cambia nunca
+          cat > notas.md <<EOF
+          APK **firmado** de Aula SMR $VERSION, compilado desde este repositorio.
+
+          - Tamaño: ${{ steps.comprobar.outputs.mb }} MB · SHA-256: \`${{ steps.comprobar.outputs.sha }}\`
+          - Certificado de firma (SHA-256): \`${{ steps.comprobar.outputs.firma }}\`
+          - Paquete \`es.aula.smr.hub\` · incluye los 24 widgets de escritorio.
+          - Todo funciona sin conexión: no hay servidor ni cuentas. El asistente responde en local
+            (y usa tu Ollama solo si le pones la dirección en Ajustes → Datos locales).
+
+          **Para instalar:** descarga el \`.apk\` y ábrelo. Si Android avisa de «apps desconocidas»,
+          permite la instalación para el navegador o el gestor de archivos que use.
+          Si dice **conflicto de paquete**, es porque tienes otro Aula SMR con otra firma:
+          desinstálala antes (exporta antes tu copia JSON desde Ajustes → no se pierde nada).
+
+          Compilado desde el commit \`${GITHUB_SHA:0:7}\`.
+          EOF
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" "Aula-SMR.apk" --clobber
+            gh release edit "$TAG" --latest --title "Aula SMR v$VERSION · APK" --notes-file notas.md
+          else
+            gh release create "$TAG" "$ASSET" "Aula-SMR.apk" \
+              --target "$GITHUB_SHA" \
+              --title "Aula SMR v$VERSION · APK" \
+              --notes-file notas.md \
+              --latest
+          fi
+          echo "Release: $(gh release view "$TAG" --json url -q .url)"

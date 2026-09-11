@@ -12,7 +12,11 @@ Diseño tipo **SMR Hub**. **100 % local**: sin cuenta, sin nube y **sin servidor
 
 ## Android — APK
 
-**Descargar:** [última versión publicada](https://github.com/Guille-14/app-aula/releases/latest) → fichero `.apk`.
+**Descargar:** [última versión publicada](https://github.com/Guille-14/app-aula/releases/latest) → fichero `.apk`
+(enlace fijo al último APK: `https://github.com/Guille-14/app-aula/releases/latest/download/Aula-SMR.apk`).
+
+El APK lo compila y lo firma GitHub Actions en cada cambio (`.github/workflows/apk.yml`), así que
+las versiones nuevas se instalan **encima** de la anterior sin perder nada.
 
 - Id de paquete: `es.aula.smr.hub`. Si Android dice **conflicto de paquete**, desinstala antes cualquier Aula SMR o PWA antigua (por ejemplo `Aula-SMR-v48.apk`).
 - **Widgets:** mantén pulsado el escritorio → *Widgets* → **Aula SMR** (hay 24: clase, examen, hoy, nota media, racha…).
