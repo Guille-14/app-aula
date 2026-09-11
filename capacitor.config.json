@@ -1,0 +1,14 @@
+{
+  "appId": "es.aula.smr.hub",
+  "appName": "Aula SMR",
+  "webDir": "www",
+  "loggingBehavior": "none",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}

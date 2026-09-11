@@ -46,8 +46,9 @@ Esta auditoría se escribió sobre el commit `e820a3a`. Después se ha empezado 
 sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 
 **Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas),
-`7d2d814` (herramientas y red), `ee04323` (accesibilidad y detalles) y `5654dd6`
-(fotos en IndexedDB, repetición espaciada real y excepciones de horario).
+`7d2d814` (herramientas y red), `ee04323` (accesibilidad y detalles), `5654dd6`
+(fotos en IndexedDB, repetición espaciada real y excepciones de horario), `718e69d`
+(receta del APK) y `v51` (la app deja de tener servidor).
 
 | Bug | Estado | Cómo se ha arreglado |
 |---|---|---|
@@ -55,8 +56,8 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 | BUG-02 JSON corrupto destruido | ✅ hecho | Se guarda copia cruda en `aula.smr.v4.bak`, se explica y hay botón «Recuperar copia» |
 | BUG-03 importar sin validar | ✅ hecho | `sanitize()` sanea cualquier JSON (propio, importado o del servidor) y la importación pide confirmación con resumen |
 | BUG-04 Kanban NaN | ✅ hecho | Campo `left` (días) en vez de `due` (fecha): «hoy», «atrasada», «sin fecha» |
-| BUG-05 servidor sin PIN | ✅ hecho | `/data/**`, `/.git`, `__pycache__` bloqueados y listados de directorio en 404 |
-| BUG-06 CORS del APK | ✅ hecho | `/api/` devuelve `Access-Control-Allow-Origin` con eco del origen + `Vary` |
+| BUG-05 servidor sin PIN | ✅ resuelto de raíz | **El servidor ya no existe**: se ha borrado `server.py` y toda la sincronización. No hay nada que escuchar en la red, así que no hay fuga posible |
+| BUG-06 CORS del APK | ✅ resuelto de raíz | Sin servidor propio no hay CORS ni origen cruzado. El APK carga los ficheros empaquetados (Capacitor) y el Service Worker se salta a propósito dentro de la app |
 | BUG-07 horario oficial machacón | ✅ hecho | Ya no se aplica solo: hay botón «Restaurar horario oficial» con confirmación y deshacer |
 | BUG-08 PIN decorativo | ✅ hecho | Bloqueo real de lectura, búsqueda y vista previa + pantalla de PIN honesta («evita miradas, no cifra») |
 | BUG-09 avisos limitados | ✅ aclarado | La propia interfaz dice el alcance; el APK puede programarlos. Pendiente: notificaciones nativas del APK |
@@ -66,7 +67,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 | BUG-13 .ics mal formado | ✅ hecho | CRLF, `DTSTAMP`, hora local coherente, escapado, `VALARM`, tareas con `DTEND`, plegado a 75 octetos |
 | BUG-14 fotos gigantes | ✅ hecho | Ya no viven en el estado: se guardan comprimidas (1.280 px) en **IndexedDB** (`js/media.js`) y la nota las referencia por id. La migración de las fotos antiguas es automática, la copia de seguridad las incluye, Ajustes mide lo que ocupan y avisa al 80 %; si el navegador no deja usar IndexedDB, se sigue guardando dentro del estado como antes |
 | BUG-15/16 borrado incompleto | ✅ hecho | «Borrar todo» limpia toda clave `aula.*` y cachés; las instantáneas bajan de 5 a 3 y avisan si no caben |
-| BUG-17 bajar estado a lo bruto | ✅ hecho | Confirmación con resumen, copia previa y deshacer; además se sanea lo que llega por red |
+| BUG-17 bajar estado a lo bruto | ➖ ya no aplica | El botón «Bajar estado» se ha eliminado con el resto de la sincronización: la app solo importa las copias JSON que eliges tú |
 | BUG-18 Ollama colgado | ✅ hecho | `AbortController` a 45 s con mensaje claro |
 | BUG-19 guía docente | ✅ aclarado | El texto dice lo que de verdad hace (texto pegado, reglas locales) |
 | BUG-20 guardar en cada tecla | ✅ hecho | Versiones cada 2 minutos como mucho y guardado 600 ms después de dejar de escribir |
@@ -116,9 +117,19 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
   - **Excepciones de horario por fecha**: «esta clase se cancela», «se mueve a tal día»,
     «clase extra» y «es fiesta». Lo usan el horario, la agenda, la próxima clase, el botón
     de inicio y los huecos libres de studio.js, así que lo que se ve coincide con el día real.
-- **Pruebas:** `npm test` ejecuta **74 comprobaciones** con jsdom en 14 secciones (arranque de
+- **Solo local (v51, esta tanda):** fuera `server.py`, el bloque «Servidor/Sync» de la vista
+  *Datos locales* (antes «Servidor»), el indicador de sincronización del HTML y sus reglas CSS,
+  y los ajustes `syncUrl`/`syncPin` (se limpian también de los estados importados). El
+  **asistente** responde con el motor local (apuntes + horario + calendario) y, si conectas
+  tu **Ollama** en tu red, tira de él; hay botón «Probar conexión» (`/api/tags`, 8 s) y si no
+  contesta sigue el motor local. Se añadió `capacitor.config.json` para que el APK sea
+  reproducible, y dentro del APK (`isNativeShell()`) no se registra Service Worker: los
+  ficheros ya van dentro y una caché solo serviría versiones viejas.
+- **Pruebas:** `npm test` ejecuta **81 comprobaciones** con jsdom en 14 secciones (arranque de
   las 28 vistas, datos corruptos, cuota, borrado, importación, temporizador, frases, PIN,
-  `.ics`, etiquetas, SM-2, excepciones de horario, fotos en IndexedDB y copia con fotos)
+  `.ics`, etiquetas, SM-2, excepciones de horario, fotos en IndexedDB, copia con fotos y
+  **«sin red»** —con un espía de `fetch` que demuestra que el chat no llama a nada si no
+  configuras tu Ollama—)
   y hay CI en `.github/workflows/tests.yml`. También `.gitignore` y `package.json`.
 
 **Pendiente (lo que queda de los sprints 3 y 4):**
@@ -577,16 +588,10 @@ Y **9 funciones muertas** en `app.js`: `maybeNotify`, `greeting`, `medals`, `hea
 ## Anexo B · Cómo reproducir los hallazgos críticos
 
 ```bash
-# BUG-05: fuga de datos del servidor sin PIN
-mkdir -p data && echo '{"notas":"secretas"}' > data/state.json
-python3 server.py --pin 1234 &
-curl -i http://127.0.0.1:8080/api/state        # 401 ✅
-curl -i http://127.0.0.1:8080/data/state.json  # 200 con los datos ❌
-curl -i http://127.0.0.1:8080/data/            # listado de directorios ❌
-rm -rf data
-
-# BUG-06: falta CORS (solo en OPTIONS)
-curl -s -D - -o /dev/null http://127.0.0.1:8080/api/health -H "Origin: http://otro-origen" | grep -i access-control
+# BUG-05 y BUG-06 ya no se pueden reproducir: el servidor se eliminó en la v51.
+# Comprobación de que no queda superficie de red en la app:
+grep -rn "fetch(" js/ | grep -v "11434"      # solo el Ollama que configures tú
+grep -rni "servidor\|sync-" index.html js/*.js css/ | grep -v "servidor web\|servidor de correo\|servidor de nombres"
 
 # BUG-02 y BUG-03: estado corrupto y examen sin fecha
 #   DevTools → Application → localStorage → aula.smr.v4 = "{roto"  → recargar

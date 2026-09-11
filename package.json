@@ -1,12 +1,12 @@
 {
   "name": "aula-smr",
-  "version": "50.0.0",
+  "version": "51.0.0",
   "private": true,
   "description": "Aula SMR · PWA de estudio para 2.º SMR (local, sin cuenta)",
   "scripts": {
     "test": "node tests/smoke.test.js",
-    "serve": "python3 server.py --port 8099",
-    "static": "python3 -m http.server 8080 --bind 0.0.0.0"
+    "static": "python3 -m http.server 8080 --bind 0.0.0.0",
+    "preview": "python3 -m http.server 8099"
   },
   "devDependencies": {
     "fake-indexeddb": "^6.2.5",

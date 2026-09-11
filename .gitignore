@@ -1,5 +1,4 @@
-# Datos locales del servidor de sincronización (nunca al repositorio)
-data/
+# Logs y basura local
 *.log
 
 # Basura de Python / sistema

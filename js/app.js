@@ -60,7 +60,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v50";
+  const APP_VERSION = "v51";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -538,7 +538,7 @@
   const asHHMM = (v, fb) => (/^\d{1,2}:\d{2}$/.test(String(v)) ? String(v) : fb);
   const asColor = (v, fb) => (/^#[0-9a-fA-F]{3,8}$/.test(String(v)) ? String(v) : fb);
 
-  // Convierte lo que venga (import, sync, versión vieja) en un estado usable.
+  // Convierte lo que venga (copia importada, versión vieja) en un estado usable.
   function sanitize(p) {
     const base = defaultState();
     const src = isObj(p) ? p : {};
@@ -550,6 +550,9 @@
     if (/^p\d+$/.test(settings.avatarIcon || "")) settings.avatarIcon = "letter";
     if (/^p\d+$/.test(settings.appIcon || "")) settings.appIcon = "dragon";
     if (!settings.uiTheme) settings.uiTheme = LIGHT.has(settings.skin) ? "light" : "dark";
+    // Aula ya no se sincroniza con ningún servidor: se limpian ajustes de versiones anteriores
+    delete settings.syncUrl;
+    delete settings.syncPin;
     if (!Number.isFinite(Number(settings.dailyGoal)) || Number(settings.dailyGoal) <= 0) settings.dailyGoal = 90;
     settings.pomodoroWork = clamp(Number(settings.pomodoroWork) || 25, 1, 180);
     settings.pomodoroBreak = clamp(Number(settings.pomodoroBreak) || 5, 1, 60);
@@ -1118,7 +1121,7 @@
     trash: ["Papelera", "Recuperar apuntes"],
     examode: ["Modo examen", "Sin distracciones"],
     quickreview: ["Repaso rápido", "Antes del examen"],
-    admin: ["Servidor", "Backups y estado"],
+    admin: ["Datos locales", "Copias y estado"],
     guide: ["Guía docente", "Importar fechas y pesos"],
     rendimiento: ["Calificaciones", "Boletín de cada módulo"],
     notes: ["Apuntes", "Texto del ciclo"],
@@ -3854,7 +3857,7 @@
         confirm: "Borrar copias", danger: true,
         onSubmit() {
           try {
-            ["aula.snaps", "aula.lastBackup", KEY + ".bak", BAK_AT_KEY].forEach((k) => localStorage.removeItem(k));
+            ["aula.snaps", "aula.lastBackup", "aula.sync.prev", KEY + ".bak", BAK_AT_KEY].forEach((k) => localStorage.removeItem(k));
           } catch {}
           closeModal(); toast("Copias borradas");
         },
@@ -4372,6 +4375,7 @@
     pad, clamp, localISO, weekRange, streak, studiedFor, nextExam, nextClass, $, $$,
     openModal, closeModal, ask, weightedGPA, grantXP, checkAchievements, needSubjects,
     pushUndo, undo, sanitize, save, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
+    isNativeShell, soloLocal: true,
     safeColor, sm2, cardState, nextLabel, migrateMedia, eventsOnDate, setException, exceptionsFor,
     unlockNote(id) { unlockedNotes.delete(id); },
     lockNote(id) { unlockedNotes.add(id); },
@@ -4425,7 +4429,9 @@
     if (destino !== view) { persistNoteNow(); closeMore(); view = destino; render(); window.scrollTo(0, 0); }
   });
   try { history.replaceState({ v: view }, "", "#" + view); } catch {}
-  if ("serviceWorker" in navigator) {
+  // Dentro del APK (Capacitor) todo está empaquetado: el Service Worker no hace falta
+  // y solo añadiría una caché que puede servir una versión vieja.
+  if ("serviceWorker" in navigator && !isNativeShell()) {
     navigator.serviceWorker.register("./sw.js").then(() => applyAppIcon()).catch(() => {});
     navigator.serviceWorker.addEventListener("controllerchange", () => applyAppIcon());
   }

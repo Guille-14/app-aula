@@ -1,7 +1,14 @@
 # Aula SMR
 
 App de estudio para **2.º SMR 2026/27** (Sistemas Microinformáticos y Redes).  
-Diseño tipo **SMR Hub**. **100 % local**: sin cuenta y sin nube. Los datos se quedan en el dispositivo (`localStorage`).
+Diseño tipo **SMR Hub**. **100 % local**: sin cuenta, sin nube y **sin servidor**.
+
+- No hay servidor propio ni sincronización con nada: se eliminó `server.py` y todo el
+  bloque de «Servidor/Sync» que había en la vista *Datos locales*.
+- Los datos viven en el dispositivo: `localStorage` (estado) e **IndexedDB** (fotos).
+- El **asistente** funciona con un motor local que responde con tus apuntes y tu calendario.
+  Opcionalmente puedes conectar tu propio **Ollama local** (tu PC, tu red); si no responde,
+  el chat sigue con el motor local. No se llama a ninguna API de pago ni a ningún servidor externo.
 
 ## Android — APK
 
@@ -14,7 +21,8 @@ Diseño tipo **SMR Hub**. **100 % local**: sin cuenta y sin nube. Los datos se q
 
 ## Instalar como PWA (sin APK)
 
-Sírvela por HTTP. No abras `index.html` como archivo (`file://`).
+Sírvela por HTTP desde tu ordenador (solo para instalarla; después funciona sin conexión).
+No abras `index.html` como archivo (`file://`).
 
 ```bash
 python3 -m http.server 8080 --bind 0.0.0.0
@@ -30,5 +38,11 @@ En el móvil, misma Wi‑Fi: `http://IP-DEL-PC:8080`.
 - **Exportar JSON** / **Importar** en Ajustes.
 - **Borrar todo** pide confirmación dentro de la app y borra también las copias automáticas (hay un botón aparte para borrar solo las copias).
 - Copia automática: cada 6 h se guarda una copia del estado anterior (`aula.smr.v4.bak`) y se puede recuperar desde Ajustes.
-- Las fotos de las notas se reducen antes de guardarse para no llenar el almacén del móvil.
-- `server.py` es opcional (sync en casa). Ollama solo si pones la URL en Servidor (Más).
+- Las fotos de las notas se reducen antes de guardarse y viven en **IndexedDB**, no dentro del estado.
+## Asistente (Ollama local, opcional)
+
+El chat responde **sin red** con tus apuntes, tu horario y tu calendario. Si tienes Ollama
+en tu ordenador (`ollama serve`, puerto `11434`), escribe su dirección en
+**Más → Datos locales → Ollama** y el chat tirará de tu modelo. Hay un botón
+«Probar conexión» que dice si responde y cuántos modelos ve; si no responde, se sigue usando
+el motor local. Nada sale de tu red.

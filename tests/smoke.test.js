@@ -444,6 +444,42 @@ async function testBackupConFotos() {
   check(parsed.notes && parsed.notes.some((n) => (n.attachments || []).some((a) => String(a.data || "").startsWith("data:image"))), "copia: la foto va dentro del archivo, no como referencia rota");
 }
 
+// ------------------------------------ 15. sin red: el asistente responde en local
+async function testSinRed() {
+  const env = boot();
+  ready(env.A);
+  const A = env.A;
+
+  // Espía: si la app toca la red sin que el usuario configure Ollama, se cae la prueba
+  const llamadas = [];
+  env.window.fetch = (...a) => { llamadas.push(String(a[0])); return Promise.reject(new Error("sin red")); };
+
+  A.go("chatbot");
+  env.doc.getElementById("chat-q").value = "¿qué tengo esta semana?";
+  act(env, "chat-send", {});
+  await new Promise((r) => setTimeout(r, 40));
+  const log = A.state._chat || [];
+  const antes = log.length;   // ojo: log es el mismo array que sigue creciendo
+  check(log.length >= 2 && log[log.length - 1].role === "bot", "sin red: el chat responde con el motor local");
+  check(llamadas.length === 0, "sin red: responder no ha llamado a ningún servidor");
+
+  // Con Ollama configurado, sí se usa (y si falla, contesta el motor local)
+  A.state.settings.ollamaUrl = "http://192.168.1.10:11434";
+  env.doc.getElementById("chat-q").value = "Explícame DHCP";
+  act(env, "chat-send", {});
+  await new Promise((r) => setTimeout(r, 60));
+  const tras = A.state._chat || [];
+  check(tras.length > antes && tras[tras.length - 1].role === "bot", "Ollama caído: el chat sigue contestando en local");
+  check(llamadas.some((u) => String(u).includes("11434")), "Ollama configurado: se intenta tu propio Ollama, y solo eso");
+  check(!llamadas.some((u) => /google|openai|anthropic|azure/i.test(String(u))), "sin red: no se llama a ninguna API de pago");
+
+  // La vista de datos locales ya no ofrece servidor ni sincronización
+  A.go("admin");
+  const html = env.doc.getElementById("view").innerHTML;
+  check(!/sync-url|sync-push|sync-pull|server\.py/.test(html), "datos locales: ya no hay servidor ni botones de sincronización");
+  check(/Ollama/i.test(html), "datos locales: sigue estando el ajuste de Ollama local");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -451,6 +487,7 @@ async function testBackupConFotos() {
     await testSettings();
     await testMedia();
     await testBackupConFotos();
+    await testSinRed();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message);
   }

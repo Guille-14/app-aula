@@ -243,7 +243,30 @@
     }
     const g = (st().glossary || []).filter((x) => low.includes(x.term.toLowerCase()));
     if (g.length) return g.map((x) => `${x.term}: ${x.def}`).join("\n");
-    return "No encuentro eso en tus apuntes. Prueba palabras del título del tema o configura Ollama en Ajustes (servidor propio).";
+    return "No encuentro eso en tus apuntes. Prueba con palabras del título del tema, o conecta tu Ollama en Ajustes para respuestas más largas.";
+  }
+
+  // Texto del estado de Ollama para Ajustes (sin promesas: lo que ya sabemos)
+  function textoOllama() {
+    return st().settings.ollamaUrl
+      ? "Conectado a " + st().settings.ollamaUrl + " (" + (st().settings.ollamaModel || "llama3.2") + "). Si no responde, el chat sigue con el motor local."
+      : "Ahora mismo: motor local, sin red.";
+  }
+
+  async function probarOllama() {
+    const url = (st().settings.ollamaUrl || "").replace(/\/$/, "");
+    if (!url) throw new Error("sin url");
+    const ctrl = new AbortController();
+    const reloj = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const r = await fetch(url + "/api/tags", { signal: ctrl.signal });
+      if (!r.ok) throw new Error("respuesta " + r.status);
+      const j = await r.json().catch(() => ({}));
+      const modelos = (j.models || []).length;
+      return modelos
+        ? "Ollama responde · " + modelos + " modelo(s) disponibles"
+        : "Ollama responde, pero no veo ningún modelo descargado";
+    } finally { clearTimeout(reloj); }
   }
 
   async function askOllama(q) {
@@ -251,7 +274,7 @@
     if (!url) return localBrain(q);
     const ctx = st().notes.slice(0, 8).map((n) => `# ${n.title}\n${(n.content || "").slice(0, 800)}`).join("\n\n");
     const prompt = `Eres un asistente de estudio de SMR. Responde SOLO con los apuntes y el calendario del alumno. Si no está, dilo.\n\nAPUNTES:\n${ctx}\n\nPREGUNTA: ${q}`;
-    // Sin límite de tiempo, un servidor apagado dejaba el chat pensando para siempre
+    // Sin límite de tiempo, un Ollama apagado dejaba el chat pensando para siempre
     const ctrl = new AbortController();
     const reloj = setTimeout(() => ctrl.abort(), 45000);
     try {
@@ -271,8 +294,11 @@
 
   function chatbot() {
     const log = st()._chat || [];
+    const ia = st().settings.ollamaUrl
+      ? "Ollama en " + esc(st().settings.ollamaUrl) + " (si no contesta, responde el motor local)"
+      : "motor local (sin red)";
     return `<div class="card">
-      <p class="hint">Responde con <strong>tus apuntes y tu calendario</strong> (RAG local). Si pones la URL de Ollama en Ajustes, usa tu servidor 24/7. Nunca se llama a APIs de pago.</p>
+      <p class="hint">Responde con <strong>tus apuntes y tu calendario</strong>, todo dentro del móvil. Ahora mismo: ${ia}. <a href="#" data-view="admin">Configurar en Ajustes</a>.</p>
       <div class="chat-log" id="chat-log">${log.map((m) => `<div class="chat-msg ${m.role}"><b>${m.role === "user" ? "Tú" : "Aula"}</b><pre>${esc(m.text)}</pre></div>`).join("") || "<div class='empty'>Prueba: «¿qué tengo esta semana?»</div>"}</div>
       <textarea id="chat-q" rows="3" placeholder="¿Qué tengo esta semana? Explica DHCP…"></textarea>
       <div class="hero-actions">
@@ -381,16 +407,8 @@
     const last = localStorage.getItem("aula.lastBackup") || "nunca";
     const snaps = JSON.parse(localStorage.getItem("aula.snaps") || "[]");
     return `<div class="card">
-      <h3>Servidor propio (opcional)</h3>
-      <p class="hint">La app ya funciona 100 % en el móvil. Si montas <code>python3 server.py</code> en casa (o un VPS/Tailscale), web y móvil pueden sincronizar. Sin nubes de terceros.</p>
-      <div class="field"><label>URL del servidor</label><input id="sync-url" placeholder="http://192.168.1.10:8080 o https://aula.casa" value="${esc(st().settings.syncUrl || "")}" /></div>
-      <div class="field"><label>PIN</label><input id="sync-pin" placeholder="opcional" value="${esc(st().settings.syncPin || "")}" /></div>
-      <div class="hero-actions">
-        <button class="btn btn-primary" data-action="sync-save">Guardar URL</button>
-        <button class="btn" data-action="sync-pull">Bajar estado</button>
-        <button class="btn" data-action="sync-push">Subir estado</button>
-        <button class="btn" data-action="sync-ping">Probar /api/health</button>
-      </div>
+      <h3>Todo en este dispositivo</h3>
+      <p class="hint">Aula no habla con ningún servidor: ni nube, ni cuentas, ni sincronización. Tus datos viven en este móvil.</p>
       <p>Último backup local: <b>${esc(last)}</b></p>
       <div class="hero-actions">
         <button class="btn" data-action="snap-now">Punto de restauración</button>
@@ -399,11 +417,16 @@
         <button class="btn btn-sm" data-action="snap-load" data-id="${s.id}">Restaurar</button></div>`).join("")}
     </div>
     <div class="card">
-      <h3>Ollama (local, 24/7)</h3>
-      <p class="hint">Modelo ligero en el servidor, no en la GPU del PC de estudio. Vacío = solo asistente local sin red.</p>
-      <div class="field"><label for="set-ollama">URL Ollama</label><input id="set-ollama" value="${esc(st().settings.ollamaUrl || "")}" placeholder="http://192.168.1.10:11434" /></div>
+      <h3>Ollama (IA local)</h3>
+      <p class="hint">El chat funciona siempre con el motor local (tus apuntes y tu calendario, sin red). Si además tienes Ollama en tu ordenador, escribe su dirección y el chat tirará de tu modelo. <b>No hay ninguna nube de por medio.</b></p>
+      <div class="field"><label for="set-ollama">Dirección de Ollama</label><input id="set-ollama" type="url" inputmode="url" value="${esc(st().settings.ollamaUrl || "")}" placeholder="http://192.168.1.10:11434" /></div>
       <div class="field"><label for="set-omodel">Modelo</label><input id="set-omodel" value="${esc(st().settings.ollamaModel || "llama3.2")}" /></div>
-      <button class="btn" data-action="ollama-save">Guardar Ollama</button>
+      <div class="hero-actions">
+        <button class="btn btn-primary" data-action="ollama-save">Guardar</button>
+        <button class="btn" data-action="ollama-test">Probar conexión</button>
+        <button class="btn" data-action="ollama-local">Quitar y usar el local</button>
+      </div>
+      <p class="hint" id="ollama-estado">${esc(textoOllama())}</p>
     </div>
     <div class="card">
       <h3>Modo invitado</h3>
@@ -461,7 +484,7 @@
       st()._chat = st()._chat || [];
       st()._chat.push({ role: "user", text: q });
       const finish = (text) => { st()._chat.push({ role: "bot", text }); render(); };
-      askOllama(q).then(finish).catch(() => finish(localBrain(q) + "\n\n(Ollama no respondió; usé el motor local.)"));
+      askOllama(q).then(finish).catch(() => finish(localBrain(q) + "\n\n(Ollama no respondió; respondió el motor local.)"));
     }
     if (action === "chat-quiz" || action === "chat-sum" || action === "chat-map") {
       const n = st().notes[0];
@@ -589,51 +612,35 @@
       toast(n + " fechas añadidas");
       save(); render();
     }
-    if (action === "sync-save") {
-      st().settings.syncUrl = (document.getElementById("sync-url") || {}).value || "";
-      st().settings.syncPin = (document.getElementById("sync-pin") || {}).value || "";
-      save(); toast("Servidor guardado");
-    }
-    if (action === "ollama-save") {
-      st().settings.ollamaUrl = (document.getElementById("set-ollama") || {}).value || "";
-      st().settings.ollamaModel = (document.getElementById("set-omodel") || {}).value || "llama3.2";
-      save(); toast("Ollama guardado");
-    }
-    if (action === "sync-ping" || action === "sync-pull" || action === "sync-push") {
-      const base = (st().settings.syncUrl || "").replace(/\/$/, "");
-      if (!base) { toast("Pon la URL del servidor"); return; }
-      const pin = st().settings.syncPin || "";
-      const headers = { "Content-Type": "application/json" };
-      if (pin) headers["X-Aula-Pin"] = pin;
-      if (action === "sync-ping") {
-        fetch(base + "/api/health").then((r) => r.json()).then((j) => toast(j.ok ? "Servidor OK" : "Sin OK")).catch(() => toast("No alcanza el servidor"));
+    if (action === "ollama-save" || action === "ollama-test" || action === "ollama-local") {
+      if (action === "ollama-local") {
+        st().settings.ollamaUrl = "";
+        save(); render(); toast("Ollama desconectado: el chat usará el motor local");
+        return;
       }
-      if (action === "sync-pull") {
-        fetch(base + "/api/state", { headers }).then((r) => r.json()).then((j) => {
-          if (!j.state || !Object.keys(j.state).length) { toast("El servidor está vacío"); return; }
-          const remoto = j.state;
-          const resumen = `Servidor: ${(remoto.subjects || []).length} módulos, ${(remoto.exams || []).length} exámenes, ${(remoto.notes || []).length} notas.
-Local: ${st().subjects.length} módulos, ${st().exams.length} exámenes, ${st().notes.length} notas.`;
-          openModal("Bajar estado del servidor", `<p>${esc(resumen)}</p><p class="hint">Se sustituyen los datos de este móvil. Al cerrar este aviso se guarda una copia local por si acaso.</p>`, {
-            confirm: "Bajar y sustituir",
-            onSubmit() {
-              if (Aula.pushUndo) Aula.pushUndo();
-              try {
-                const copia = "aula.sync.prev";
-                localStorage.setItem(copia, JSON.stringify(st()));
-              } catch {}
-              // Lo que baja del servidor también puede venir de otra versión: se sanea
-              const saneado = Aula.sanitize ? Aula.sanitize(remoto) : remoto;
-              Object.assign(st(), saneado);
-              closeModal(); save(); render(); toast("Estado bajado (puedes deshacer)");
-            },
-          });
-        }).catch(() => toast("No se puede conectar con el servidor"));
+      const campo = document.getElementById("set-ollama");
+      if (campo) st().settings.ollamaUrl = campo.value.trim();
+      const modelo = document.getElementById("set-omodel");
+      if (modelo) st().settings.ollamaModel = modelo.value.trim() || "llama3.2";
+      if (!st().settings.ollamaUrl) {
+        save(); render(); toast("Sin dirección: el chat usa el motor local");
+        return;
       }
-      if (action === "sync-push") {
-        fetch(base + "/api/state", { method: "PUT", headers, body: JSON.stringify(st()) })
-          .then((r) => r.json()).then((j) => toast(j.ok ? "Subido" : "Error")).catch(() => toast("Error al subir"));
-      }
+      save();
+      if (action === "ollama-save") { render(); toast("Ollama guardado"); return; }
+      // Probar conexión: es lo único que sale a la red, y solo lo pides tú
+      const marca = document.getElementById("ollama-estado");
+      if (marca) marca.textContent = "Probando…";
+      probarOllama()
+        .then((m) => {
+          if (marca) marca.textContent = m;
+          render(); toast(m);
+        })
+        .catch(() => {
+          const m = "No responde en " + st().settings.ollamaUrl + " · el chat sigue en local (revisa que sea la misma Wi-Fi)";
+          if (marca) marca.textContent = m;
+          render(); toast(m);
+        });
     }
     if (action === "snap-now") {
       let snaps = [];

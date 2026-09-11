@@ -235,4 +235,3 @@ body.hide-att .att { display: none !important; }
 }
 .avatar[data-lv="hi"] { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent); }
 body.exam-lock .capture-box, body.exam-lock [data-action="open-capture"] { display: none !important; }
-body.guest-mode #sync-lbl::after { content: " · invitado"; }

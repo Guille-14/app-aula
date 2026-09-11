@@ -38,8 +38,9 @@ rm -rf www && mkdir -p www
 cp -r index.html manifest.webmanifest sw.js css js assets www/
 
 # 2. Proyecto Android de Capacitor (solo la primera vez)
+#    capacitor.config.json ya está en el repositorio (appId es.aula.smr.hub, webDir www),
+#    así que no hace falta «npx cap init»: Capacitor lee la configuración del fichero.
 npm install --save-dev @capacitor/cli@6 @capacitor/core@6 @capacitor/android@6
-npx cap init "Aula SMR" es.aula.smr.hub --web-dir=www
 npx cap add android
 npx cap copy android          # copia www/ dentro del proyecto Android
 
@@ -51,6 +52,10 @@ python3 apk-overlay/apply.py android
 cd android && ./gradlew assembleDebug
 #    APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+> La app **no usa ningún servidor**: no hay `server.py` ni sincronización. El WebView carga
+> los ficheros empaquetados en `www/` y el Service Worker se salta a propósito cuando la app
+> corre dentro del APK (`isNativeShell()`), porque la caché serviría versiones viejas.
 
 > **Ojo:** `apply.py` modifica el `AndroidManifest.xml` (quita el `LAUNCHER` de
 > `MainActivity` y añade los alias y los `receiver`). Si vuelves a ejecutarlo sobre un
