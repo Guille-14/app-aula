@@ -175,7 +175,7 @@
             ${evs.map((e) => {
               const t = new Date(e.date + "T00:00:00").getTime();
               const left = clamp(((t - a) / span) * 100, 0, 96);
-              return `<button class="gantt-dot" style="left:${left}%;background:${s.color}" title="${esc(e.title)}" data-action="edit-exam" data-id="${e.id}">${esc(e.title).slice(0, 18)}</button>`;
+              return `<button class="gantt-dot" style="left:${left}%;background:${Aula.safeColor(s.color)}" title="${esc(e.title)}" data-action="edit-exam" data-id="${e.id}">${esc(e.title).slice(0, 18)}</button>`;
             }).join("")}
           </div>
         </div>`;
@@ -245,14 +245,22 @@
     if (!url) return localBrain(q);
     const ctx = st().notes.slice(0, 8).map((n) => `# ${n.title}\n${(n.content || "").slice(0, 800)}`).join("\n\n");
     const prompt = `Eres un asistente de estudio de SMR. Responde SOLO con los apuntes y el calendario del alumno. Si no está, dilo.\n\nAPUNTES:\n${ctx}\n\nPREGUNTA: ${q}`;
-    const r = await fetch(url + "/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: st().settings.ollamaModel || "llama3.2", prompt, stream: false }),
-    });
-    if (!r.ok) throw new Error("Ollama " + r.status);
-    const j = await r.json();
-    return j.response || JSON.stringify(j);
+    // Sin límite de tiempo, un servidor apagado dejaba el chat pensando para siempre
+    const ctrl = new AbortController();
+    const reloj = setTimeout(() => ctrl.abort(), 45000);
+    try {
+      const r = await fetch(url + "/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: st().settings.ollamaModel || "llama3.2", prompt, stream: false }),
+        signal: ctrl.signal,
+      });
+      if (!r.ok) throw new Error("Ollama respondió " + r.status);
+      const j = await r.json();
+      return j.response || JSON.stringify(j);
+    } catch (e) {
+      throw new Error(/abort/i.test(String(e.name || e.message)) ? "Ollama tardó más de 45 s" : "No se pudo hablar con Ollama");
+    } finally { clearTimeout(reloj); }
   }
 
   function chatbot() {
@@ -403,7 +411,7 @@
     const draft = st()._guide || null;
     return `<div class="card">
       <h3>Importar guía docente</h3>
-      <p class="hint">Sube PDF o TXT. Extraemos fechas, % de evaluación y normas con reglas locales (sin enviar el archivo a nadie). Tú apruebas antes de guardar. Varias guías: revisa que no se dupliquen fechas.</p>
+      <p class="hint">Sube el TXT o MD de la guía (o pega el texto): se buscan fechas, pesos de evaluación y normas con reglas locales, sin enviar nada a internet. Con PDF funciona solo si el texto se puede copiar: el análisis se hace sobre el texto pegado, no sobre el archivo.</p>
       <label for="guide-file" class="sr-only">Archivo de la guía docente</label><input type="file" id="guide-file" accept=".pdf,.txt,.md" aria-label="Archivo de la guía docente" />
       <button class="btn btn-primary" data-action="guide-parse">Analizar</button>
       ${draft ? `<div style="margin-top:14px">
@@ -603,7 +611,9 @@ Local: ${st().subjects.length} módulos, ${st().exams.length} exámenes, ${st().
                 const copia = "aula.sync.prev";
                 localStorage.setItem(copia, JSON.stringify(st()));
               } catch {}
-              Object.assign(st(), remoto);
+              // Lo que baja del servidor también puede venir de otra versión: se sanea
+              const saneado = Aula.sanitize ? Aula.sanitize(remoto) : remoto;
+              Object.assign(st(), saneado);
               closeModal(); save(); render(); toast("Estado bajado (puedes deshacer)");
             },
           });

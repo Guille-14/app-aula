@@ -38,6 +38,78 @@ Cada hallazgo marcado como **[verificado]** tiene una reproducción concreta.
 
 ---
 
+---
+
+## 🔧 Estado de los arreglos (actualización, misma fecha)
+
+Esta auditoría se escribió sobre el commit `e820a3a`. Después se ha empezado a arreglar
+sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
+
+**Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas).
+
+| Bug | Estado | Cómo se ha arreglado |
+|---|---|---|
+| BUG-01 cuota silenciosa | ✅ hecho | `save()` avisa en pantalla, ofrece exportar y deja de mentir. Guardado diferido + `flushSave` al cerrar |
+| BUG-02 JSON corrupto destruido | ✅ hecho | Se guarda copia cruda en `aula.smr.v4.bak`, se explica y hay botón «Recuperar copia» |
+| BUG-03 importar sin validar | ✅ hecho | `sanitize()` sanea cualquier JSON (propio, importado o del servidor) y la importación pide confirmación con resumen |
+| BUG-04 Kanban NaN | ✅ hecho | Campo `left` (días) en vez de `due` (fecha): «hoy», «atrasada», «sin fecha» |
+| BUG-05 servidor sin PIN | ✅ hecho | `/data/**`, `/.git`, `__pycache__` bloqueados y listados de directorio en 404 |
+| BUG-06 CORS del APK | ✅ hecho | `/api/` devuelve `Access-Control-Allow-Origin` con eco del origen + `Vary` |
+| BUG-07 horario oficial machacón | ✅ hecho | Ya no se aplica solo: hay botón «Restaurar horario oficial» con confirmación y deshacer |
+| BUG-08 PIN decorativo | ✅ hecho | Bloqueo real de lectura, búsqueda y vista previa + pantalla de PIN honesta («evita miradas, no cifra») |
+| BUG-09 avisos limitados | ✅ aclarado | La propia interfaz dice el alcance; el APK puede programarlos. Pendiente: notificaciones nativas del APK |
+| BUG-10 Pomodoro frágil | ✅ hecho | Estado del bloque en `aula.timer` con hora de fin: sobrevive a recargas y al segundo plano |
+| BUG-11 minutos negativos | ✅ hecho | `sanitize()` recorta a 0-1440 y el formulario rechaza negativos y fechas futuras |
+| BUG-12 intérprete de frases | ✅ hecho | Sinónimos por módulo (14/15 frases de prueba acertadas) y **vista previa** antes de guardar |
+| BUG-13 .ics mal formado | ✅ hecho | CRLF, `DTSTAMP`, hora local coherente, escapado, `VALARM`, tareas con `DTEND`, plegado a 75 octetos |
+| BUG-14 fotos gigantes | 🟡 parcial | Se comprimen a 1.280 px y se guardan como adjunto (no como texto), con aviso de espacio. Pendiente: moverlas a IndexedDB |
+| BUG-15/16 borrado incompleto | ✅ hecho | «Borrar todo» limpia toda clave `aula.*` y cachés; las instantáneas bajan de 5 a 3 y avisan si no caben |
+| BUG-17 bajar estado a lo bruto | ✅ hecho | Confirmación con resumen, copia previa y deshacer; además se sanea lo que llega por red |
+| BUG-18 Ollama colgado | ✅ hecho | `AbortController` a 45 s con mensaje claro |
+| BUG-19 guía docente | ✅ aclarado | El texto dice lo que de verdad hace (texto pegado, reglas locales) |
+| BUG-20 guardar en cada tecla | ✅ hecho | Versiones cada 2 minutos como mucho y guardado 600 ms después de dejar de escribir |
+| BUG-21 guardar en cada render | ✅ hecho | `scheduleSave()` con retardo de 400 ms |
+| BUG-22 botón atrás | ✅ hecho | `pushState` por vista y `popstate`: atrás navega por la app en lugar de cerrarla |
+| BUG-23/24 versiones a mano | ✅ hecho | `APP_VERSION` única (`v49`), título coherente, README sin APK fantasma |
+| BUG-25 FOUC y colores del manifest | ✅ hecho | Script previo a la pintura + `color-scheme`; manifest oscuro acorde con el tema por defecto |
+| BUG-26 CSS inyectado por color | ✅ hecho | `safeColor()` en todos los estilos y saneado de datos importados/sincronizados |
+| BUG-27 Service Worker | ✅ hecho | Nunca devuelve `index.html` para JS/CSS/imágenes; precache recurso a recurso con avisos |
+| BUG-28/29 logros | ✅ hecho | El logro de tema compara con el tema real y el logro «madrugador» usa datos reales |
+| BUG-30 `crypto.subtle` sin https | ✅ hecho | Mensaje honesto en lugar de excepción |
+| BUG-31 confeti al marcar tarea | ✅ hecho | Respeta `settings.confetti` en todos los caminos |
+| BUG-32 contraseñas sesgadas | ✅ hecho | Aleatorio por rechazo + uno de cada conjunto + mezcla |
+| BUG-33 RAID 10 impar | ✅ hecho | Avisa de que el disco sin pareja no se usa |
+| BUG-34 GB/GiB mezclados | ✅ hecho | Base 10/2 etiquetada y cálculo de copia explicado |
+| BUG-35 IPv6 | ✅ hecho | Validación real (rechaza `gggg::`, `:::`), IPv4 embebida y compresión RFC 5952 |
+| BUG-36 regex que congela | ✅ hecho | Límite de longitud, veto de cuantificadores anidados, tope de 500 coincidencias y corte a 300 ms |
+| BUG-37 chmod | ✅ hecho | `4` → `--r--`, se ignoran setuid/sticky avisando |
+| BUG-38 modo examen eterno | ✅ hecho | Se guarda la hora de fin, se restaura al abrir y hay botón para desactivarlo |
+| BUG-39/40 onboarding | ✅ hecho | Bloque muerto eliminado; el asistente funciona y respeta la elección de datos de ejemplo |
+
+**Además (mejoras de la misma tanda):**
+
+- **Accesibilidad:** zoom permitido, `color-scheme`, foco visible, `aria-live` en los avisos,
+  salto al contenido, `prefers-reduced-motion`, 11 temas con contraste AA corregido,
+  **0 botones y 0 campos sin nombre accesible** en las 28 vistas.
+- **Lo que estaba programado y no se podía usar:** rejilla de 33 temas con categorías,
+  saltar bloque, modo escritura de fichas, importar CSV de horario, exportar Markdown/Anki/ICS,
+  dictado, deshacer, huecos libres del horario convertidos en bloques de estudio,
+  buscador global sobre notas/exámenes/tareas/módulos/fichas/glosario y las 37 herramientas,
+  radar por módulo y mapa de calor de 28 días.
+- **Pruebas:** `npm test` ejecuta 44 comprobaciones con jsdom (arranque de las 28 vistas,
+  datos corruptos, cuota, borrado, importación, temporizador, frases, PIN, `.ics`, etiquetas)
+  y hay CI en `.github/workflows/tests.yml`. También `.gitignore` y `package.json`.
+
+**Pendiente (lo que queda de los sprints 3 y 4):**
+
+- Mover fotos y adjuntos a IndexedDB (hoy van en `localStorage`, comprimidos).
+- Notificaciones programadas reales en el APK (Android) para que suenen con la app cerrada.
+- Refactor en módulos y poda de CSS (307 selectores redefinidos, 281 `!important`).
+- CSP, `eslint` y política de privacidad/aviso legal.
+- Reproducir (o retirar) el APK del README: hoy no está en el repositorio.
+
+---
+
 ## 1. Bugs confirmados (reproducidos)
 
 ### 🔴 BUG-01 · `save()` silencia los errores de cuota — pérdida de datos silenciosa
@@ -430,21 +502,21 @@ Y **9 funciones muertas** en `app.js`: `maybeNotify`, `greeting`, `medals`, `hea
 
 ## 7. Plan de trabajo propuesto (por orden de dolor)
 
-### Sprint 1 — "que no se pierdan datos" (medio día)
-- [ ] BUG-01 `save()` con aviso de cuota + bloqueo de fotos si no cabe
-- [ ] BUG-02 no sobrescribir nunca el JSON roto + copia `.bak` rotativa
-- [ ] BUG-03 `sanitize()` + `try/catch` en `render()` + pantalla de recuperación
-- [ ] BUG-15/16 borrado total completo (`aula.snaps`, `aula.nt.*`, cachés) + snapshots con try/catch
-- [ ] BUG-04 Kanban (arreglo de 3 líneas)
-- [ ] BUG-11 validación de minutos
+### Sprint 1 — "que no se pierdan datos" (medio día) — ✅ completado
+- [x] BUG-01 `save()` con aviso de cuota + bloqueo de fotos si no cabe
+- [x] BUG-02 no sobrescribir nunca el JSON roto + copia `.bak` rotativa
+- [x] BUG-03 `sanitize()` + `try/catch` en `render()` + pantalla de recuperación
+- [x] BUG-15/16 borrado total completo (`aula.snaps`, `aula.nt.*`, cachés) + snapshots con try/catch
+- [x] BUG-04 Kanban (arreglo de 3 líneas)
+- [x] BUG-11 validación de minutos
 
-### Sprint 2 — "que lo que existe se pueda usar" (1 día)
-- [ ] BUG-06/BUG-05 servidor: CORS correcto + bloquear `/data/`
-- [ ] BUG-07 sacar el horario oficial de `load()` y convertirlo en plantilla importable
-- [ ] Selector de temas en Ajustes (`skinCards` + categorías) — 30 min de trabajo, 33 funciones recuperadas
-- [ ] Botones para: saltar bloque, modo escritura de fichas, exportar Anki/MD, importar CSV, voz
-- [ ] BUG-08 decidir PIN: implementarlo o quitarlo
-- [ ] BUG-17 confirmación antes de "Bajar estado"
+### Sprint 2 — "que lo que existe se pueda usar" (1 día) — ✅ completado
+- [x] BUG-06/BUG-05 servidor: CORS correcto + bloquear `/data/`
+- [x] BUG-07 sacar el horario oficial de `load()` y convertirlo en plantilla importable
+- [x] Selector de temas en Ajustes (`skinCards` + categorías) — 33 temas recuperados
+- [x] Botones para: saltar bloque, modo escritura de fichas, exportar Anki/MD, importar CSV, voz
+- [x] BUG-08 decidir PIN: implementado y con aviso honesto de su alcance
+- [x] BUG-17 confirmación antes de "Bajar estado"
 
 ### Sprint 3 — "que se sienta bien" (2-3 días)
 - [ ] Temporizador persistente y fiable (BUG-10)

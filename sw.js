@@ -43,7 +43,14 @@ const PRECACHE = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE).catch(() => {})));
+  // addAll es todo o nada: si un solo recurso falla, se cachea uno a uno para saber cuál.
+  e.waitUntil(
+    caches.open(CACHE).then((c) =>
+      c.addAll(PRECACHE).catch(() =>
+        Promise.all(PRECACHE.map((u) => c.add(u).catch((err) => console.warn("No cacheado:", u, err && err.message))))
+      )
+    )
+  );
   self.skipWaiting();
 });
 self.addEventListener("activate", (e) => {
@@ -137,7 +144,7 @@ self.addEventListener("fetch", (e) => {
             }
             return res;
           })
-          .catch(() => caches.match(e.request).then((h) => h || caches.match("./index.html")));
+          .catch(() => caches.match(e.request).then((h) => h || offlineFallback(e.request)));
       })
     );
     return;
@@ -151,6 +158,19 @@ self.addEventListener("fetch", (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request).then((hit) => hit || caches.match("./index.html")))
+      .catch(() => caches.match(e.request).then((hit) => hit || offlineFallback(e.request)))
   );
 });
+
+// Si el recurso no está en caché: el HTML cae a index.html (modo app),
+// pero un JS/CSS/imagen NUNCA se sustituye por HTML: eso rompía la app entera.
+function offlineFallback(req) {
+  const dest = req.destination || "";
+  const url = new URL(req.url);
+  const tipo = dest || (url.pathname.endsWith(".js") ? "script" : url.pathname.endsWith(".css") ? "style" : "");
+  if (tipo === "script") return new Response("/* sin conexión y sin caché */", { status: 504, headers: { "Content-Type": "application/javascript" } });
+  if (tipo === "style") return new Response("/* sin conexión y sin caché */", { status: 504, headers: { "Content-Type": "text/css" } });
+  if (tipo === "image") return new Response("", { status: 504 });
+  if (req.mode === "navigate" || dest === "document" || tipo === "") return caches.match("./index.html");
+  return new Response("", { status: 504 });
+}

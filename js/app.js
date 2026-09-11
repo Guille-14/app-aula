@@ -573,6 +573,8 @@
       date: asISO(s.date) || todayISO(),
       minutes: clamp(Number(s.minutes) || 0, 0, 1440),
       type: asText(s.type, "pomodoro"),
+      hour: Number.isFinite(Number(s.hour)) ? clamp(Number(s.hour), 0, 23) : undefined,
+      createdAt: Number(s.createdAt) || undefined,
     }));
 
     out.attendance = asArray(src.attendance).filter(isObj)
@@ -1184,9 +1186,12 @@
     const notesN = state.notes.length;
     const attP = (state.attendance || []).filter((a) => a.status === "presente").length;
     const subjectsStudied = new Set(state.sessions.map((s) => s.subjectId)).size;
+    // Hora de creación de cada sesión: permite saber si estudias de madrugada
     const early = state.sessions.some((s) => {
-      /* no hour stored; use created-less: skip or check date only */
-      return false;
+      const h = Number(s.hour);
+      if (Number.isFinite(h)) return h >= 6 && h < 8;
+      const c = Number(s.createdAt);
+      return Number.isFinite(c) && new Date(c).getHours() >= 6 && new Date(c).getHours() < 8;
     });
     const weekend = state.sessions.some((s) => {
       const d = new Date(s.date + "T12:00:00");
@@ -1994,7 +1999,7 @@
           ${state.subjects.map((s) => {
             const g = graded.filter((e) => e.subjectId === s.id);
             const ga = g.length ? g.reduce((a, b) => a + Number(b.grade), 0) / g.length : null;
-            return `<div class="row"><span class="dot" style="background:${s.color}"></span><div style="flex:1"><b>${esc(s.name)}</b></div><div class="meta">${ga == null ? "—" : ga.toFixed(1)}</div></div>`;
+            return `<div class="row"><span class="dot" style="background:${safeColor(s.color)}"></span><div style="flex:1"><b>${esc(s.name)}</b></div><div class="meta">${ga == null ? "—" : ga.toFixed(1)}</div></div>`;
           }).join("")}
         </div>
       </div>
@@ -2059,7 +2064,7 @@
 
   function renderSubjects() {
     return `<div class="subject-grid">
-      ${state.subjects.map((s) => `<button class="subject-card" style="--c:${s.color}" data-action="open-subject" data-id="${s.id}">
+      ${state.subjects.map((s) => `<button class="subject-card" style="--c:${safeColor(s.color)}" data-action="open-subject" data-id="${s.id}">
         <h4 style="margin:6px 0 0;font-size:18px">${esc(s.name)}</h4>
         <p style="margin:8px 0 0;color:var(--muted);font-size:13px">${esc(s.teacher || "—")} · ${esc(s.room || "")}</p>
         <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">${fmtHours(studiedFor(s.id))} · ${state.exams.filter((e) => e.subjectId === s.id).length} exámenes</p>
@@ -2088,7 +2093,7 @@
       <div class="card" style="margin-top:16px">
         <h3>Exámenes</h3>
         ${exams.map((e) => `<button class="row" data-action="edit-exam" data-id="${e.id}" style="width:100%;text-align:left">
-          <span class="dot" style="background:${s.color}"></span><div>${esc(e.title)}</div><div class="meta">${fmtDate(e.date)}</div>
+          <span class="dot" style="background:${safeColor(s.color)}"></span><div>${esc(e.title)}</div><div class="meta">${fmtDate(e.date)}</div>
         </button>`).join("") || `<div class="empty">Sin exámenes.</div>`}
       </div>
     `;
@@ -2135,7 +2140,7 @@
       <div class="card" style="margin-top:16px">
         <h3>Dónde has invertido la semana</h3>
         ${bySub.filter((x) => x.m).map((x) => `<div class="row">
-          <span class="dot" style="background:${x.s.color}"></span>
+          <span class="dot" style="background:${safeColor(x.s.color)}"></span>
           <div style="flex:1"><b>${esc(x.s.name)}</b><div class="bar"><i style="width:${clamp((x.m / Math.max(mins, 1)) * 100, 0, 100)}%"></i></div></div>
           <div class="meta">${fmtHours(x.m)}</div>
         </div>`).join("") || `<div class="empty">Aún no hay sesiones esta semana. Dale al temporizador.</div>`}
@@ -2869,7 +2874,7 @@
     try { wakeLock?.release(); } catch {} wakeLock = null;
     if (timer.mode === "work") {
       const elapsed = Math.max(1, Math.round(timer.total / 60));
-      state.sessions.push({ id: uid(), subjectId: $("#timer-subject")?.value || timer.subjectId, date: todayISO(), minutes: elapsed, type: "pomodoro" });
+      state.sessions.push({ id: uid(), subjectId: $("#timer-subject")?.value || timer.subjectId, date: todayISO(), minutes: elapsed, type: "pomodoro", hour: new Date().getHours(), createdAt: Date.now() });
       timer.cycles += 1; checkAchievements(); save(); buzz(); if (state.settings.confetti) confetti(); toast(`+${elapsed} min · +${elapsed} XP`);
       if (document.hidden) noteOnce("pomo-" + Date.now(), "Bloque terminado", "+" + elapsed + " min. Toca para el descanso.");
       setMode(timer.cycles % state.settings.cyclesUntilLong === 0 ? "long" : "break", true);
@@ -3094,12 +3099,18 @@
 
   function go(v) {
     persistNoteNow();
+    const anterior = view;
     view = v;
     $("#sidebar")?.classList.remove("open");
     $("#overlay").classList.remove("menu-on");
     $("#overlay").hidden = true;
     closeCmd(); closeMore();
-    try { history.replaceState(null, "", "#" + v); } catch {}
+    // Con pushState, el gesto/botón "atrás" del móvil vuelve a la vista anterior
+    try {
+      const actual = (location.hash || "").replace("#", "");
+      if (anterior && anterior !== v && actual !== v) history.pushState({ v }, "", "#" + v);
+      else history.replaceState({ v }, "", "#" + v);
+    } catch {}
     render();
     window.scrollTo(0, 0);
   }
@@ -3121,7 +3132,7 @@
         const hoy = todayISO();
         const fecha = asISO(data.date) || hoy;
         if (fecha > hoy) { toast("No puedes registrar estudio en el futuro"); return; }
-        state.sessions.push({ id: uid(), subjectId: data.subjectId, date: fecha, minutes: mins, type: "manual" });
+        state.sessions.push({ id: uid(), subjectId: data.subjectId, date: fecha, minutes: mins, type: "manual", hour: new Date().getHours(), createdAt: Date.now() });
         checkAchievements(); closeModal(); render();
       },
     });
@@ -3951,7 +3962,7 @@
       }).join("") : `<p class="sch-empty">Sin exámenes en este módulo.</p>`;
       return `<section class="boletin-mod">
         <div class="boletin-head">
-          <i style="background:${sub.color}"></i>
+          <i style="background:${safeColor(sub.color)}"></i>
           <div>
             <b>${esc(sub.name)}</b>
             <small>${graded.length ? graded.length + (graded.length === 1 ? " nota" : " notas") : "sin calificar"}</small>
@@ -4005,6 +4016,7 @@
     pad, clamp, localISO, weekRange, streak, studiedFor, nextExam, nextClass, $, $$,
     openModal, closeModal, ask, weightedGPA, grantXP, checkAchievements, needSubjects,
     pushUndo, undo, sanitize, save, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
+    safeColor,
     unlockNote(id) { unlockedNotes.delete(id); },
     lockNote(id) { unlockedNotes.add(id); },
     get loadProblem() { return loadProblem; },
@@ -4014,8 +4026,10 @@
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },
   };
+  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, kanban: 1, timeline: 1, simulator: 1, habits: 1, glossary: 1, trash: 1, examode: 1, quickreview: 1, admin: 1, guide: 1, achievements: 1, rendimiento: 1, tools: 1 };
+  const esVista = (v) => !!(v && (titles[v] || EXTRA_VIEWS[v]));
   const hash = (location.hash || "").replace("#", "");
-  if (hash && (titles[hash] || { agenda: 1, chatbot: 1, kanban: 1, timeline: 1, simulator: 1, habits: 1, glossary: 1, trash: 1, examode: 1, quickreview: 1, admin: 1, guide: 1, achievements: 1, rendimiento: 1, tools: 1 }[hash])) view = hash;
+  if (esVista(hash)) view = hash;
   applyTheme();
   setMode("work", true);
   // Modo examen que sobrevive a recargas
@@ -4040,8 +4054,15 @@
   window.addEventListener("beforeunload", flushSave);
   window.addEventListener("hashchange", () => {
     const v = (location.hash || "").replace("#", "");
-    if (v && v !== view) { persistNoteNow(); closeMore(); view = v; render(); }
+    if (esVista(v) && v !== view) { persistNoteNow(); closeMore(); view = v; render(); }
   });
+  window.addEventListener("popstate", () => {
+    // Si no queda historial propio, se vuelve a Inicio en lugar de cerrar la app
+    const v = (location.hash || "").replace("#", "");
+    const destino = esVista(v) ? v : "dashboard";
+    if (destino !== view) { persistNoteNow(); closeMore(); view = destino; render(); window.scrollTo(0, 0); }
+  });
+  try { history.replaceState({ v: view }, "", "#" + view); } catch {}
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").then(() => applyAppIcon()).catch(() => {});
     navigator.serviceWorker.addEventListener("controllerchange", () => applyAppIcon());

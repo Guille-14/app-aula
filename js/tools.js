@@ -174,7 +174,11 @@
     return { oct: `${u}${g}${o}`, symbolic: `-${sym(u)}${sym(g)}${sym(o)}` };
   }
   function applyOctal(oct) {
-    const s = String(oct || "").replace(/\D/g, "").slice(0, 3).padStart(3, "0");
+    let limpio = String(oct || "").replace(/\D/g, "");
+    if (!limpio) return;
+    // "4" es --r----- en chmod simbólico → se rellena por la izquierda, no por la derecha
+    if (limpio.length > 3) limpio = limpio.slice(-3);   // se ignoran setuid/sticky, avisando fuera
+    const s = limpio.padStart(3, "0");
     const ids = [["cm-ur", "cm-uw", "cm-ux"], ["cm-gr", "cm-gw", "cm-gx"], ["cm-or", "cm-ow", "cm-ox"]];
     [...s].forEach((ch, i) => {
       const n = +ch;
@@ -182,6 +186,14 @@
       const set = (id, on) => { const el = document.getElementById(id); if (el) el.checked = on; };
       set(r, !!(n & 4)); set(w, !!(n & 2)); set(x, !!(n & 1));
     });
+  }
+  // Entero aleatorio sin sesgo (descarta la cola que no cabe en el rango)
+  function randInt(max) {
+    const limite = Math.floor(0xffffffff / max) * max;
+    const buf = new Uint32Array(1);
+    let v;
+    do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= limite);
+    return v % max;
   }
   function genPass(len, opts) {
     const sets = [];
@@ -191,11 +203,14 @@
     if (opts.sym) sets.push("!@#$%&*-_+?");
     if (!sets.length) sets.push("abcdefghijkmnopqrstuvwxyz");
     const all = sets.join("");
-    const buf = new Uint32Array(len);
-    crypto.getRandomValues(buf);
-    let out = "";
-    for (let i = 0; i < len; i++) out += all[buf[i] % all.length];
-    return out;
+    len = Math.max(4, Math.min(128, Number(len) || 16));
+    const out = [];
+    // Uno de cada conjunto marcado, para que cumpla las reglas de AD y de los sitios web
+    sets.forEach((s) => out.push(s[randInt(s.length)]));
+    while (out.length < len) out.push(all[randInt(all.length)]);
+    // Mezcla (Fisher-Yates) para que los obligatorios no queden al principio
+    for (let i = out.length - 1; i > 0; i--) { const j = randInt(i + 1); [out[i], out[j]] = [out[j], out[i]]; }
+    return out.slice(0, len).join("");
   }
   function fmtTime(sec) {
     if (!isFinite(sec) || sec < 0) return "—";
@@ -535,6 +550,7 @@
     if (id === "regex") return wrap("Regex", cardBox(`
       <div class="field"><label>Expresión</label><input id="rx-e" value="^\\d{1,3}(\\.\\d{1,3}){3}$"></div>
       <div class="field"><label>Texto</label><input id="rx-t" value="192.168.1.10"></div>
+      <div class="field"><label for="rx-f">Banderas</label><input id="rx-f" placeholder="g i m" value="g" /></div>
       ${liveBtn("tool-regex", "Probar")}
       <div id="rx-out" class="tool-out"></div>`));
     if (id === "uuid") return wrap("UUID", cardBox(`
@@ -603,20 +619,36 @@
     if (a < 224) return "Clase C pública";
     return "Otro";
   }
-  function expandV6(s) {
-    s = s.trim().toLowerCase();
-    if (s.includes(".")) return null;
-    const sides = s.split("::");
-    if (sides.length > 2) return null;
-    const left = sides[0] ? sides[0].split(":") : [];
-    const right = sides[1] ? sides[1].split(":") : [];
-    const miss = 8 - (left.filter(Boolean).length + right.filter(Boolean).length);
-    const mid = sides.length === 2 ? Array(Math.max(miss, 0)).fill("0") : [];
-    const parts = [...left, ...mid, ...right].filter((x, i, a) => !(x === "" && (i === 0 || i === a.length - 1)) || x === "0");
-    const clean = [...left.filter((x) => x !== ""), ...mid, ...right.filter((x) => x !== "")];
-    while (clean.length < 8) clean.splice(left.filter((x) => x !== "").length, 0, "0");
-    if (clean.length !== 8) return null;
-    return clean.map((h) => h.padStart(4, "0")).join(":");
+  function expandV6(dir) {
+    let s = String(dir || "").trim();
+    if (!s || s.includes(":::")) return null;
+    // IPv4 embebida al final (::ffff:192.168.1.1)
+    let v4 = "";
+    const m4 = s.match(/^(.*?):((?:\d{1,3}\.){3}\d{1,3})$/);
+    if (m4) {
+      const oct = m4[2].split(".").map(Number);
+      if (oct.some((o) => !Number.isFinite(o) || o < 0 || o > 255)) return null;
+      v4 = ((oct[0] << 8) | oct[1]).toString(16) + ":" + ((oct[2] << 8) | oct[3]).toString(16);
+      s = m4[1] + ":" + v4;
+    }
+    if ((s.match(/::/g) || []).length > 1) return null;
+    let head = [], tail = [];
+    if (s.includes("::")) {
+      const [a, b] = s.split("::");
+      head = a ? a.split(":") : [];
+      tail = b ? b.split(":") : [];
+    } else {
+      head = s.split(":");
+      if (head.length !== 8) return null;
+    }
+    const grupos = [...head, ...Array(Math.max(0, 8 - head.length - tail.length)).fill("0"), ...tail];
+    if (grupos.length !== 8) return null;
+    const out = [];
+    for (const g of grupos) {
+      if (!/^[0-9a-fA-F]{1,4}$/.test(g)) return null;    // gg es inválido y aquí se ve
+      out.push(g.toLowerCase().padStart(4, "0"));
+    }
+    return out;
   }
   function compressV6(full) {
     const parts = full.split(":");
@@ -700,9 +732,10 @@
       const raw = (document.getElementById("v6-in") || {}).value || "";
       const el = document.getElementById("v6-out");
       if (!el) return;
-      const full = expandV6(raw);
-      if (!full) { el.innerHTML = `<p class="hint">IPv6 no válida</p>`; return; }
-      el.innerHTML = kv([["Expandida", full], ["Comprimida", compressV6(full)]]);
+      const grupos = expandV6(raw);
+      if (!grupos) { el.innerHTML = `<p class="hint">IPv6 no válida: revisa los grupos (1-4 dígitos hex) y que solo haya un «::».</p>`; return; }
+      const full = grupos.join(":");
+      el.innerHTML = kv([["Expandida", full], ["Comprimida", compressV6(full)], ["Grupos", String(grupos.length)]]);
     }
     if (action === "tool-mac") {
       const raw = String((document.getElementById("mac-in") || {}).value || "").trim();
@@ -755,10 +788,15 @@
     if (action === "tool-backup") {
       const gb = parseFloat((document.getElementById("bk-gb") || {}).value) || 0;
       const mbps = parseFloat((document.getElementById("bk-mbps") || {}).value) || 0;
+      // Se trabaja en base 10 (lo que anuncian los fabricantes) y se dice en la nota
       const bits = gb * 1e9 * 8;
       const sec = mbps > 0 ? bits / (mbps * 1e6) : 0;
       const el = document.getElementById("bk-out");
-      if (el) el.innerHTML = kv([["Tiempo estimado", fmtTime(sec)]]);
+      if (el) el.innerHTML = kv([
+        ["Tiempo estimado", mbps > 0 ? fmtTime(sec) : "—"],
+        ["Cálculo", `${gb} GB × 8 = ${(bits / 1e9).toFixed(2)} Gbit a ${mbps} Mbit/s`],
+        ["Ojo", "Los GB son de 1000 MB (base 10). A velocidad real, súmale un 20-30 %."],
+      ]);
     }
     if (action === "tool-units") {
       const n = parseFloat((document.getElementById("un-n") || {}).value) || 0;
@@ -767,7 +805,10 @@
       const el = document.getElementById("un-out");
       if (el) el.innerHTML = ["GB", "GiB", "MB", "MiB", "TB", "TiB"].map((u) => {
         const d = { GB: 1e9, GiB: 2 ** 30, MB: 1e6, MiB: 2 ** 20, TB: 1e12, TiB: 2 ** 40 }[u];
-        return `<div class="kv"><span>${u}</span><b>${(bytes / d).toPrecision(6)}</b></div>`;
+        const v = bytes / d;
+        const txt = !v ? "0" : Math.abs(v) >= 1 ? Number(v.toPrecision(6)).toLocaleString("es-ES", { maximumFractionDigits: 4 }) : v.toExponential(3);
+        const base = u === "GB" || u === "MB" || u === "TB" ? "base 10" : "base 2";
+        return `<div class="kv"><span>${u} <small style="opacity:.6">(${base})</small></span><b>${txt}</b></div>`;
       }).join("");
     }
     if (action === "tool-raid") {
@@ -781,7 +822,13 @@
       else if (lv === "1") { cap = Math.floor(n / 2) * gb; note = "Espejo"; }
       else if (lv === "5") { cap = n >= 3 ? (n - 1) * gb : 0; note = n < 3 ? "Mínimo 3 discos" : "1 disco de paridad"; }
       else if (lv === "6") { cap = n >= 4 ? (n - 2) * gb : 0; note = n < 4 ? "Mínimo 4 discos" : "2 de paridad"; }
-      else if (lv === "10") { cap = Math.floor(n / 2) * gb; note = n < 4 ? "Mínimo 4 discos (pares)" : "Espejo + stripe"; }
+      else if (lv === "10") {
+        const pares = Math.floor(n / 2);
+        cap = pares * gb;
+        if (n < 4) note = "Mínimo 4 discos (pares)";
+        else if (n % 2) note = `Con ${n} discos el último se queda sin pareja: se usan ${pares * 2} (${pares} espejos)`;
+        else note = `${pares} espejos + stripe`;
+      }
       el.innerHTML = kv([["Capacidad usable", cap + " GB"], ["Notas", note]]);
     }
     if (action === "tool-conv") {
@@ -794,14 +841,19 @@
       el.innerHTML = kv([["Decimal", String(n)], ["Binario", n.toString(2)], ["Hex", n.toString(16).toUpperCase()]]);
     }
     if (action === "tool-hash") {
-      const t = (document.getElementById("hs-in") || {}).value || "";
+      const texto = (document.getElementById("hs-in") || {}).value || "";
       const el = document.getElementById("hs-out");
       if (!el) return;
-      const data = new TextEncoder().encode(t);
+      const data = new TextEncoder().encode(texto);
+      if (!(crypto && crypto.subtle && crypto.subtle.digest) || !crypto.subtle) {
+        // http://IP:8080 no es contexto seguro: crypto.subtle no existe ahí
+        el.innerHTML = `<p class="hint">El hash SHA-256 necesita https o localhost: el navegador lo bloquea en <b>http://</b>. Abre la app instalada o desde localhost.</p>`;
+        return;
+      }
       crypto.subtle.digest("SHA-256", data).then((buf) => {
         const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-        el.innerHTML = kv([["SHA-256", hex]]);
-      }).catch(() => { el.innerHTML = `<p class="hint">Crypto no disponible</p>`; });
+        el.innerHTML = kv([["SHA-256", hex], ["Bytes", String(data.length)]]);
+      }).catch((err) => { el.innerHTML = `<p class="hint">No se pudo calcular: ${esc(String(err && err.message || err))}</p>`; });
     }
     if (action === "tool-b64-enc" || action === "tool-b64-dec") {
       const t = (document.getElementById("b64-in") || {}).value || "";
@@ -825,14 +877,33 @@
       } catch { el.innerHTML = `<p class="hint">JSON no válido</p>`; }
     }
     if (action === "tool-regex") {
-      const e = (document.getElementById("rx-e") || {}).value || "";
-      const t = (document.getElementById("rx-t") || {}).value || "";
+      const expr = (document.getElementById("rx-e") || {}).value || "";
+      const texto = (document.getElementById("rx-t") || {}).value || "";
+      const flags = (document.getElementById("rx-f") || {}).value || "";
       const el = document.getElementById("rx-out");
       if (!el) return;
-      try {
-        const re = new RegExp(e);
-        el.innerHTML = kv([["¿Coincide?", re.test(t) ? "Sí" : "No"]]);
-      } catch { el.innerHTML = `<p class="hint">Expresión no válida</p>`; }
+      // Fuera banderas peligrosas y expresiones que pueden congelar la pestaña
+      const limpias = String(flags).replace(/[^gimsuy]/g, "");
+      const anidados = /(\([^)]*[+*][^)]*\)[+*]|\([^)]*\{[0-9]+,\}[^)]*\)[+*])/.test(expr);
+      if (expr.length > 200) { el.innerHTML = `<p class="hint">Expresión demasiado larga (máx. 200 caracteres)</p>`; return; }
+      if (anidados) { el.innerHTML = `<p class="hint">Esa expresión tiene cuantificadores anidados y puede bloquear el navegador. Prueba a simplificarla.</p>`; return; }
+      let re = null;
+      try { re = new RegExp(expr, limpias.includes("g") ? limpias : limpias + "g"); }
+      catch (e) { el.innerHTML = `<p class="hint">Expresión no válida: ${esc(String(e.message || e))}</p>`; return; }
+      const coincidencias = [];
+      let m = null, vueltas = 0;
+      const inicio = Date.now();
+      while ((m = re.exec(texto)) !== null && vueltas < 500) {
+        coincidencias.push(m[0] === "" ? "(vacío en " + m.index + ")" : m[0]);
+        if (m.index === re.lastIndex) re.lastIndex += 1;
+        vueltas++;
+        if (Date.now() - inicio > 300) break;    // corta si se atasca (catastrophic backtracking)
+      }
+      el.innerHTML = kv([
+        ["¿Coincide?", coincidencias.length ? "Sí" : "No"],
+        ["Nº de coincidencias", String(coincidencias.length)],
+        ["Primeras", coincidencias.slice(0, 8).join(" · ") || "—"],
+      ]);
     }
     if (action === "tool-uuid") {
       const el = document.getElementById("uu-out");
