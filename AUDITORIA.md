@@ -45,7 +45,9 @@ Cada hallazgo marcado como **[verificado]** tiene una reproducción concreta.
 Esta auditoría se escribió sobre el commit `e820a3a`. Después se ha empezado a arreglar
 sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 
-**Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas).
+**Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas),
+`7d2d814` (herramientas y red), `ee04323` (accesibilidad y detalles) y `5654dd6`
+(fotos en IndexedDB, repetición espaciada real y excepciones de horario).
 
 | Bug | Estado | Cómo se ha arreglado |
 |---|---|---|
@@ -62,7 +64,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 | BUG-11 minutos negativos | ✅ hecho | `sanitize()` recorta a 0-1440 y el formulario rechaza negativos y fechas futuras |
 | BUG-12 intérprete de frases | ✅ hecho | Sinónimos por módulo (14/15 frases de prueba acertadas) y **vista previa** antes de guardar |
 | BUG-13 .ics mal formado | ✅ hecho | CRLF, `DTSTAMP`, hora local coherente, escapado, `VALARM`, tareas con `DTEND`, plegado a 75 octetos |
-| BUG-14 fotos gigantes | 🟡 parcial | Se comprimen a 1.280 px y se guardan como adjunto (no como texto), con aviso de espacio. Pendiente: moverlas a IndexedDB |
+| BUG-14 fotos gigantes | ✅ hecho | Ya no viven en el estado: se guardan comprimidas (1.280 px) en **IndexedDB** (`js/media.js`) y la nota las referencia por id. La migración de las fotos antiguas es automática, la copia de seguridad las incluye, Ajustes mide lo que ocupan y avisa al 80 %; si el navegador no deja usar IndexedDB, se sigue guardando dentro del estado como antes |
 | BUG-15/16 borrado incompleto | ✅ hecho | «Borrar todo» limpia toda clave `aula.*` y cachés; las instantáneas bajan de 5 a 3 y avisan si no caben |
 | BUG-17 bajar estado a lo bruto | ✅ hecho | Confirmación con resumen, copia previa y deshacer; además se sanea lo que llega por red |
 | BUG-18 Ollama colgado | ✅ hecho | `AbortController` a 45 s con mensaje claro |
@@ -70,7 +72,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 | BUG-20 guardar en cada tecla | ✅ hecho | Versiones cada 2 minutos como mucho y guardado 600 ms después de dejar de escribir |
 | BUG-21 guardar en cada render | ✅ hecho | `scheduleSave()` con retardo de 400 ms |
 | BUG-22 botón atrás | ✅ hecho | `pushState` por vista y `popstate`: atrás navega por la app en lugar de cerrarla |
-| BUG-23/24 versiones a mano | ✅ hecho | `APP_VERSION` única (`v49`), título coherente, README sin APK fantasma |
+| BUG-23/24 versiones a mano | ✅ hecho | `APP_VERSION` única (`v50`), título coherente, README sin APK fantasma |
 | BUG-25 FOUC y colores del manifest | ✅ hecho | Script previo a la pintura + `color-scheme`; manifest oscuro acorde con el tema por defecto |
 | BUG-26 CSS inyectado por color | ✅ hecho | `safeColor()` en todos los estilos y saneado de datos importados/sincronizados |
 | BUG-27 Service Worker | ✅ hecho | Nunca devuelve `index.html` para JS/CSS/imágenes; precache recurso a recurso con avisos |
@@ -100,13 +102,27 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
   radar por módulo y mapa de calor de 28 días.
 - **Datos a futuro:** `state.schemaVersion` para poder migrar sin parches sueltos, y botón de
   deshacer visible (antes solo existía con Ctrl+Z).
-- **Pruebas:** `npm test` ejecuta 44 comprobaciones con jsdom (arranque de las 28 vistas,
-  datos corruptos, cuota, borrado, importación, temporizador, frases, PIN, `.ics`, etiquetas)
+- **Repaso y apuntes (tanda `5654dd6`, v50):**
+  - **Fotos en IndexedDB** (`js/media.js`, base `aula-smr-media`): el estado guarda la
+    referencia, no la imagen. Se arregla además el markdown truncado a 32 caracteres del
+    BUG-14, las fotos se ven **mientras escribes y en Vista**, se rellenan solas en cuanto
+    se leen del almacén, la exportación las mete dentro del JSON y el borrado definitivo
+    las suelta. Con 4,5 MB de cuota se avisa antes de que falle el guardado.
+  - **Repetición espaciada de verdad (SM-2)**: `easeFactor` (1,3–3,2), `reps`, `lapses`,
+    `interval` e historial de las últimas 20 respuestas, con los cuatro botones
+    (Otra vez / Difícil / Bien / Fácil) enseñando el intervalo resultante, estadísticas
+    nuevas/aprendiendo/maduras y reencolado de los fallos. Simulación: secuencia de «Bien»
+    → 1, 6, 15, 38, 95, 238 días; un fallo vuelve a 0 días sin perder el historial.
+  - **Excepciones de horario por fecha**: «esta clase se cancela», «se mueve a tal día»,
+    «clase extra» y «es fiesta». Lo usan el horario, la agenda, la próxima clase, el botón
+    de inicio y los huecos libres de studio.js, así que lo que se ve coincide con el día real.
+- **Pruebas:** `npm test` ejecuta **74 comprobaciones** con jsdom en 14 secciones (arranque de
+  las 28 vistas, datos corruptos, cuota, borrado, importación, temporizador, frases, PIN,
+  `.ics`, etiquetas, SM-2, excepciones de horario, fotos en IndexedDB y copia con fotos)
   y hay CI en `.github/workflows/tests.yml`. También `.gitignore` y `package.json`.
 
 **Pendiente (lo que queda de los sprints 3 y 4):**
 
-- Mover fotos y adjuntos a IndexedDB (hoy van en `localStorage`, comprimidos).
 - Notificaciones programadas reales en el APK (Android) para que suenen con la app cerrada.
 - Refactor en módulos y poda de CSS (307 selectores redefinidos, 281 `!important`).
 - CSP, `eslint` y política de privacidad/aviso legal.
@@ -522,19 +538,21 @@ Y **9 funciones muertas** en `app.js`: `maybeNotify`, `greeting`, `medals`, `hea
 - [x] BUG-08 decidir PIN: implementado y con aviso honesto de su alcance
 - [x] BUG-17 confirmación antes de "Bajar estado"
 
-### Sprint 3 — "que se sienta bien" (2-3 días)
-- [ ] Temporizador persistente y fiable (BUG-10)
-- [ ] Avisos: dejar claro el alcance + notificaciones nativas en el APK (BUG-09)
-- [ ] Accesibilidad: zoom, `:focus-visible`, labels, nombres accesibles, contraste de las 9 skins flojas (sección 4.4)
-- [ ] NLP con sinónimos y previsualización antes de guardar (BUG-12)
-- [ ] `.ics` correcto (BUG-13), fotos en IndexedDB (BUG-14)
-- [ ] Limpieza: 9 funciones muertas, 40 ajustes fantasma, redefiniciones CSS, `!important`
+### Sprint 3 — "que se sienta bien" (2-3 días) — ✅ completado
+- [x] Temporizador persistente y fiable (BUG-10)
+- [x] Avisos: alcance explicado en la propia interfaz (BUG-09). Falta el APK
+- [x] Accesibilidad: zoom, `:focus-visible`, labels, nombres accesibles, contraste de las 9 skins flojas (sección 4.4)
+- [x] NLP con sinónimos y previsualización antes de guardar (BUG-12)
+- [x] `.ics` correcto (BUG-13), fotos en IndexedDB (BUG-14)
+- [x] Repetición espaciada real (SM-2) y excepciones de horario por fecha (4.2)
+- [ ] Limpieza: 9 funciones muertas (hecho en `2aabe57`), ajustes fantasma y poda de CSS pendiente
 
 ### Sprint 4 — "que aguante el curso" (a decidir)
 - [ ] Refactor en módulos + store con `subscribe()`
-- [ ] Tests (jsdom) + GitHub Actions + `eslint`
-- [ ] `.gitignore` + README real (APK reproducible o retirado del README)
-- [ ] CSP, adjuntos en IndexedDB, export/borrado completo de datos personales
+- [x] Tests (jsdom, 74 comprobaciones) + GitHub Actions. Falta `eslint`
+- [x] `.gitignore` + README real (APK retirado del README)
+- [x] Adjuntos en IndexedDB, export/borrado completo de datos personales
+- [ ] CSP y política de privacidad
 
 ---
 
