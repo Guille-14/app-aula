@@ -3,6 +3,7 @@
 **Fecha:** 11 de septiembre de 2026
 **Alcance:** todo el repositorio (`index.html`, `js/app.js`, `js/studio.js`, `js/tools.js`, `sw.js`, `server.py`, 7 hojas CSS, `manifest.webmanifest`, `apk-overlay/`, README).
 **Commit auditado:** `e820a3a` (rama `arena/01a0902e-app-aula`, creada desde `main`).
+**Ronda v58:** commits `6c70d71` y `de1c2a1` (auditoría línea a línea + arreglos, 182 pruebas ✓).
 **Tamaño analizado:** 9.225 líneas / 454 KB (189 KB de `app.js`, 148 KB de CSS).
 
 ## Cómo se ha auditado (para que te fíes de los hallazgos)
@@ -86,8 +87,10 @@ las 21 vistas con **337 clics** reales y apertura de modales, buscando excepcion
 | 20 | La guarda `data:image` de las fotos antiguas no validaba el tipo de imagen | 🟡 Bajo | `md()` y las miniaturas pasan por `safeImgSrc()` |
 | 21 | **Instantáneas de «Datos locales» a prueba de basura**: si `aula.snaps` tenía algo que no era una lista, «Punto de restauración» y «Restaurar» lanzaban una excepción | 🟠 Medio | `leerSnaps()`/`guardarSnaps()`: se parsea a salvo y solo se aceptan listas de copias con id |
 | 22 | `settings.startHour`/`endHour` con valor `0` (medianoche) caían al valor por defecto por culpa de `|| 8`: los bloques de estudio y los huecos libres salían mal | 🟡 Bajo | Se comprueba con `Number.isFinite` en vez de `||` |
+| 23 | **Agenda, pestaña Mes**: «‹» y «›» sumaban 30 días en vez de un mes, así que el calendario se iba de fecha (31 de enero → 2 de marzo) | 🟡 Bajo | Se avanza de mes en mes (`setDate(1)` + `setMonth(±1)`) |
+| 24 | **Agenda, «Reservar estudio»**: el bloque duraba 45 minutos pasara lo que pasara, aunque el hueco fuese de 10 o de 90 (`(st().subjects||[]).length ? 45 : 45`) | 🟠 Medio | El bloque ocupa el hueco entero, con tope de 10 a 180 minutos |
 
-**Verificación de esta ronda:** `npm test` = **179 comprobaciones ✓ / 0 ✗** (34 nuevas, una por fallo
+**Verificación de esta ronda:** `npm test` = **182 comprobaciones ✓ / 0 ✗** (37 nuevas, una por fallo
 de la tabla), recorrido automático de las 21 vistas con 337 clics y 10 modales **sin excepciones**,
 `eslint` sin errores reales (solo quedan avisos de configuración de globals: `Response`, `Aula`,
 `speechSynthesis`) y comprobación de que no queda ningún selector ni ajuste huérfano.
