@@ -52,10 +52,25 @@ jobs:
           python3 -m pip install --quiet pillow || python3 -m pip install --quiet --break-system-packages pillow
 
       - name: Pruebas antes de empaquetar
-        run: npm test
+        run: |
+          # Si algo falla, los fallos se publican como anotaciones: los ficheros de log de
+          # Actions viven en un CDN que no siempre es accesible, y así el motivo se ve
+          # tanto en la interfaz como por API.
+          set -o pipefail
+          if npm test 2>&1 | tee test.log; then exit 0; fi
+          grep -E "^ *[-✗]|fallos" test.log | head -10 | while IFS= read -r l; do
+            echo "::error title=Prueba fallida::$(printf '%s' "$l" | cut -c1-200)"
+          done
+          exit 1
 
       - name: Compilar el APK
-        run: bash apk-overlay/build.sh
+        run: |
+          set -o pipefail
+          if bash apk-overlay/build.sh 2>&1 | tee build.log; then exit 0; fi
+          tail -12 build.log | while IFS= read -r l; do
+            echo "::error title=Fallo al compilar::$(printf '%s' "$l" | cut -c1-200)"
+          done
+          exit 1
 
       - name: Comprobar el APK (firma, versión y widgets)
         id: comprobar

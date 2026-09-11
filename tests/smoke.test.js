@@ -87,6 +87,18 @@ const confirmModal = (env) => {
 };
 const ready = (A) => { A.state.settings.onboarded = true; A.state.settings.demo = false; };
 
+// Espera a que se cumpla una condición, con tope de tiempo. Es a propósito: un
+// «setTimeout de 30 ms» se queda corto en una máquina cargada (CI) y la prueba fallaría
+// sin que nada esté roto de verdad.
+async function hasta(cond, ms = 4000) {
+  const fin = Date.now() + ms;
+  while (Date.now() < fin) {
+    try { if (cond()) return true; } catch { /* aún no */ }
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  try { return !!cond(); } catch { return false; }
+}
+
 const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "timer", "stats", "plan", "subjects", "settings", "inbox", "review", "achievements", "agenda", "kanban", "chatbot", "simulator", "habits", "glossary", "examode", "quickreview", "admin", "rendimiento", "tools"];
 
 // ------------------------------------------------------- 1. arranque y vistas
@@ -215,7 +227,7 @@ async function testImport() {
   env.window.FileReader = FR;
   act(env, "import", {});
   check(!!fileInput, "importar: se abre el selector de archivo");
-  await new Promise((r) => setTimeout(r, 40));
+  await hasta(() => !!env.doc.getElementById("modal-form"));
   env.window.FileReader = RealFR;
   env.doc.createElement = realCreate;
   check(confirmModal(env), "importar: pide confirmación antes de sustituir");
@@ -400,7 +412,7 @@ async function testMedia() {
     check(!!tira, "medios: la nota enseña la foto aunque estés escribiendo");
     const img = env.doc.querySelector(`[data-media="${id}"]`);
     check(!!img, "medios: la nota pinta un hueco para la foto que se rellena sola");
-    await new Promise((r) => setTimeout(r, 30));
+    await hasta(() => /^(blob:|data:image)/.test(String(img.src || "")));
     media.hydrate(env.doc.getElementById("view"));
     check(!!media.urlFor(id), "medios: la foto queda disponible para pintarla");
     check(/^(blob:|data:image)/.test(String(img.src || "")), "medios: el hueco se rellena solo con la foto");
@@ -418,7 +430,7 @@ async function testMedia() {
   act(env, "open-note", { id: "n1" });
   act(env, "delete-note", { id: "n1" });
   check(confirmModal(env), "medios: borrar una nota pide confirmación");
-  await new Promise((r) => setTimeout(r, 30));
+  await hasta(() => !A.state.notes.some((n) => n.id === "n1"));
   check(!A.state.notes.some((n) => n.id === "n1"), "medios: la nota desaparece de Apuntes");
   const tras = await media.get(id);
   check(!tras, "medios: al borrar, la foto desaparece del almacén");
@@ -438,7 +450,7 @@ async function testBackupConFotos() {
   const BlobReal = env.window.Blob;
   env.window.Blob = function (parts, opts) { capturado = String(parts[0]); return new BlobReal(parts, opts); };
   act(env, "export", {});
-  await new Promise((r) => setTimeout(r, 60));
+  await hasta(() => capturado.includes("data:image/png"), 6000);
   env.window.Blob = BlobReal;
   check(capturado.includes("data:image/png"), "copia: el JSON exportado incluye las fotos que viven en el almacén");
   const parsed = JSON.parse(capturado || "{}");
@@ -458,7 +470,7 @@ async function testSinRed() {
   A.go("chatbot");
   env.doc.getElementById("chat-q").value = "¿qué tengo esta semana?";
   act(env, "chat-send", {});
-  await new Promise((r) => setTimeout(r, 40));
+  await hasta(() => { const l = A.state._chat || []; return l.length >= 2 && l[l.length - 1].role === "bot"; });
   const log = A.state._chat || [];
   const antes = log.length;   // ojo: log es el mismo array que sigue creciendo
   check(log.length >= 2 && log[log.length - 1].role === "bot", "sin red: el chat responde con el motor local");
@@ -468,7 +480,7 @@ async function testSinRed() {
   A.state.settings.ollamaUrl = "http://192.168.1.10:11434";
   env.doc.getElementById("chat-q").value = "Explícame DHCP";
   act(env, "chat-send", {});
-  await new Promise((r) => setTimeout(r, 60));
+  await hasta(() => { const l = A.state._chat || []; return l.length > antes && l[l.length - 1].role === "bot"; }, 6000);
   const tras = A.state._chat || [];
   check(tras.length > antes && tras[tras.length - 1].role === "bot", "Ollama caído: el chat sigue contestando en local");
   check(llamadas.some((u) => String(u).includes("11434")), "Ollama configurado: se intenta tu propio Ollama, y solo eso");
