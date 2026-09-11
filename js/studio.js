@@ -46,10 +46,16 @@
     return map;
   }
 
-  function freeSlots(day) {
+  // Clases reales de una fecha (con las excepciones de ese día aplicadas)
+  function clasesDe(iso, day) {
+    if (Aula.eventsOnDate) return Aula.eventsOnDate(iso);
+    return st().events.filter((e) => e.day === day).sort((a, b) => a.start.localeCompare(b.start));
+  }
+
+  function freeSlots(day, iso) {
     const startH = Number(st().settings.startHour) || 8;
     const endH = Number(st().settings.endHour) || 21;
-    const evs = st().events.filter((e) => e.day === day).sort((a, b) => a.start.localeCompare(b.start));
+    const evs = (iso ? clasesDe(iso, day) : st().events.filter((e) => e.day === day)).slice().sort((a, b) => a.start.localeCompare(b.start));
     const gaps = [];
     let cursor = startH * 60;
     evs.forEach((e) => {
@@ -110,12 +116,12 @@
     let body = "";
     if (tab === "dia") {
       const wd = weekdayMon0(d);
-      const classes = st().events.filter((e) => e.day === wd).sort((a, b) => a.start.localeCompare(b.start));
+      const classes = clasesDe(cursor, wd);
       const exams = st().exams.filter((e) => e.date === cursor);
       const tasks = st().tasks.filter((t) => t.due === cursor);
-      const gaps = freeSlots(wd);
+      const gaps = freeSlots(wd, cursor);
       body = `<p class="hint">${esc(todayStudyHint())}</p>
-        <h3>Clases</h3>${classes.map((e) => `<div class="row"><span class="dot" style="background:${subjectColor(e.subjectId)}"></span><div>${esc(subjectName(e.subjectId))}</div><div class="meta">${e.start}–${e.end}</div></div>`).join("") || "<div class='empty'>Sin clases.</div>"}
+        <h3>Clases</h3>${classes.length ? classes.map((e) => `<div class="row"><span class="dot" style="background:${subjectColor(e.subjectId)}"></span><div>${esc(e.title || subjectName(e.subjectId))} ${e.moved ? `<span class="badge">movida</span>` : ""} ${e.extra ? `<span class="badge">extra</span>` : ""}</div><div class="meta">${e.start}–${e.end}${e.room ? " · " + esc(e.room) : ""}</div></div>`).join("") : "<div class='empty'>Sin clases.</div>"}
         <h3>Exámenes / entregas</h3>${exams.map((e) => `<div class="row"><b>${esc(e.title)}</b><div class="meta">${e.time || ""}</div></div>`).join("") || "<p class='muted'>Ninguno.</p>"}
         <h3>Tareas</h3>${tasks.map((t) => `<div class="task"><div class="tt">${esc(t.title)}</div></div>`).join("") || "<p class='muted'>Ninguna.</p>"}
         <h3>Huecos para estudiar</h3>${gaps.map((g) => `<div class="row"><div>${g.start}–${g.end}</div><button class="btn btn-sm" data-action="slot-study" data-day="${wd}" data-start="${g.start}" data-end="${g.end}">Bloquear estudio</button></div>`).join("") || "<p class='muted'>Día lleno.</p>"}`;
@@ -130,7 +136,7 @@
         const n = exams.length;
         return `<div class="wa-day ${iso === todayISO() ? "today" : ""} ${n >= 2 ? "hot" : ""}">
           <b>${DAYS()[i] || DAYS_SHORT()[i]} ${iso.slice(8)}</b>
-          ${st().events.filter((e) => e.day === i).map((e) => `<div class="wa-ev" style="border-left:3px solid ${subjectColor(e.subjectId)}">${e.start} ${esc(subjectName(e.subjectId))}</div>`).join("")}
+          ${clasesDe(iso, i).map((e) => `<div class="wa-ev" style="border-left:3px solid ${subjectColor(e.subjectId)}">${e.start} ${esc(subjectName(e.subjectId))}${e.moved ? " ↔" : ""}${e.extra ? " +" : ""}</div>`).join("")}
           ${exams.map((e) => `<div class="wa-ex">EX ${esc(e.title)}</div>`).join("")}
         </div>`;
       }).join("")}</div>
@@ -518,7 +524,12 @@
       const n = (st().trash || []).find((x) => x.id === id);
       if (n) { delete n.deletedAt; st().notes.unshift(n); st().trash = st().trash.filter((x) => x.id !== id); save(); render(); }
     }
-    if (action === "trash-kill") { st().trash = (st().trash || []).filter((x) => x.id !== id); save(); render(); }
+    if (action === "trash-kill") {
+      const n = (st().trash || []).find((x) => x.id === id);
+      if (n && window.Aula && window.Aula.soltarFotos) window.Aula.soltarFotos(n);   // sus fotos salen del almacén
+      st().trash = (st().trash || []).filter((x) => x.id !== id);
+      save(); render(); toast("Nota borrada del todo");
+    }
     if (action === "examode-on") {
       const hasta = Date.now() + 90 * 60 * 1000;
       st().progress.flags = Object.assign({}, st().progress.flags, { examLockUntil: hasta });
@@ -718,12 +729,24 @@ Local: ${st().subjects.length} módulos, ${st().exams.length} exámenes, ${st().
         toast("Preparando la foto…");
         const data = await shrinkImage(f, 1280, 0.72).catch(() => null);
         if (!data) { toast("No se ha podido leer la imagen"); return; }
-        if (data.length > 1_400_000) { toast("La foto sigue siendo muy grande"); return; }
         n.attachments = n.attachments || [];
-        const att = { id: uid(), name: f.name || "foto.jpg", kind: "img", data };
+        // La foto va al almacén de archivos (IndexedDB): el estado solo guarda su ficha
+        const att = { id: uid(), name: f.name || "foto.jpg", kind: "img", size: Math.round(data.length * 0.75) };
+        const media = window.AulaMedia;
+        if (media && media.available()) {
+          try {
+            await media.put(att.id, data);
+          } catch {
+            att.data = data;                     // si falla el almacén, se guarda como antes
+          }
+        } else {
+          att.data = data;
+        }
+        if (!att.data && att.size > 1_400_000) { toast("La foto sigue siendo muy grande"); return; }
         n.attachments.push(att);
         n.content = (n.content || "").replace(/\s*$/, "") + `\n\n![${att.name}](aula-img:${att.id})\n`;
-        save(); render(); toast("Foto añadida a la nota");
+        save(); render();
+        toast(att.data ? "Foto añadida (dentro del estado)" : "Foto guardada en el almacén de archivos");
       };
       inp.click();
     }

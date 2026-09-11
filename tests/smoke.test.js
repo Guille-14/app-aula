@@ -48,10 +48,19 @@ function boot(opts = {}) {
   window.Notification.permission = "default";
   window.Notification.requestPermission = () => Promise.resolve("granted");
 
+  // IndexedDB: si está el paquete de pruebas, se usa uno de mentira pero real
+  if (opts.idb !== false) {
+    try {
+      const fake = require("fake-indexeddb");
+      window.indexedDB = fake.indexedDB;
+      window.IDBKeyRange = fake.IDBKeyRange;
+    } catch { /* sin el paquete se prueba el camino de respaldo */ }
+  }
+
   if (opts.seed !== undefined) window.localStorage.setItem("aula.smr.v4", opts.seed);
   if (opts.extra) Object.entries(opts.extra).forEach(([k, v]) => window.localStorage.setItem(k, v));
 
-  for (const f of ["js/app.js", "js/studio.js", "js/tools.js"]) {
+  for (const f of ["js/media.js", "js/app.js", "js/studio.js", "js/tools.js"]) {
     try {
       window.eval(fs.readFileSync(path.join(ROOT, f), "utf8"));
     } catch (e) {
@@ -304,11 +313,144 @@ async function testSettings() {
   check(env.A.state.settings.skin === card.dataset.id, "elegir tema aplica el cambio");
 }
 
+// ------------------------------------- 11. fichas: repetición espaciada SM-2
+{
+  const env = boot();
+  ready(env.A);
+  const A = env.A;
+  const hoy = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  A.state.cards = [{ id: "c1", subjectId: A.state.subjects[0].id, front: "¿Puerto HTTPS?", back: "443", due: hoy, reps: 0, interval: 0, ease: 2.5, lapses: 0 }];
+  A.go("cards");
+  check(env.doc.querySelectorAll('[data-action="grade-card"]').length === 4, "fichas: cuatro botones de repaso (otra vez / difícil / bien / fácil)");
+  const boton = (q) => [...env.doc.querySelectorAll('[data-action="grade-card"]')].find((b) => b.dataset.q === q);
+  check(/mañana|días|hoy/.test(boton("4").textContent), "fichas: cada botón dice cuándo vuelve");
+  act(env, "grade-card", { q: "4" });
+  const c = A.state.cards[0];
+  check(c.reps === 1 && c.interval === 1 && c.due > hoy, "SM-2: acertar programa la ficha para mañana");
+  check(Math.abs(c.ease - 2.5) < 0.01, "SM-2: la facilidad se mantiene al acertar");
+  A.state.cards[0].due = hoy; A.state.cards[0].interval = 0; A.go("cards");
+  act(env, "grade-card", { q: "0" });
+  const c2 = A.state.cards[0];
+  check(c2.interval === 0 && c2.due === hoy && c2.lapses === 1, "SM-2: fallar la devuelve hoy y suma un fallo");
+  check(c2.reps === 0, "SM-2: fallar reinicia la racha de aciertos");
+  // Simulación de un mes estudiando bien: el intervalo debe crecer de forma realista
+  let sim = { ease: 2.5, reps: 0, interval: 0, lapses: 0 };
+  const saltos = [];
+  for (let i = 0; i < 5; i++) { sim = { ...sim, ...A.sm2(sim, 4) }; saltos.push(sim.interval); }
+  check(saltos[0] === 1 && saltos[1] === 6 && saltos[2] === 15 && saltos[3] === 38, "SM-2: los intervalos crecen a 1, 6, 15, 38 días (" + saltos.join(",") + ")");
+}
+
+// -------------------------------- 12. horario: cambios de un día suelto
+{
+  const env = boot();
+  ready(env.A);
+  const A = env.A;
+  const hoy = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const dow = (new Date(hoy + "T12:00:00").getDay() + 6) % 7;
+  const clases = A.state.events.filter((e) => e.day === dow);
+  if (!clases.length) {
+    check(false, "excepciones: el horario de ejemplo no tiene clases hoy, no se puede probar");
+  } else {
+    check(A.eventsOnDate(hoy).length === clases.length, "excepciones: sin cambios, el día tiene las clases de la semana");
+    A.setException({ kind: "cancel", date: hoy, eventId: clases[0].id });
+    check(A.eventsOnDate(hoy).length === clases.length - 1, "excepciones: «sin clase» quita solo esa clase de ese día");
+    check(A.state.events.filter((e) => e.day === dow).length === clases.length, "excepciones: el horario fijo no se modifica");
+    A.setException({ kind: "move", date: hoy, eventId: clases[0].id, start: "18:00", end: "19:00" });
+    const movida = A.eventsOnDate(hoy).find((e) => e.moved);
+    check(!!movida && movida.start === "18:00", "excepciones: mover la clase cambia la hora solo ese día");
+    check(A.exceptionsFor(hoy).filter((x) => x.eventId === clases[0].id).length === 1, "excepciones: mover sustituye al «sin clase» (no se apilan)");
+    A.setException({ kind: "extra", date: hoy, subjectId: A.state.subjects[0].id, start: "15:00", end: "16:00", note: "Extra" });
+    check(A.eventsOnDate(hoy).some((e) => e.extra && e.start === "15:00"), "excepciones: se puede añadir una clase extra a un día");
+    A.setException({ kind: "holiday", date: hoy, note: "Fiesta local" });
+    check(A.eventsOnDate(hoy).length === 0, "excepciones: marcar el día como fiesta quita todas las clases");
+    A.go("schedule");
+    check(/Cambios de un día suelto/.test(env.doc.getElementById("view").innerHTML), "excepciones: el bloque de cambios se ve en el horario");
+    const del = env.doc.querySelector('[data-action="ex-del"]');
+    check(!!del, "excepciones: cada cambio se puede quitar");
+    const antesDel = A.state.exceptions.length;
+    act(env, "ex-del", { id: del.dataset.id });
+    check(A.state.exceptions.length === antesDel - 1, "excepciones: quitar un cambio lo borra");
+  }
+}
+
+// --------------------------------- 13. fotos: almacén aparte (o respaldo)
+async function testMedia() {
+  const env = boot();
+  ready(env.A);
+  const A = env.A;
+  const media = env.window.AulaMedia;
+  const tieneIDB = !!env.window.indexedDB;
+  const ok = await media.ready();
+  check(ok && tieneIDB, "medios: el almacén de archivos se abre (" + (tieneIDB ? "con IndexedDB" : "sin IndexedDB") + ")");
+  const dataUrl = "data:image/png;base64," + Buffer.from("foto-de-prueba").toString("base64");
+  const id = "img-test";
+  const nota = { id: "n1", subjectId: A.state.subjects[0].id, title: "Con foto", content: `foto\n\n![f.png](aula-img:${id})\n`, attachments: [{ id, name: "f.png", kind: "img" }], versions: [], createdAt: Date.now(), updatedAt: Date.now() };
+  A.state.notes.push(nota);
+  if (ok) {
+    await media.put(id, dataUrl);
+    const guardado = await media.get(id);
+    check(!!guardado && guardado.size > 0, "medios: la foto se guarda en el almacén de archivos");
+    const recuperada = await media.dataURL(id);
+    check(recuperada.startsWith("data:image/"), "medios: la foto se recupera entera (para la copia de seguridad)");
+    check(!nota.attachments[0].data, "medios: el estado ya no lleva la foto dentro");
+    // La vista la pinta en cuanto llega (se abre la nota como lo haría el usuario)
+    A.go("notes");
+    act(env, "open-note", { id: "n1" });
+    const tira = env.doc.querySelector(".note-photos img[data-media=" + id + "]");
+    check(!!tira, "medios: la nota enseña la foto aunque estés escribiendo");
+    const img = env.doc.querySelector(`[data-media="${id}"]`);
+    check(!!img, "medios: la nota pinta un hueco para la foto que se rellena sola");
+    await new Promise((r) => setTimeout(r, 30));
+    media.hydrate(env.doc.getElementById("view"));
+    check(!!media.urlFor(id), "medios: la foto queda disponible para pintarla");
+    check(/^(blob:|data:image)/.test(String(img.src || "")), "medios: el hueco se rellena solo con la foto");
+    act(env, "toggle-preview", {});
+    check(/data-media=/.test(env.doc.getElementById("view").innerHTML), "medios: en Vista también aparece la foto");
+    const uso = await media.usage();
+    check(uso.n === 1 && uso.bytes > 0, "medios: Ajustes puede medir lo que ocupan las fotos");
+  } else {
+    nota.attachments[0].data = dataUrl;   // sin almacén, como antes
+    A.go("notes");
+    check(/data-media=/.test(env.doc.getElementById("view").innerHTML), "medios sin IndexedDB: la nota sigue mostrando la foto");
+  }
+  // Borrar la nota del todo debe llevarse la foto del almacén
+  A.state.notes = A.state.notes.filter((n) => n.id !== "n1");
+  A.state.trash = (A.state.trash || []).concat([nota]);
+  A.go("trash");
+  act(env, "trash-kill", { id: "n1" });
+  await new Promise((r) => setTimeout(r, 30));
+  const tras = await media.get(id);
+  check(!tras, "medios: al borrar, la foto desaparece del almacén");
+}
+
+// -------------------------------------- 14. copia de seguridad con fotos
+async function testBackupConFotos() {
+  const env = boot();
+  ready(env.A);
+  const A = env.A, media = env.window.AulaMedia;
+  const ok = await media.ready();
+  if (!ok) { check(true, "copia con fotos: se omite (no hay IndexedDB)"); return; }
+  const dataUrl = "data:image/png;base64," + Buffer.from("copia").toString("base64");
+  A.state.notes.push({ id: "nb", subjectId: A.state.subjects[0].id, title: "Nota", content: "![p](aula-img:fb1)", attachments: [{ id: "fb1", name: "p.png", kind: "img" }], versions: [], createdAt: Date.now(), updatedAt: Date.now() });
+  await media.put("fb1", dataUrl);
+  let capturado = "";
+  const BlobReal = env.window.Blob;
+  env.window.Blob = function (parts, opts) { capturado = String(parts[0]); return new BlobReal(parts, opts); };
+  act(env, "export", {});
+  await new Promise((r) => setTimeout(r, 60));
+  env.window.Blob = BlobReal;
+  check(capturado.includes("data:image/png"), "copia: el JSON exportado incluye las fotos que viven en el almacén");
+  const parsed = JSON.parse(capturado || "{}");
+  check(parsed.notes && parsed.notes.some((n) => (n.attachments || []).some((a) => String(a.data || "").startsWith("data:image"))), "copia: la foto va dentro del archivo, no como referencia rota");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
     await testImport();
     await testSettings();
+    await testMedia();
+    await testBackupConFotos();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message);
   }

@@ -144,3 +144,27 @@ button:focus-visible, a:focus-visible, [data-action]:focus-visible { outline-off
 
 /* Notas: imágenes adjuntas */
 .note-img { max-width: 100%; border-radius: 12px; margin: 8px 0; border: 1px solid var(--line); display: block; }
+
+/* Botones de repaso con el intervalo debajo */
+.grade-row-btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+.grade-row-btns .btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 4px; min-height: 56px; }
+.grade-row-btns .btn small { font-size: 10px; font-weight: 700; opacity: .75; }
+@media (max-width: 360px) { .grade-row-btns { grid-template-columns: repeat(2, 1fr); } }
+
+/* Estado de la ficha en el mazo */
+.row small.hint { display: block; font-size: 11px; margin-top: 2px; }
+
+/* Foto que aún se está leyendo del almacén (IndexedDB): el hueco ya reserva su sitio */
+.note-img.is-loading {
+  min-height: 120px;
+  border-radius: 10px;
+  background: repeating-linear-gradient(45deg, rgba(127,127,127,.10) 0 10px, rgba(127,127,127,.18) 10px 20px);
+}
+
+/* Tira de fotos de la nota: se ven aunque estés escribiendo, no solo en Vista */
+.note-photos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.note-photo { margin: 0; width: 128px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--card, transparent); }
+.note-photo img.note-img { width: 100%; height: 96px; object-fit: cover; margin: 0; border: 0; border-radius: 0; }
+.note-photo figcaption { display: flex; align-items: center; gap: 6px; padding: 4px 6px; font-size: 11px; }
+.note-photo figcaption { justify-content: space-between; }
+.note-photo figcaption button { padding: 0 6px; line-height: 1.4; }

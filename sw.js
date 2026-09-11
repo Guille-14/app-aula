@@ -1,4 +1,4 @@
-const CACHE = "aula-smr-v49";
+const CACHE = "aula-smr-v50";
 const ICON_CACHE = "aula-app-icon";
 const PRECACHE = [
   "./",
@@ -10,6 +10,7 @@ const PRECACHE = [
   "./css/polish.css",
   "./css/hub.css",
   "./css/look.css",
+  "./js/media.js",
   "./js/app.js",
   "./js/studio.js",
   "./js/tools.js",

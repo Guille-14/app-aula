@@ -60,7 +60,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v49";
+  const APP_VERSION = "v50";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -173,21 +173,70 @@
     }
     return "";
   }
-  function isNonTeaching(iso) { return !!holidayName(iso); }
+  function isNonTeaching(iso) { return !!holidayName(iso) || exceptionKind(iso, "holiday") !== null; }
+
+  /* Excepciones de un día concreto. El horario es semanal, pero la vida real no:
+     un martes no hay clase, una clase se mueve al jueves, aparece una extra…
+     state.exceptions = [{ id, kind: "cancel"|"move"|"extra"|"holiday", date, eventId, start, end, room, note }] */
+  function excepciones() { return Array.isArray(state.exceptions) ? state.exceptions : []; }
+  function exceptionsFor(iso) { return excepciones().filter((x) => x.date === iso); }
+  function exceptionKind(iso, kind) {
+    const hit = exceptionsFor(iso).find((x) => x.kind === kind);
+    return hit || null;
+  }
+  function cancelFor(iso, eventId) {
+    return exceptionsFor(iso).find((x) => x.kind === "cancel" && x.eventId === eventId) || null;
+  }
+  // Clases reales de un día: semana fija + cambios + extras - canceladas
+  function eventsOnDate(iso) {
+    if (!iso) iso = todayISO();
+    if (isNonTeaching(iso)) return [];
+    const dow = weekdayMon0(new Date(iso + "T12:00:00"));
+    const base = state.events.filter((e) => Number(e.day) === dow);
+    const out = [];
+    base.forEach((e) => {
+      const cancel = cancelFor(iso, e.id);
+      if (cancel) return;
+      const mover = exceptionsFor(iso).find((x) => x.kind === "move" && x.eventId === e.id);
+      if (mover) out.push({ ...e, start: mover.start || e.start, end: mover.end || e.end, room: mover.room || e.room, moved: true, baseId: e.id, id: e.id });
+      else out.push({ ...e, id: e.id });
+    });
+    // Clases movidas desde otro día hacia este
+    excepciones().forEach((x) => {
+      if (x.kind !== "move" || x.date !== iso || !x.toDate) return;
+      const origen = state.events.find((e) => e.id === x.eventId);
+      if (origen) out.push({ ...origen, start: x.start || origen.start, end: x.end || origen.end, room: x.room || origen.room, moved: true, fromDate: x.fromDate, id: origen.id });
+    });
+    exceptionsFor(iso).filter((x) => x.kind === "extra").forEach((x) => {
+      out.push({ id: x.id, subjectId: x.subjectId, title: x.note || "Clase extra", start: x.start || "15:00", end: x.end || "16:00", room: x.room || "", type: "extra", extra: true });
+    });
+    return out.sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  }
+  function setException(parcial) {
+    // Para una misma clase y día, la última decisión manda: si dices "sin clase"
+    // y luego "movida", no se quedan las dos. Otras clases del día no se tocan.
+    state.exceptions = excepciones().filter((x) => {
+      if (x.date !== parcial.date) return true;
+      if (x.eventId && parcial.eventId && x.eventId === parcial.eventId) return false;
+      return x.kind !== parcial.kind;
+    });
+    if (parcial.quitar) { save(); return; }
+    state.exceptions.push(Object.assign({ id: uid() }, parcial));
+    save();
+  }
   function liveBlock() {
     const iso = todayISO();
     const hol = holidayName(iso);
     if (hol) return { active: null, next: null, weekend: true, holiday: hol };
     const now = nowMinutes();
-    const dow = weekdayMon0(new Date());
-    const list = state.events.filter((e) => e.day === dow).sort((a, b) => a.start.localeCompare(b.start));
+    const list = eventsOnDate(iso);
     let active = null, next = null;
     for (const c of list) {
       const stt = minutesOf(c.start), en = minutesOf(c.end);
       if (now >= stt && now < en) { active = { ev: c, startMins: stt, endMins: en }; break; }
       if (now < stt && !next) next = { ev: c, startMins: stt, endMins: en };
     }
-    return { active, next, weekend: dow > 4, holiday: "" };
+    return { active, next, weekend: weekdayMon0(new Date()) > 4, holiday: "" };
   }
   function subjectGPA(sid) {
     const g = state.exams.filter((e) => e.subjectId === sid && e.grade !== "" && !Number.isNaN(Number(e.grade)));
@@ -474,6 +523,8 @@
      ninguna lanza.
      --------------------------------------------------------------- */
 
+  const Media = () => window.AulaMedia || null;   // almacén de fotos (IndexedDB)
+  const mediaOk = () => !!(Media() && Media().available());
   const BACKUP_KEY = KEY + ".bak";
   const BAK_AT_KEY = "aula.bakAt";
   let loadProblem = "";
@@ -555,7 +606,14 @@
       id: asText(n.id) || uid(), subjectId: hasSub(n.subjectId) ? n.subjectId : (n.subjectId || ""),
       title: asText(n.title, "Sin título"), content: typeof n.content === "string" ? n.content : "",
       pinned: !!n.pinned, locked: !!n.locked,
-      attachments: asArray(n.attachments).filter(isObj).map((a) => ({ id: asText(a.id) || uid(), name: asText(a.name, "foto"), kind: asText(a.kind, "img"), data: typeof a.data === "string" ? a.data : "" })),
+      attachments: asArray(n.attachments).filter(isObj).map((a) => ({
+        id: asText(a.id) || uid(),
+        name: asText(a.name, "foto"),
+        kind: asText(a.kind, "img"),
+        // «data» solo se usa si el navegador no tiene IndexedDB (o mientras se migra)
+        data: typeof a.data === "string" ? a.data : "",
+        size: Number(a.size) || undefined,
+      })),
       versions: asArray(n.versions).filter(isObj).slice(0, 12).map((v) => ({ t: Number(v.t) || Date.now(), title: asText(v.title), content: typeof v.content === "string" ? v.content : "" })),
       createdAt: Number(n.createdAt) || Date.now(), updatedAt: Number(n.updatedAt) || Date.now(),
       deletedAt: n.deletedAt ? Number(n.deletedAt) : undefined,
@@ -567,6 +625,7 @@
       due: asISO(c.due) || todayISO(),
       interval: clamp(Number(c.interval) || 0, 0, 3650), reps: clamp(Number(c.reps) || 0, 0, 100000),
       ease: clamp(Number(c.ease) || 2.5, 1.3, 3.2), lapses: clamp(Number(c.lapses) || 0, 0, 100000),
+      last: asISO(c.last), history: asArray(c.history).filter(isObj).slice(0, 20).map((h) => ({ t: Number(h.t) || 0, q: clamp(Number(h.q) || 0, 0, 5) })),
     }));
 
     out.sessions = asArray(src.sessions).filter(isObj).map((s) => ({
@@ -609,6 +668,11 @@
     out.widgets = asArray(src.widgets).length ? asArray(src.widgets) : base.widgets;
     out.schemaVersion = SCHEMA_VERSION;   // migraciones futuras: v4 -> v5 se hacen aquí
     out.topics = asArray(src.topics);
+    out.exceptions = asArray(src.exceptions).filter(isObj).filter((x) => ["cancel", "move", "extra", "holiday"].includes(x.kind) && asISO(x.date)).map((x) => ({
+      id: asText(x.id) || uid(), kind: x.kind, date: asISO(x.date), eventId: asText(x.eventId),
+      subjectId: hasSub(x.subjectId) ? x.subjectId : "", start: asHHMM(x.start, ""), end: asHHMM(x.end, ""),
+      room: asText(x.room), note: asText(x.note), toDate: asISO(x.toDate), fromDate: asISO(x.fromDate),
+    }));
 
     // Compatibilidad de versiones anteriores
     if (((out.settings || {}).skin || "") === "pokemon") out.settings.skin = "hub";
@@ -688,6 +752,28 @@
   function storageBytes() {
     try { return (localStorage.getItem(KEY) || "").length; } catch { return 0; }
   }
+  // Las fotos antiguas viven dentro del estado. Al abrir, se pasan a IndexedDB y
+  // se quitan del JSON: es lo que evita que la app se quede sin espacio al guardar.
+  async function migrateMedia() {
+    if (!mediaOk()) return 0;
+    const pendientes = [];
+    state.notes.forEach((n) => (n.attachments || []).forEach((a) => {
+      if (a.data && String(a.data).startsWith("data:")) pendientes.push({ att: a, data: a.data });
+    }));
+    if (!pendientes.length) return 0;
+    let movidas = 0;
+    for (const { att, data } of pendientes) {
+      try {
+        await Media().put(att.id, data);
+        att.size = att.size || Math.round(data.length * 0.75);
+        delete att.data;
+        movidas++;
+      } catch {}
+    }
+    if (movidas) { flushSave(); toast(`${movidas} foto(s) movidas al almacén de archivos`); }
+    return movidas;
+  }
+
   function restoreBackup() {
     let raw = null;
     try { raw = localStorage.getItem(BACKUP_KEY); } catch {}
@@ -710,6 +796,7 @@
   let deferredInstall = null, wakeLock = null;
   let skinCat = "all";
   let schView = "week";
+  let exDate = "";
   let schDay = weekdayMon0(new Date());
   let agendaFilter = "all";
   let onStep = 0;
@@ -837,9 +924,8 @@
   }
   function nextClass() {
     if (isNonTeaching(todayISO())) return null;
-    const now = new Date(), dow = weekdayMon0(now), mins = now.getHours() * 60 + now.getMinutes();
-    return state.events.filter((e) => e.day === dow).sort((a, b) => a.start.localeCompare(b.start))
-      .find((e) => minutesOf(e.end) > mins) || null;
+    const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+    return eventsOnDate(todayISO()).find((e) => minutesOf(e.end) > mins) || null;
   }
   const WIDGET_CATALOG = [
     { id: "clase", name: "Próxima clase", size: "2×2", hint: "En curso o la siguiente" },
@@ -894,7 +980,7 @@
     const today = todayISO();
     const dow = weekdayMon0(new Date());
     const hol = holidayName(today);
-    const todayClasses = hol ? [] : state.events.filter((e) => e.day === dow).sort((a, b) => a.start.localeCompare(b.start));
+    const todayClasses = hol ? [] : eventsOnDate(today);
     const horarioRows = todayClasses.slice(0, 3).map((e) => ({
       t: e.start + "  " + subjectName(e.subjectId),
       s: e.end + (e.room ? " · " + e.room : ""),
@@ -1144,6 +1230,11 @@
     }
     updateTimerChrome();
     scheduleSave();
+    if (view === "settings" && mediaOk()) {
+      Media().usage().then((u) => {
+        if (u && (u.n !== mediaInfo.n || u.bytes !== mediaInfo.bytes)) { mediaInfo = u; render(); }
+      }).catch(() => {});
+    }
   }
 
   function greeting() {
@@ -1547,8 +1638,7 @@
         <span>día${endD === 1 ? "" : "s"} · hasta ${fmtDate(state.settings.endDate)}</span>
       </div>`;
     }
-    const dow = weekdayMon0(new Date());
-    const todayClasses = lb.holiday ? [] : state.events.filter((e) => e.day === dow).sort((a, b) => a.start.localeCompare(b.start));
+    const todayClasses = lb.holiday ? [] : eventsOnDate(todayISO());
     const todayList = todayClasses.length ? `<div>
         <div class="sec-head"><h3>Hoy</h3><button data-action="go" data-to="schedule" class="linkish">Horario</button></div>
         <div class="today-list">${todayClasses.map((e) => {
@@ -1663,6 +1753,49 @@
       </button>`;
     }).join("");
   }
+  function exLabel(x) {
+    const ev = state.events.find((e) => e.id === x.eventId);
+    const nombre = ev ? subjectName(ev.subjectId) : (x.note || "Clase");
+    if (x.kind === "cancel") return `Sin ${nombre}${ev ? " (" + ev.start + ")" : ""}`;
+    if (x.kind === "move") return `Movida: ${nombre} → ${x.start || (ev ? ev.start : "")}-${x.end || (ev ? ev.end : "")}`;
+    if (x.kind === "extra") return `Extra: ${nombre} ${x.start || ""}-${x.end || ""}`;
+    if (x.kind === "holiday") return `Festivo${x.note ? ": " + x.note : ""}`;
+    return x.kind;
+  }
+  function renderExceptionsBlock() {
+    const hoy = todayISO();
+    const fecha = exDate || hoy;
+    const dow = weekdayMon0(new Date(fecha + "T12:00:00"));
+    const delDia = state.events.filter((e) => Number(e.day) === dow).sort((a, b) => a.start.localeCompare(b.start));
+    const futuras = excepciones().filter((x) => x.date >= hoy).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8);
+    const esFinde = dow > 4;
+    return `
+      <p class="tools-kicker">Cambios de un día suelto</p>
+      <div class="card">
+        <p class="hint" style="margin-top:0">El horario de arriba es el de la semana normal. Aquí se cambia un día concreto: no hay clase, se mueve, aparece una extra o es fiesta local.</p>
+        <div class="form-row">
+          <div class="field"><label for="ex-date">Día</label><input id="ex-date" type="date" value="${fecha}" /></div>
+          <div class="field"><label for="ex-event">Clase de ese día</label>
+            <select id="ex-event" ${delDia.length ? "" : "disabled"}>
+              ${delDia.length ? delDia.map((e) => `<option value="${e.id}">${e.start} · ${esc(subjectName(e.subjectId))}</option>`).join("") : `<option value="">(ninguna ese día)</option>`}
+            </select></div>
+        </div>
+        <div class="filters">
+          <button class="btn btn-sm" data-action="ex-cancel" ${delDia.length ? "" : "disabled"}>Sin clase</button>
+          <button class="btn btn-sm" data-action="ex-move" ${delDia.length ? "" : "disabled"}>Mover hora</button>
+          <button class="btn btn-sm" data-action="ex-extra">Clase extra</button>
+          <button class="btn btn-sm" data-action="ex-holiday">Es fiesta</button>
+        </div>
+        ${esFinde ? `<p class="hint">${fmtDateLong(fecha)} cae en fin de semana.</p>` : ""}
+        ${futuras.length ? `<div style="margin-top:6px">
+          ${futuras.map((x) => `<div class="row">
+            <span class="dot" style="background:${x.kind === "holiday" ? "var(--muted)" : subjectColor((state.events.find((e) => e.id === x.eventId) || {}).subjectId)}"></span>
+            <div style="flex:1"><b>${esc(fmtDate(x.date))}</b><small class="hint">${esc(exLabel(x))}</small></div>
+            <button class="btn btn-sm" data-action="ex-del" data-id="${x.id}" aria-label="Quitar el cambio del ${esc(fmtDate(x.date))}">×</button>
+          </div>`).join("")}
+        </div>` : `<p class="hint" style="margin:8px 0 0">No hay cambios apuntados.</p>`}
+      </div>`;
+  }
   function classRowHTML(e, todayIdx) {
     const nowM = nowMinutes();
     const liveNow = todayIdx === e.day && minutesOf(e.start) <= nowM && nowM < minutesOf(e.end);
@@ -1715,7 +1848,7 @@
         <button data-action="sch-view" data-mode="week" class="${schView === "week" ? "is-on" : ""}">Semana</button>
         <button data-action="sch-view" data-mode="month" class="${schView === "month" ? "is-on" : ""}">Calendario</button>
       </div>
-      ${schView === "month" ? monthHtml : weekHtml}
+      ${schView === "month" ? monthHtml : weekHtml + renderExceptionsBlock()}
     `;
   }
 
@@ -1803,11 +1936,21 @@
     </div>`;
   }
 
+  // 1x1 transparente: el hueco de una foto que todavía se está leyendo del almacén
+  const PUNTO_TRANSPARENTE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
   function md(text, imgs) {
     let t = esc(text || "");
     if (imgs) {
-      t = t.replace(/!\[([^\]]*)\]\(aula-img:([^)\s]+)\)/g, (m, alt, id) =>
-        (imgs[id] ? `<img class="note-img" src="${imgs[id]}" alt="${alt || "foto"}">` : `<span class="hint">[imagen no disponible]</span>`));
+      t = t.replace(/!\[([^\]]*)\]\(aula-img:([^)\s]+)\)/g, (m, alt, id) => {
+        const nombre = alt || "foto";
+        if (imgs[id]) return `<img class="note-img" src="${imgs[id]}" alt="${esc(nombre)}">`;   // foto antigua, dentro del texto
+        if (mediaOk()) {
+          const ya = Media().urlFor(id);   // en memoria se pinta ya; si no, se carga sola y se rellena
+          return `<img class="note-img ${ya ? "" : "is-loading"}" data-media="${esc(id)}" src="${ya || PUNTO_TRANSPARENTE}" alt="${esc(nombre)}">`;
+        }
+        return `<span class="hint">[imagen no disponible]</span>`;
+      });
       // Compatibilidad con fotos antiguas guardadas como data URL dentro del texto
       t = t.replace(/!\[([^\]]*)\]\((data:image\/[^)\s]+)\)/g, (m, alt, src) =>
         `<img class="note-img" src="${src}" alt="${alt || "foto"}">`);
@@ -1830,6 +1973,7 @@
     const lockedNow = current && current.locked && !unlockedNotes.has(current.id);
     const imgs = {};
     if (current && current.attachments) current.attachments.forEach((a) => { if (a.data) imgs[a.id] = a.data; });
+    setTimeout(() => Media() && Media().hydrate($("#view")), 0);
     return `<div class="notes-layout">
       <div>
         <button class="btn btn-primary" data-action="add-note" style="width:100%;margin-bottom:10px">Nueva nota</button>
@@ -1869,7 +2013,13 @@
           </div>
           <input class="editor-title" id="note-title" placeholder="Título" aria-label="Título de la nota" value="${esc(current.title)}" />
           ${notePreview ? `<div class="preview">${md(current.content, imgs)}</div>` : `<textarea class="editor-body" id="note-body" aria-label="Contenido de la nota" placeholder="# título, **negrita**, - pregunta :: respuesta">${esc(current.content)}</textarea>`}
-          ${(current.attachments || []).length ? `<div class="filters" style="margin-top:8px">${current.attachments.map((a) => `<span class="chip">🖼 ${esc(a.name)} <button class="btn btn-sm" data-action="note-photo-del" data-id="${a.id}" aria-label="Quitar ${esc(a.name)}">×</button></span>`).join("")}</div>` : ""}
+          ${(current.attachments || []).length ? `<div class="note-photos">${current.attachments.map((a) => {
+            const src = a.data || (mediaOk() ? Media().urlFor(a.id) : "") || "";
+            return `<figure class="note-photo">
+              <img class="note-img ${src ? "" : "is-loading"}" src="${src || PUNTO_TRANSPARENTE}" data-media="${esc(a.id)}" alt="${esc(a.name || "foto")}" loading="lazy">
+              <figcaption>${esc(a.name || "foto")}<button class="btn btn-sm btn-danger" data-action="note-photo-del" data-id="${esc(a.id)}" aria-label="Quitar ${esc(a.name || "foto")}">×</button></figcaption>
+            </figure>`;
+          }).join("")}</div>` : ""}
           <div class="note-meta"><span>${notePlain(current) ? (notePlain(current).split(/\s+/).length + " palabras") : "Vacía"}${(current.attachments || []).length ? " · " + current.attachments.length + " foto(s)" : ""}</span><span>editada ${new Date(current.updatedAt).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>
         ` : `<div class="empty">Crea una nota.</div>`}
       </div>
@@ -1881,6 +2031,10 @@
     const due = list.filter((c) => !c.due || c.due <= todayISO());
     if (!cardQueue.length) cardQueue = [...due];
     const cur = cardQueue[0];
+    const cuenta = { nueva: 0, aprendiendo: 0, joven: 0, madura: 0 };
+    list.forEach((c) => { cuenta[cardState(c)]++; });
+    const maduras = cuenta.madura + cuenta.joven;
+    const hechasHoy = list.filter((c) => c.last === todayISO()).length;
     return `
       <div class="filters">
         <button class="chip ${cardFilter === "all" ? "is-on" : ""}" data-action="card-filter" data-id="all">Todas</button>
@@ -1893,7 +2047,8 @@
       </div>
       <div class="grid grid-2">
         <div class="card" style="min-height:340px">
-          <h3>Repaso · ${due.length}</h3>
+          <h3>Repaso · ${due.length} hoy</h3>
+          <p class="hint" style="margin:0 0 8px">Nuevas ${cuenta.nueva} · aprendiendo ${cuenta.aprendiendo} · maduras ${maduras} · hechas hoy ${hechasHoy}</p>
           ${cur ? `
             <div class="flip ${cardFlip ? "is-back" : ""}" data-action="flip-card">
               <div class="flip-inner">
@@ -1903,20 +2058,32 @@
             </div>
             ${state._cardMode === "type" ? `<div class="field"><label>Escribe la respuesta</label><input id="card-typed" /><button class="btn btn-primary" data-action="card-typed">Comprobar</button></div>` : ""}
             <p style="text-align:center;color:var(--muted);font-size:13px">Clic para voltear</p>
-            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-              <button class="btn" data-action="grade-card" data-q="1">Otra vez</button>
-              <button class="btn btn-primary" data-action="grade-card" data-q="3">Bien</button>
-              <button class="btn" data-action="grade-card" data-q="4">Fácil</button>
-            </div>` : `<div class="empty">No hay fichas pendientes hoy.</div>`}
+            <div class="grade-row-btns">
+              <button class="btn btn-sm" data-action="grade-card" data-q="0">Otra vez<small>${nextLabel(cur, 0)}</small></button>
+              <button class="btn btn-sm" data-action="grade-card" data-q="3">Difícil<small>${nextLabel(cur, 3)}</small></button>
+              <button class="btn btn-sm btn-primary" data-action="grade-card" data-q="4">Bien<small>${nextLabel(cur, 4)}</small></button>
+              <button class="btn btn-sm" data-action="grade-card" data-q="5">Fácil<small>${nextLabel(cur, 5)}</small></button>
+            </div>
+            <p class="hint" style="text-align:center;margin:8px 0 0">${cardState(cur) === "nueva" ? "Ficha nueva" : `Repaso nº ${cur.reps || 0}${cur.lapses ? " · " + cur.lapses + " fallo(s)" : ""} · facilidad ${(Number(cur.ease) || 2.5).toFixed(2)}`}</p>`
+            : `<div class="empty"><b>Nada pendiente hoy</b>
+                <p>${list.length ? "Vuelve cuando toque. Mientras: repasa apuntes o haz un test." : "Crea tu primera ficha desde una nota con «A fichas»."}</p>
+                <div class="hero-actions">
+                  ${list.length ? "" : `<button class="btn btn-primary" data-action="add-card">Nueva ficha</button>`}
+                  <button class="btn" data-action="go" data-to="notes">Ir a apuntes</button>
+                </div></div>`}
         </div>
         <div class="card">
           <h3>Mazo (${list.length})</h3>
-          ${list.map((c) => `<div class="row">
+          ${list.map((c) => {
+            const est = cardState(c);
+            const cuando = !c.due || c.due <= todayISO() ? "hoy" : "en " + Math.max(0, daysUntil(c.due)) + " d";
+            return `<div class="row">
             <span class="dot" style="background:${subjectColor(c.subjectId)}"></span>
-            <div style="flex:1"><b>${esc(c.front)}</b></div>
+            <div style="flex:1"><b>${esc(c.front)}</b><small class="hint">${est} · vuelve ${cuando}</small></div>
             <button class="btn btn-sm" data-action="edit-card" data-id="${c.id}">Editar</button>
             <button class="btn btn-sm" data-action="delete-card" data-id="${c.id}">×</button>
-          </div>`).join("") || `<div class="empty">Sin fichas.</div>`}
+          </div>`;
+          }).join("") || `<div class="empty"><b>Mazo vacío</b><p>Las fichas se crean a mano o desde una nota con «A fichas».</p><button class="btn btn-primary" data-action="add-card">Nueva ficha</button></div>`}
         </div>
       </div>
     `;
@@ -2451,10 +2618,14 @@
     };
     inp.click();
   }
+  let mediaInfo = { n: 0, bytes: 0 };
   function renderSettings() {
     const st = state.settings;
     const skins = skinCat === "all" ? SKINS : SKINS.filter((s) => s.cat === skinCat);
     const kb = (storageBytes() / 1024).toFixed(0);
+    const fotosKb = (mediaInfo.bytes / 1024).toFixed(0);
+    const lleno = storageBytes() / (4.5 * 1024 * 1024);   // los navegadores dan ~5 MB
+    const avisoEspacio = lleno > 0.8 ? `<p class="save-warn" style="margin:0"><b>Casi sin espacio.</b> El estado ocupa el ${Math.round(lleno * 100)} % de lo que permite el navegador. Exporta una copia y borra fotos o sesiones antiguas.</p>` : "";
     return `
       <div class="profile-card">
         <div class="profile-ava">${avatarInner()}</div>
@@ -2616,8 +2787,9 @@
 
       <p class="tools-kicker">Datos (este dispositivo)</p>
       <div class="card" style="display:flex;flex-direction:column;gap:8px">
-        <p class="hint" style="margin:0">Ocupa <b>${kb} KB</b>. ${Number(kb) > 2500 ? "⚠️ Vas justo de espacio: exporta y borra fotos." : "Sin problemas de espacio."}</p>
-        <button class="btn btn-primary" data-action="export">Exportar copia JSON</button>
+        ${avisoEspacio}
+        <p class="hint" style="margin:0">Notas, exámenes y demás: <b>${kb} KB</b> ${mediaOk() ? `· fotos en el almacén de archivos: <b>${fotosKb} KB</b> (${mediaInfo.n})` : "· las fotos se guardan dentro del estado (este navegador no tiene almacén de archivos)"}.</p>
+        <button class="btn btn-primary" data-action="export">Exportar copia JSON (con fotos)</button>
         <button class="btn" data-action="import">Importar JSON</button>
         <button class="btn" data-action="export-ics">Calendario .ics (exámenes y entregas)</button>
         <button class="btn" data-action="export-md">Apuntes a Markdown</button>
@@ -3066,8 +3238,7 @@
   function jumpDay(iso) {
     const exams = state.exams.filter((e) => e.date === iso);
     const tasks = state.tasks.filter((t) => t.due === iso && !t.done);
-    const wd = weekdayMon0(new Date(iso + "T00:00:00"));
-    const classes = state.events.filter((e) => e.day === wd);
+    const classes = eventsOnDate(iso);
     const hol = holidayName(iso);
     openModal("Agenda", `
       <p style="color:var(--muted)">${fmtDateLong(iso)}</p>
@@ -3215,6 +3386,7 @@
       }
       kill.forEach((k) => localStorage.removeItem(k));
     } catch {}
+    if (mediaOk()) Media().clear();
     if ("caches" in window) {
       try { caches.keys().then((keys) => keys.filter((k) => !k.startsWith("aula-app-icon")).forEach((k) => caches.delete(k))); } catch {}
     }
@@ -3225,11 +3397,30 @@
     render();
     toast("Todo borrado, también las copias");
   }
-  function exportJSON() {
+  // La copia tiene que ser completa: si las fotos viven en IndexedDB, se traen
+  // y se meten dentro del JSON antes de descargarlo.
+  async function exportJSON() {
+    toast("Preparando la copia…");
+    const copia = JSON.parse(JSON.stringify(state));
+    let fotos = 0;
+    if (mediaOk()) {
+      for (const n of copia.notes) {
+        for (const a of (n.attachments || [])) {
+          if (a.data) continue;
+          try {
+            const data = await Media().dataURL(a.id);
+            if (data) { a.data = data; fotos++; }
+          } catch {}
+        }
+      }
+    }
+    const json = JSON.stringify(copia, null, 2);
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
+    a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
     a.download = "aula-smr.json"; a.click();
     ensureProgress(); state.progress.flags = { ...(state.progress.flags || {}), exported: true }; checkAchievements(); save();
+    const mb = json.length / (1024 * 1024);
+    toast(mb > 20 ? `Copia de ${mb.toFixed(1)} MB (incluye ${fotos} fotos)` : "Copia descargada" + (fotos ? ` con ${fotos} fotos` : ""));
   }
   function importJSON() {
     const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json,.json";
@@ -3250,27 +3441,77 @@
           state = nuevo;
           noteId = state.notes[0] ? state.notes[0].id : null;
           loadProblem = "";
-          save(); toast("Copia importada"); render();
+          save();
+          migrateMedia().then(() => render());
+          toast("Copia importada"); render();
         });
       };
       r.readAsText(f);
     };
     inp.click();
   }
+  /* Repetición espaciada SM-2 (la de Anki/SuperMemo), con la escala resumida:
+     0 otra vez · 3 difícil · 4 bien · 5 fácil.
+     Antes se multiplicaba el intervalo por 2 o 3.5 sin más: las fichas se iban
+     a meses sin haberlas aprendido de verdad. */
+  function sm2(card, q) {
+    let ease = clamp(Number(card.ease) || 2.5, 1.3, 3.2);
+    let reps = Math.max(0, Number(card.reps) || 0);
+    let interval = Math.max(0, Number(card.interval) || 0);
+    let lapses = Math.max(0, Number(card.lapses) || 0);
+    if (q < 3) {
+      reps = 0;
+      interval = 0;
+      lapses += 1;
+      ease = clamp(ease - 0.2, 1.3, 3.2);
+    } else {
+      ease = clamp(ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)), 1.3, 3.2);
+      reps += 1;
+      if (reps === 1) interval = q === 3 ? 1 : q === 4 ? 1 : 4;
+      else if (reps === 2) interval = q >= 4 ? 6 : 3;
+      else interval = Math.round(Math.max(1, interval) * ease * (q === 3 ? 0.8 : 1));
+      if (q === 5) interval = Math.round(interval * 1.15);
+      interval = clamp(interval, 1, 3650);
+    }
+    return { ease: Number(ease.toFixed(2)), reps, interval, lapses };
+  }
+  function cardDue(card, interval) {
+    if (!interval) return todayISO();
+    const d = new Date(); d.setDate(d.getDate() + interval);
+    return localISO(d);
+  }
+  function cardState(card) {
+    const r = Number(card.reps) || 0;
+    if (r === 0) return "nueva";
+    if ((Number(card.interval) || 0) < 7) return "aprendiendo";
+    if ((Number(card.interval) || 0) < 21) return "joven";
+    return "madura";
+  }
+  // Cuánto tardará en volver, para poder enseñarlo en cada botón
+  function nextLabel(card, q) {
+    const r = sm2(card, q);
+    if (!r.interval) return "hoy";
+    return r.interval === 1 ? "mañana" : r.interval + " días";
+  }
   function gradeCard(q) {
     const cur = cardQueue[0]; if (!cur) return;
     const card = state.cards.find((c) => c.id === cur.id); if (!card) return;
-    card.reps = (card.reps || 0) + 1;
-    if (q <= 1) { card.interval = 0; card.due = todayISO(); }
-    else {
-      const days = Math.max(q === 3 ? 2 : 4, Math.round((card.interval || 1) * (q === 3 ? 2 : 3.5)));
-      card.interval = days;
-      const d = new Date(); d.setDate(d.getDate() + days); card.due = localISO(d);
-    }
-    cardQueue.shift(); if (q <= 1) cardQueue.push(cur);
+    const antes = { ...card };
+    const r = sm2(card, q);
+    card.ease = r.ease; card.reps = r.reps; card.interval = r.interval; card.lapses = r.lapses;
+    card.due = cardDue(card, r.interval);
+    card.last = todayISO();
+    card.history = [{ t: Date.now(), q }].concat(card.history || []).slice(0, 20);
+    cardQueue.shift();
+    // Si ha fallado, vuelve al final de la ronda de hoy
+    if (q < 3) cardQueue.push({ ...card, ...{ interval: 0, due: todayISO() } });
     cardFlip = false;
-    if (q >= 3) grantXP(q === 4 ? 12 : 8, q === 4 ? "Ficha fácil" : "Ficha bien");
-    checkAchievements(); save(); render();
+    if (q >= 3) grantXP(q === 5 ? 12 : q === 4 ? 8 : 5, q === 5 ? "Ficha fácil" : q === 4 ? "Ficha bien" : "Ficha difícil");
+    if (q < 3) noteOnce("fallo-" + card.id + "-" + todayISO(), "Ficha fallada", `«${card.front.slice(0, 40)}» vuelve hoy. Con calma.`);
+    checkAchievements(); save();
+    toast(q < 3 ? "Vuelve hoy · " + (card.lapses || 1) + " fallo(s)" : "Hecho · vuelve en " + (r.interval === 1 ? "1 día" : r.interval + " días"));
+    render();
+    void antes;
   }
   function planToTasks() {
     const exams = [...state.exams].filter((e) => daysUntil(e.date) >= 0);
@@ -3353,6 +3594,27 @@
     render();
   }
 
+  // Quita una foto de la nota abierta: del texto, del estado y del almacén de archivos.
+  // (Antes esto estaba duplicado en el manejador de clics y se ejecutaba dos veces.)
+  function quitarFotoDeNota(id) {
+    const n = state.notes.find((x) => x.id === noteId);
+    if (!n) return;
+    n.attachments = (n.attachments || []).filter((a) => a.id !== id);
+    const limpio = String(id || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    n.content = String(n.content || "").replace(new RegExp("!\\[[^\\]]*\\]\\(aula-img:" + limpio + "\\)\\n?", "g"), "");
+    if (mediaOk()) Media().del(id);
+    save(); render(); toast("Foto quitada");
+  }
+
+  // Fotos de una nota que viven en el almacén de archivos (para soltarlas al borrar del todo)
+  function fotosDeNota(n) {
+    return ((n && n.attachments) || []).map((a) => a.id).filter(Boolean);
+  }
+  function soltarFotos(n) {
+    if (!mediaOk() || !n) return;
+    fotosDeNota(n).forEach((id) => Media().del(id));
+  }
+
   document.addEventListener("click", (e) => {
     if (e.target.closest(".search-wrap")) { openCmd(); return; }
     const nav = e.target.closest("[data-view]");
@@ -3367,6 +3629,60 @@
     const action = btn.dataset.action, id = btn.dataset.id;
     if (action === "close-modal") closeModal();
     if (action === "skin-cat") { skinCat = id; render(); }
+    if (action === "ex-cancel") {
+      const fecha = $("#ex-date")?.value || todayISO();
+      const ev = $("#ex-event")?.value;
+      if (!ev) { toast("Ese día no hay clase que quitar"); return; }
+      setException({ kind: "cancel", date: fecha, eventId: ev });
+      toast("Apuntado: sin clase ese día"); render();
+    }
+    if (action === "ex-move") {
+      const fecha = $("#ex-date")?.value || todayISO();
+      const ev = state.events.find((x) => x.id === ($("#ex-event")?.value || ""));
+      if (!ev) { toast("Elige una clase"); return; }
+      openModal("Mover la clase", `<p>${esc(subjectName(ev.subjectId))} del ${esc(fmtDateLong(fecha))} pasa a otro horario (solo ese día).</p>
+        <div class="form-row">
+          <div class="field"><label>Empieza</label><input name="start" type="time" value="${ev.start}" required></div>
+          <div class="field"><label>Termina</label><input name="end" type="time" value="${ev.end}" required></div>
+        </div>
+        <div class="field"><label>Aula</label><input name="room" value="${esc(ev.room || "")}" placeholder="La de siempre" /></div>`, {
+        confirm: "Mover ese día",
+        onSubmit(data) {
+          if (data.start >= data.end) { toast("La hora de fin debe ser posterior"); return; }
+          setException({ kind: "move", date: fecha, eventId: ev.id, start: data.start, end: data.end, room: data.room || ev.room || "" });
+          closeModal(); toast("Clase movida solo ese día"); render();
+        },
+      });
+    }
+    if (action === "ex-extra") {
+      const fecha = $("#ex-date")?.value || todayISO();
+      openModal("Clase extra", `<p>Una clase que no está en el horario fijo y solo pasa el ${esc(fmtDateLong(fecha))}.</p>
+        <div class="field"><label>Módulo</label><select name="subjectId">${subjectOptions("")}</select></div>
+        <div class="form-row">
+          <div class="field"><label>Empieza</label><input name="start" type="time" value="15:00" required></div>
+          <div class="field"><label>Termina</label><input name="end" type="time" value="16:00" required></div>
+        </div>
+        <div class="field"><label>Nota</label><input name="note" placeholder="Recuperación, charla…" /></div>`, {
+        confirm: "Añadir a ese día",
+        onSubmit(data) {
+          if (data.start >= data.end) { toast("La hora de fin debe ser posterior"); return; }
+          setException({ kind: "extra", date: fecha, subjectId: data.subjectId, start: data.start, end: data.end, note: data.note || "Clase extra" });
+          closeModal(); toast("Clase extra apuntada"); render();
+        },
+      });
+    }
+    if (action === "ex-holiday") {
+      const fecha = $("#ex-date")?.value || todayISO();
+      openModal("Marcar como no lectivo", `<p>Ese día desaparecen las clases (${esc(fmtDateLong(fecha))}). Útil para fiestas locales que no vienen en el calendario.</p>
+        <div class="field"><label>Motivo</label><input name="note" placeholder="Fiesta local, excursión…" /></div>`, {
+        confirm: "Marcar festivo",
+        onSubmit(data) { setException({ kind: "holiday", date: fecha, note: data.note || "No lectivo" }); closeModal(); toast("Día marcado"); render(); },
+      });
+    }
+    if (action === "ex-del") {
+      state.exceptions = excepciones().filter((x) => x.id !== id);
+      save(); render(); toast("Cambio quitado");
+    }
     if (action === "study-block") {
       const mins = clamp(Number(btn.dataset.min) || 45, 10, 180);
       const hoy = Number(btn.dataset.day) === weekdayMon0(new Date());
@@ -3406,14 +3722,6 @@
       if (checkPin(v)) { unlockedNotes.add(noteId); toast("Nota desbloqueada"); }
       else toast("PIN incorrecto");
       render();
-    }
-    if (action === "note-photo-del") {
-      const n = state.notes.find((x) => x.id === noteId);
-      if (n) {
-        n.attachments = (n.attachments || []).filter((a) => a.id !== id);
-        n.content = String(n.content || "").replace(new RegExp("!\\[[^\\]]*\\]\\(aula-img:" + id + "\\)\\n?", "g"), "");
-        save(); render();
-      }
     }
     if (action === "quick-add") quickAdd();
     if (action === "open-cmd") openCmd();
@@ -3499,7 +3807,15 @@
     if (action === "note-filter") { persistNoteNow(); noteFilter = id; render(); }
     if (action === "toggle-pin") { const n = state.notes.find((x) => x.id === noteId); if (n) { n.pinned = !n.pinned; render(); } }
     if (action === "toggle-preview") { persistNoteNow(); notePreview = !notePreview; render(); }
-    if (action === "delete-note") ask("Eliminar nota", "Va a la papelera.", () => { pushUndo(); const gone = state.notes.find((x) => x.id === noteId); if (gone) { gone.deletedAt = Date.now(); state.trash = state.trash || []; state.trash.unshift(gone); } state.notes = state.notes.filter((x) => x.id !== noteId); noteId = state.notes[0]?.id || null; render(); });
+    if (action === "delete-note") ask("Eliminar nota", "Va a la papelera.", () => {
+      pushUndo();
+      const gone = state.notes.find((x) => x.id === noteId);
+      if (gone) { gone.deletedAt = Date.now(); state.trash = state.trash || []; state.trash.unshift(gone); }
+      state.notes = state.notes.filter((x) => x.id !== noteId);
+      noteId = state.notes[0]?.id || null;
+      render();
+      toast("A la papelera: puedes recuperarla");
+    });
     if (action === "add-task") addTask();
     if (action === "edit-task") addTask(state.tasks.find((x) => x.id === id));
     if (action === "delete-task") { pushUndo(); state.tasks = state.tasks.filter((x) => x.id !== id); render(); }
@@ -3679,14 +3995,7 @@
       else toast("PIN incorrecto");
       render();
     }
-    if (action === "note-photo-del") {
-      const n = state.notes.find((x) => x.id === noteId);
-      if (n) {
-        n.attachments = (n.attachments || []).filter((a) => a.id !== id);
-        n.content = String(n.content || "").replace(new RegExp("!\\[[^\\]]*\\]\\(aula-img:" + id + "\\)\\n?", "g"), "");
-        save(); render();
-      }
-    }
+    if (action === "note-photo-del") quitarFotoDeNota(id);
     if (action === "export-ics") exportICS();
     if (action === "note-to-cards") noteToCards();
     if (action === "toggle-focus") document.body.classList.toggle("focus-mode");
@@ -3697,6 +4006,7 @@
   });
 
   document.addEventListener("change", (e) => {
+    if (e.target.id === "ex-date") { exDate = e.target.value; render(); return; }
     if (e.target.id === "timer-subject") timer.subjectId = e.target.value;
     if (e.target.dataset.action === "note-subject" && noteId) {
       const n = state.notes.find((x) => x.id === noteId);
@@ -4055,14 +4365,14 @@
       if (view === "dashboard" || view === "settings") render();
     });
 
-  window.Aula = {
+  window.Aula = { soltarFotos, fotosDeNota,
     get state() { return state; },
     save, render, go, toast, esc, uid, todayISO, daysUntil, fmtDate, fmtDateLong, fmtHours,
     subjectName, subjectColor, subjectById, minutesOf, weekdayMon0, DAYS, DAYS_SHORT, MONTHS,
     pad, clamp, localISO, weekRange, streak, studiedFor, nextExam, nextClass, $, $$,
     openModal, closeModal, ask, weightedGPA, grantXP, checkAchievements, needSubjects,
     pushUndo, undo, sanitize, save, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
-    safeColor,
+    safeColor, sm2, cardState, nextLabel, migrateMedia, eventsOnDate, setException, exceptionsFor,
     unlockNote(id) { unlockedNotes.delete(id); },
     lockNote(id) { unlockedNotes.add(id); },
     get loadProblem() { return loadProblem; },
@@ -4091,6 +4401,12 @@
   marcarEntrada();
   window.addEventListener("pointerdown", marcarEntrada, { once: true });
   timerRestore();
+  if (Media()) Media().ready().then((ok) => {
+    if (ok) migrateMedia();
+    else if (state.notes.some((n) => (n.attachments || []).some((a) => !a.data))) {
+      toast("Este navegador no guarda archivos: las fotos se verán cuando haya datos");
+    }
+  });
   dailyCheckIn();
   checkAchievements();
   render();
