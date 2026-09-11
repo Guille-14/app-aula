@@ -298,7 +298,7 @@
       ? "Ollama en " + esc(st().settings.ollamaUrl) + " (si no contesta, responde el motor local)"
       : "motor local (sin red)";
     return `<div class="card">
-      <p class="hint">Responde con <strong>tus apuntes y tu calendario</strong>, todo dentro del móvil. Ahora mismo: ${ia}. <a href="#" data-view="admin">Configurar en Ajustes</a>.</p>
+      <p class="hint">Responde con <strong>tus apuntes y tu calendario</strong>, todo dentro del móvil. Ahora mismo: ${ia}. <a href="#" data-view="admin">Configurar Ollama en «Datos locales»</a>.</p>
       <div class="chat-log" id="chat-log">${log.map((m) => `<div class="chat-msg ${m.role}"><b>${m.role === "user" ? "Tú" : "Aula"}</b><pre>${esc(m.text)}</pre></div>`).join("") || "<div class='empty'>Prueba: «¿qué tengo esta semana?»</div>"}</div>
       <textarea id="chat-q" rows="3" placeholder="¿Qué tengo esta semana? Explica DHCP…"></textarea>
       <div class="hero-actions">

@@ -578,7 +578,7 @@ Y **9 funciones muertas** en `app.js`: `maybeNotify`, `greeting`, `medals`, `hea
 | Skins definidas | 33 (+ 2 temas claro/oscuro) |
 | Acciones `data-action` manejadas | 170 (123 con botón) |
 | Funciones nunca llamadas en `app.js` | 9 (+ `val`) |
-| Ajustes leídos por `saveSettings()` sin control en la UI | 31 (6 de ellos no se usan en ninguna parte) |
+| Ajustes leídos por `saveSettings()` sin control en la UI | 31 (6 de ellos no se usan en ninguna parte) · Ollama ya se guarda y se prueba desde la UI (v51) |
 | `!important` en CSS | 278 |
 | Selectores CSS redefinidos | 307 |
 | Reglas `:focus` en CSS | 3 |
