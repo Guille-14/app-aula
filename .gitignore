@@ -9,3 +9,11 @@ __pycache__/
 
 # Dependencias de las pruebas (jsdom)
 node_modules/
+
+# APK y compilación Android (el APK se publica en Releases, no en el historial de git)
+www/
+android/
+*.apk
+*.aab
+*.keystore
+*.jks

@@ -5,9 +5,12 @@ Diseño tipo **SMR Hub**. **100 % local**: sin cuenta y sin nube. Los datos se q
 
 ## Android — APK
 
-El APK se compila aparte (esta carpeta es la web). Si tienes la versión antigua `Aula-SMR-v48.apk`, desinstálala antes de instalar una nueva para evitar el conflicto de paquete. En el móvil también funciona instalándola como PWA desde Chrome: menú → *Instalar aplicación*.
+**Descargar:** [última versión publicada](https://github.com/Guille-14/app-aula/releases/latest) → fichero `.apk`.
 
-Id: `es.aula.smr.hub`. Si Android dice **conflicto de paquete**, desinstala antes cualquier Aula SMR o PWA antigua. Widgets: Ajustes → Widgets del escritorio.
+- Id de paquete: `es.aula.smr.hub`. Si Android dice **conflicto de paquete**, desinstala antes cualquier Aula SMR o PWA antigua (por ejemplo `Aula-SMR-v48.apk`).
+- **Widgets:** mantén pulsado el escritorio → *Widgets* → **Aula SMR** (hay 24: clase, examen, hoy, nota media, racha…).
+- **Compilar el APK desde este repositorio:** receta completa en [`apk-overlay/README.md`](apk-overlay/README.md) (Capacitor + `apk-overlay/apply.py` + Gradle, y cómo firmarlo y publicarlo).
+- Sin APK también funciona: instálala como PWA desde Chrome (ver abajo).
 
 ## Instalar como PWA (sin APK)
 
