@@ -146,6 +146,9 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 **Pendiente (lo que queda de los sprints 3 y 4):**
 
 - Notificaciones programadas reales en el APK (Android) para que suenen con la app cerrada.
+- ~~El APK no es reproducible desde el repo~~ **✅ hecho**: el flujo `.github/workflows/apk.yml`
+  compila, firma (`apk-overlay/keystore`), comprueba (firma, versión y 24 widgets) y publica
+  el APK en *Releases* en cada cambio, además de la receta manual de `apk-overlay/README.md`.
 - Refactor en módulos y poda de CSS (307 selectores redefinidos, 281 `!important`).
 - CSP, `eslint` y política de privacidad/aviso legal.
 - Reproducir (o retirar) el APK del README: hoy no está en el repositorio.
