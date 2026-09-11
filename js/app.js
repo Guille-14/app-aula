@@ -51,7 +51,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v55";
+  const APP_VERSION = "v56";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -343,10 +343,10 @@
   function defaultState() {
     return {
       settings: {
-        name: "", courseName: "SMR 2º 2026/27", startDate: "2026-09-08",
+        name: "", courseName: "SMR 2º 2026/27", startDate: COURSE.start,
         skin: "hub", uiTheme: "dark", pomodoroWork: 25, pomodoroBreak: 5, pomodoroLong: 15,
         cyclesUntilLong: 4, dailyGoal: 90, includeSaturday: false, demo: true, sound: true, notify: false, remindHour: 8, onboarded: false,
-        center: "", group: "", endDate: "2027-06-19", startView: "dashboard",
+        center: "", group: "2SMR", endDate: COURSE.end, startView: "dashboard",
         uiSize: "md", compact: false, reduceMotion: false, showXp: true, showMedals: true, showWeekStrip: true,
         vibrate: true, confetti: true, autoNext: false, keepAwake: true, showTimerBar: true,
         notifyExams: true, notifyTasks: true, notifyCards: true, notifyClass: true, examLeadDays: 1,
@@ -363,34 +363,62 @@
     };
   }
 
+  /* Horario real de 2.º SMR, curso 2026-2027 (documento del centro).
+     Son DOS plantillas del mismo horario: el "temporal" solo cambia las horas (se usa en
+     septiembre y junio, de 16:00 a 21:45). El orden de las clases de cada día es el mismo. */
   const OFFICIAL_MODS = [
-    { key: "seg", name: "Seguridad informática", teacher: "Raúl Sanchis Camarasa", color: "#ef4444", aliases: ["seguridad"] },
-    { key: "ipe", name: "Itinerario personal para la empleabilidad II", teacher: "Natalia Poquet Giner", color: "#14b8a6", aliases: ["ipe", "itinerario", "empleabilidad"] },
-    { key: "sor", name: "Sistemas operativos en red", teacher: "Damián Antonio Santos Baldo / Ernesto Montero Sandiego", color: "#f59e0b", aliases: ["sistemas operativos"] },
-    { key: "ser", name: "Servicios en red", teacher: "Ernesto Montero Sandiego / José María Guerrero Romero", color: "#22c55e", aliases: ["servicios en red"] },
-    { key: "web", name: "Aplicaciones web", teacher: "Miguel Valiente Sánchez", color: "#8b5cf6", aliases: ["aplicaciones web"] },
-    { key: "pro", name: "Proyecto intermodular Sistemas microinformáticos y redes", teacher: "Ernesto Montero Sandiego", color: "#ec4899", aliases: ["proyecto intermodular", "proyecto"] },
-    { key: "dig", name: "Digitalización aplicada al sistema productivo GM", teacher: "Amador Gramage Borrás", color: "#06b6d4", aliases: ["digitalización", "digitalizacion"] },
-    { key: "sos", name: "Sostenibilidad aplicada al sistema productivo", teacher: "Javier Ibáñez Micó", color: "#84cc16", aliases: ["sostenibilidad"] },
-    { key: "opt", name: "Módulo optativo", teacher: "Damián Antonio Santos Baldo", color: "#64748b", aliases: ["optativo"] },
-    { key: "tut", name: "Tutoría Segundo", teacher: "Ernesto Montero Sandiego", color: "#a78bfa", aliases: ["tutoría", "tutoria"] },
+    { key: "seg", name: "Seguridad informática", teacher: "Raúl Sanchis Camarasa", color: "#ef4444", room: "AULA 1NF3", aliases: ["seguridad"] },
+    { key: "ipe", name: "Itinerario personal para la empleabilidad II", teacher: "Natalia Poquet Giner", color: "#f472b6", room: "AULA 1NF3", aliases: ["ipe", "itinerario", "empleabilidad"] },
+    { key: "sor", name: "Sistemas operativos en red", teacher: "Damián Antonio Santos Baldo / Ernesto Montero Sandiego", color: "#3b82f6", room: "AULA 1NF3", aliases: ["sistemas operativos"] },
+    { key: "ser", name: "Servicios en red", teacher: "Ernesto Montero Sandiego / José María Guerrero Romero", color: "#db2777", room: "AULA 3", aliases: ["servicios en red"] },
+    { key: "web", name: "Aplicaciones web", teacher: "Miguel Valiente Sánchez", color: "#eab308", room: "AULA 2", aliases: ["aplicaciones web"] },
+    { key: "pro", name: "Proyecto intermodular Sistemas microinformáticos y redes", teacher: "Ernesto Montero Sandiego", color: "#22c55e", room: "AULA 1NF3", aliases: ["proyecto intermodular", "proyecto"] },
+    { key: "dig", name: "Digitalización aplicada al sistema productivo GM", teacher: "Amador Gramage Borrás", color: "#fb7185", room: "AULA 1NF3", aliases: ["digitalización", "digitalizacion"] },
+    { key: "sos", name: "Sostenibilidad aplicada al sistema productivo", teacher: "Javier Ibáñez Micó", color: "#f9a8d4", room: "AULA 3", aliases: ["sostenibilidad"] },
+    { key: "opt", name: "Módulo optativo", teacher: "Damián Antonio Santos Baldo", color: "#84cc16", room: "AULA 3", aliases: ["optativo"] },
+    { key: "tut", name: "Tutoría Segundo", teacher: "Ernesto Montero Sandiego", color: "#86efac", room: "AULA 1NF3", aliases: ["tutoría", "tutoria"] },
   ];
-  const TIMETABLE_ID = "2cfm-vesp-2026b";
+  // Tramos horarios: el del curso y el temporal (septiembre y junio, 45 min por clase)
+  const OFFICIAL_SLOTS = {
+    curso: [
+      ["15:15", "16:05"], ["16:05", "17:00"], ["17:00", "17:55"],
+      ["18:15", "19:10"], ["19:10", "20:05"], ["20:05", "21:00"], ["21:00", "21:45"],
+    ],
+    temporal: [
+      ["16:00", "16:45"], ["16:45", "17:30"], ["17:30", "18:15"],
+      ["18:45", "19:30"], ["19:30", "20:15"], ["20:15", "21:00"], ["21:00", "21:45"],
+    ],
+  };
+  // Qué toca cada día, tramo a tramo (null = libre). Lunes a viernes.
+  const OFFICIAL_PLAN = [
+    ["seg", "seg", "seg", "sor", "sor", "ser", "ser"],       // Lunes
+    ["ipe", "dig", "seg", "seg", "opt", "web", null],         // Martes
+    ["pro", "pro", "opt", "opt", "ser", "sos", null],         // Miércoles
+    ["sor", "sor", "sor", "web", "web", "ser", "ser"],        // Jueves
+    ["tut", "ipe", "ser", "ser", "sor", "sor", null],         // Viernes
+  ];
+  // Calendario escolar 2026-2027 (Generalitat / Ayuntamiento de Villena)
+  const COURSE = {
+    start: "2026-09-14",
+    end: "2027-06-18",
+    local: ["2026-09-09", "2026-12-07", "2027-02-08"],   // festivos locales a efectos escolares
+  };
+  const TIMETABLE_ID = "2smr-2026-2027";
   const HOLIDAYS = {
-    "2026-09-08": "Ntra. Sra. de las Virtudes",
-    "2026-09-10": "Fiesta local Villena",
+    "2026-09-09": "Festivo local escolar",
     "2026-10-09": "Día de la Comunitat Valenciana",
     "2026-10-12": "Fiesta Nacional de España",
     "2026-11-01": "Todos los Santos",
     "2026-12-06": "Día de la Constitución",
+    "2026-12-07": "Festivo local escolar",
     "2026-12-08": "Inmaculada Concepción",
     "2026-12-25": "Navidad",
     "2027-01-01": "Año Nuevo",
     "2027-01-06": "Reyes",
+    "2027-02-08": "Festivo local escolar",
     "2027-03-19": "San José",
     "2027-03-26": "Viernes Santo",
     "2027-03-29": "Lunes de Pascua",
-    "2027-04-13": "Fiesta local Villena",
     "2027-05-01": "Fiesta del Trabajo",
     "2027-06-24": "San Juan",
   };
@@ -406,52 +434,40 @@
     if (hit) {
       hit.name = spec.name;
       hit.teacher = spec.teacher || "";
-      hit.room = hit.room || "2CFM";
+      hit.room = spec.room || hit.room || "";
       if (spec.color) hit.color = spec.color;
       return hit.id;
     }
     const id = uid();
     st.subjects = st.subjects || [];
-    st.subjects.push({ id, name: spec.name, color: spec.color, teacher: spec.teacher || "", room: "2CFM", credits: 0 });
+    st.subjects.push({ id, name: spec.name, color: spec.color, teacher: spec.teacher || "", room: spec.room || "", credits: 0 });
     return id;
   }
-  function officialEvents(ids) {
-    const ev = (sid, day, start, end) => ({ id: uid(), subjectId: sid, day, start, end, room: "2CFM", type: "clase" });
-    return [
-      ev(ids.seg, 0, "15:10", "17:00"),
-      ev(ids.ipe, 0, "17:00", "17:55"),
-      ev(ids.sor, 0, "18:15", "20:05"),
-      ev(ids.ser, 0, "20:05", "21:00"),
-      ev(ids.ser, 0, "21:20", "22:15"),
-      ev(ids.ipe, 1, "15:10", "16:05"),
-      ev(ids.dig, 1, "16:05", "17:00"),
-      ev(ids.seg, 1, "17:00", "17:55"),
-      ev(ids.seg, 1, "18:15", "19:10"),
-      ev(ids.opt, 1, "19:10", "20:05"),
-      ev(ids.web, 1, "20:05", "21:00"),
-      ev(ids.pro, 2, "15:10", "17:00"),
-      ev(ids.opt, 2, "17:00", "17:55"),
-      ev(ids.opt, 2, "18:15", "19:10"),
-      ev(ids.ser, 2, "19:10", "20:05"),
-      ev(ids.sos, 2, "20:05", "21:00"),
-      ev(ids.sor, 3, "15:10", "17:00"),
-      ev(ids.web, 3, "17:00", "17:55"),
-      ev(ids.web, 3, "18:15", "19:10"),
-      ev(ids.ser, 3, "19:10", "21:00"),
-      ev(ids.tut, 4, "15:10", "16:05"),
-      ev(ids.ipe, 4, "16:05", "17:00"),
-      ev(ids.ser, 4, "17:00", "17:55"),
-      ev(ids.ser, 4, "18:15", "19:10"),
-      ev(ids.sor, 4, "19:10", "21:00"),
-    ];
+  // Construye la semana a partir del plan del centro y de la plantilla de horas elegida
+  function officialEvents(ids, kind = "curso") {
+    const tramos = OFFICIAL_SLOTS[kind] || OFFICIAL_SLOTS.curso;
+    const ev = [];
+    OFFICIAL_PLAN.forEach((dia, d) => {
+      dia.forEach((key, i) => {
+        if (!key || !tramos[i]) return;
+        const mod = OFFICIAL_MODS.find((m) => m.key === key);
+        ev.push({
+          id: uid(), subjectId: ids[key], day: d,
+          start: tramos[i][0], end: tramos[i][1],
+          room: (mod && mod.room) || "", type: "clase",
+        });
+      });
+    });
+    return ev;
   }
-  function applyOfficialTimetable(st) {
+  function applyOfficialTimetable(st, kind = "curso") {
     const ids = {};
     OFFICIAL_MODS.forEach((m) => { ids[m.key] = officialSubjectId(st, m); });
-    st.events = officialEvents(ids);
+    st.events = officialEvents(ids, kind);
     st.settings = st.settings || {};
     st.settings.timetableId = TIMETABLE_ID;
-    st.settings.group = st.settings.group || "2CFM";
+    st.settings.timetableKind = kind;
+    st.settings.group = st.settings.group || "2SMR";
     if (!st.settings.center || /luis murillo/i.test(String(st.settings.center))) st.settings.center = "";
     st.settings.startHour = 15;
     st.settings.endHour = 23;
@@ -1487,8 +1503,8 @@
         <div class="field"><label>Grupo</label><input id="on-group" value="${esc(st.group || "")}" placeholder="A / B"></div>
       </div>
       <div class="form-row">
-        <div class="field"><label>Inicio</label><input id="on-start" type="date" value="${esc(st.startDate || "2026-09-08")}"></div>
-        <div class="field"><label>Fin</label><input id="on-end" type="date" value="${esc(st.endDate || "2027-06-19")}"></div>
+        <div class="field"><label>Inicio</label><input id="on-start" type="date" value="${esc(st.startDate || COURSE.start)}"></div>
+        <div class="field"><label>Fin</label><input id="on-end" type="date" value="${esc(st.endDate || COURSE.end)}"></div>
       </div>
       <label class="check"><input id="on-sat" type="checkbox" ${st.includeSaturday ? "checked" : ""}/> Incluir sábado en el horario</label>
       ${foot(true)}
@@ -1820,12 +1836,21 @@
         }).join("")}
       </div>`;
     const monthHtml = renderCalendar();
+    const mes = new Date().getMonth();
+    const tocaTemporal = (mes === 8 || mes === 5) && (state.settings.timetableKind || "curso") !== "temporal";
+    const avisoTemporal = tocaTemporal
+      ? `<div class="idle-note" style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left">
+          <span>En ${mes === 8 ? "septiembre" : "junio"} el centro usa el <b>horario temporal</b> (16:00–21:45).</span>
+          <button class="btn btn-sm btn-primary" data-action="restore-timetable" data-kind="temporal">Cargar</button>
+        </div>` : "";
+    const cursoHtml = `<p class="hint" style="margin-top:10px">Curso 2026-27: del <b>${fmtDate(COURSE.start)}</b> al <b>${fmtDate(COURSE.end)}</b> · festivos locales a efectos escolares: ${COURSE.local.map((d) => fmtDate(d)).join(", ")}.</p>`;
     return `
       <div class="hub-seg">
         <button data-action="sch-view" data-mode="week" class="${schView === "week" ? "is-on" : ""}">Semana</button>
         <button data-action="sch-view" data-mode="month" class="${schView === "month" ? "is-on" : ""}">Calendario</button>
       </div>
-      ${schView === "month" ? monthHtml : weekHtml + renderExceptionsBlock()}
+      ${avisoTemporal}
+      ${schView === "month" ? monthHtml + cursoHtml : weekHtml + renderExceptionsBlock()}
     `;
   }
 
@@ -2691,8 +2716,16 @@
         ${chk("set-sat", st.includeSaturday, "Incluir sábado en el horario")}
         ${chk("set-att", st.showAttendance !== false, "Pasar lista (presente / retraso / falta)")}
         ${chk("set-hideok", st.hideCompleted, "Ocultar tareas hechas")}
-        <button class="btn" type="button" data-action="restore-timetable" style="width:100%;margin-top:10px">Restaurar el horario oficial 2.º SMR</button>
-        <p class="hint" style="margin:6px 0 0">Esto <b>sustituye</b> tus clases actuales por la plantilla del ciclo. Te pedirá confirmación.</p>
+      </div>
+
+      <p class="tools-kicker">Horario del centro · 2.º SMR 2026-27</p>
+      <div class="card">
+        <p class="hint" style="margin-top:0">Curso del <b>14 de septiembre de 2026</b> al <b>18 de junio de 2027</b>. Festivos locales a efectos escolares: <b>9 de septiembre</b>, <b>7 de diciembre</b> y <b>8 de febrero</b>.</p>
+        <div class="hero-actions">
+          <button class="btn ${(st.timetableKind || "curso") === "curso" ? "btn-primary" : ""}" type="button" data-action="restore-timetable" data-kind="curso">Curso · 15:15–21:45</button>
+          <button class="btn ${st.timetableKind === "temporal" ? "btn-primary" : ""}" type="button" data-action="restore-timetable" data-kind="temporal">Septiembre y junio · 16:00–21:45</button>
+        </div>
+        <p class="hint" style="margin:6px 0 0">Cargar una plantilla <b>sustituye</b> tus clases actuales (pide confirmación antes). Exámenes, notas y tareas no se tocan, y puedes deshacerlo justo después. Las aulas (AULA 1NF3, AULA 2, AULA 3) vienen con cada clase.</p>
       </div>
 
       <p class="tools-kicker">Avisos</p>
@@ -3671,14 +3704,6 @@
     }
     if (action === "restore-backup") restoreBackup();
     if (action === "dismiss-load-problem") { loadProblem = ""; render(); }
-    if (action === "restore-timetable") {
-      ask("Restaurar horario oficial", "Se sustituyen tus clases actuales por la plantilla de 2.º SMR. Tus exámenes, notas y tareas no se tocan.", () => {
-        pushUndo();
-        applyOfficialTimetable(state);
-        save(); toast("Horario oficial restaurado"); render();
-      });
-      return;
-    }
     if (action === "note-unlock") {
       const v = ($("#note-pin-input") || {}).value || "";
       if (checkPin(v)) { unlockedNotes.add(noteId); toast("Nota desbloqueada"); }
@@ -3939,14 +3964,18 @@
     if (action === "restore-backup") restoreBackup();
     if (action === "dismiss-load-problem") { loadProblem = ""; render(); }
     if (action === "restore-timetable") {
-      openModal("Restaurar el horario oficial", `<p>Se <b>sustituyen</b> tus clases actuales por la plantilla de 2.º SMR (${OFFICIAL_MODS.length} módulos).</p>
+      const kind = btn.dataset.kind === "temporal" ? "temporal" : "curso";
+      const cuando = kind === "temporal"
+        ? "el <b>horario temporal</b> de septiembre y junio (16:00 a 21:45)"
+        : "el <b>horario del curso</b> (15:15 a 21:45)";
+      openModal("Cargar el horario del centro", `<p>Se <b>sustituyen</b> tus clases actuales por ${cuando}, con los ${OFFICIAL_MODS.length} módulos y sus aulas.</p>
         <p class="hint">Exámenes, notas, tareas y sesiones no se tocan. Puedes deshacerlo justo después.</p>`,
-        { confirm: "Restaurar horario", onSubmit() {
+        { confirm: "Cargar horario", onSubmit() {
             pushUndo();
             state.events = [];
-            applyOfficialTimetable(state);
+            applyOfficialTimetable(state, kind);
             checkAchievements(); save(); closeModal(); render();
-            toast("Horario oficial restaurado");
+            toast(kind === "temporal" ? "Horario temporal cargado" : "Horario del curso cargado");
           } });
     }
     if (action === "note-unlock") {
@@ -4334,6 +4363,7 @@
     pushUndo, undo, sanitize, save, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
     isNativeShell, soloLocal: true,
     safeColor, sm2, cardState, nextLabel, migrateMedia, eventsOnDate, setException, exceptionsFor,
+    COURSE, holidayName, OFFICIAL_MODS, OFFICIAL_SLOTS, OFFICIAL_PLAN, applyOfficialTimetable,
     unlockNote(id) { unlockedNotes.delete(id); },
     lockNote(id) { unlockedNotes.add(id); },
     get loadProblem() { return loadProblem; },

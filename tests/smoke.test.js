@@ -526,6 +526,47 @@ async function testSinRed() {
   check(env.errors.length === 0, "papelera retirada: sin errores al abrir con una papelera antigua");
 }
 
+// -------------------- 18. datos del centro: horario y calendario 2026-27
+{
+  const env = boot();
+  ready(env.A);
+  const A = env.A;
+
+  // Calendario escolar (documento de la Generalitat / Ayuntamiento)
+  check(A.state.settings.startDate === "2026-09-14", "centro: el curso empieza el 14 de septiembre de 2026");
+  check(A.state.settings.endDate === "2027-06-18", "centro: el curso acaba el 18 de junio de 2027");
+  check(!!A.holidayName("2026-09-09") && !!A.holidayName("2026-12-07") && !!A.holidayName("2027-02-08"),
+    "centro: los tres festivos locales a efectos escolares están en el calendario");
+  check(!A.holidayName("2026-09-08") && !A.holidayName("2027-04-13"), "centro: los festivos viejos que ya no lo son han salido");
+  check(!!A.holidayName("2026-12-25") && !!A.holidayName("2027-03-29"), "centro: siguen los festivos de Navidad y Pascua");
+
+  // Horario del curso
+  act(env, "restore-timetable", { kind: "curso" });
+  check(confirmModal(env), "centro: cargar el horario avisa antes de sustituir");
+  const evs = A.state.events;
+  check(evs.length === 32, "centro: el horario del curso trae la semana completa (" + evs.length + " clases)");
+  check(evs.every((e) => e.start >= "15:15" && e.end <= "21:45"), "centro: las horas van de 15:15 a 21:45");
+  check(new Set(evs.map((e) => e.room)).size >= 3, "centro: cada clase lleva su aula (" + [...new Set(evs.map((e) => e.room))].join(", ") + ")");
+  check(evs.filter((e) => e.day === 0).length === 7 && evs.filter((e) => e.day === 1).length === 6, "centro: lunes 7 tramos y martes 6, como el documento");
+  check(A.state.subjects.some((s) => s.name === "Servicios en red" && s.room === "AULA 3"), "centro: los módulos llevan su aula habitual");
+
+  // Horario temporal de septiembre y junio
+  act(env, "restore-timetable", { kind: "temporal" });
+  confirmModal(env);
+  const tmp = A.state.events;
+  check(tmp.length === evs.length, "centro: el temporal mantiene las mismas clases por día");
+  check(tmp.every((e) => e.start >= "16:00"), "centro: el temporal empieza a las 16:00");
+  check(tmp.some((e) => e.end === "21:45"), "centro: el temporal acaba a las 21:45");
+  check(A.state.settings.timetableKind === "temporal", "centro: queda anotado qué plantilla está puesta");
+  check(A.OFFICIAL_SLOTS.temporal[0][0] === "16:00" && A.OFFICIAL_SLOTS.curso[0][0] === "15:15", "centro: las dos plantillas de horas están definidas");
+
+  // Y se ve en la vista
+  A.go("schedule");
+  const html = env.doc.getElementById("view").innerHTML;
+  check(/AULA 1NF3/.test(html), "centro: el horario enseña el aula de cada clase");
+  check(/2026-27/.test(html) || /2026/.test(html), "centro: la vista recuerda las fechas del curso");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {

@@ -48,7 +48,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 **Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas),
 `7d2d814` (herramientas y red), `ee04323` (accesibilidad y detalles), `5654dd6`
 (fotos en IndexedDB, repetición espaciada real y excepciones de horario), `718e69d`
-(receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados) y `v53` (fuera la vista Cuatrimestre) y `v54` (fuera Guía docente y Papelera) y `v55` (Ajustes más cortos).
+(receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados) y `v53` (fuera la vista Cuatrimestre) y `v54` (fuera Guía docente y Papelera) `v55` (Ajustes más cortos) y `v56` (horario y calendario reales del centro).
 
 | Bug | Estado | Cómo se ha arreglado |
 |---|---|---|
@@ -125,6 +125,19 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
   contesta sigue el motor local. Se añadió `capacitor.config.json` para que el APK sea
   reproducible, y dentro del APK (`isNativeShell()`) no se registra Service Worker: los
   ficheros ya van dentro y una caché solo serviría versiones viejas.
+- **Datos reales del centro (v56):** el horario y el calendario de las imágenes, dentro.
+  Curso **2026-27 del 14/09/2026 al 18/06/2027**, con los festivos locales a efectos escolares
+  **09/09/2026 (Fiestas de Villena), 07/12/2026 y 08/02/2027** (los antiguos 08/09, 10/09 y
+  13/04/2027 ya no lo son). Las dos plantillas de horas del centro se pueden cargar desde
+  Ajustes o desde el propio Horario y quedan anotadas en `settings.timetableKind`:
+  **curso 15:15–21:45** y **temporal (septiembre y junio) 16:00–21:45**, con los 7 tramos
+  exactos del documento. Plan L–V de 2.º SMR con los módulos reales (IPE I, DIG, SEG, SER,
+  PRO, WEB, OPT, SOS, TUT), su profesorado y el aula de cada clase (**AULA 1NF3**, **AULA 2**,
+  **AULA 3**), que ahora viaja con cada clase: en el horario se lee «AULA 1NF3» y no una
+  etiqueta genérica. El Horario avisa en septiembre y junio de que toca la plantilla temporal,
+  con botón para cargarla de un toque, y el Calendario recuerda las fechas del curso y los
+  festivos locales. Un fallo real que salió al probarlo: había **dos** manejadores para
+  «Restaurar horario», y el viejo (sin plantilla) se quedaba el clic; se eliminó.
 - **Ajustes más cortos (v55):** fuera la sección **«Tema visual»** (33 tarjetas y sus filtros)
   y la de **«Instalar como app»**, y de Inicio el aviso *«Ponla en la pantalla de inicio»*.
   Se mantiene el cambio claro/oscuro y el tema que ya tuvieras puesto. Con ellos se ha ido su
@@ -141,7 +154,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 - **Navegación (v52):** la hoja «Más» ya no repite lo que está en la barra de abajo
   (se quitaron «Exámenes» y «Calificaciones», que duplicaban los botones de abajo), con un
   aviso en la propia hoja y una prueba que falla si vuelve a colarse un repetido.
-- **Pruebas:** `npm test` ejecuta **85 comprobaciones** con jsdom en 14 secciones (arranque de
+- **Pruebas:** `npm test` ejecuta **111 comprobaciones** con jsdom en 18 secciones (arranque de
   las 25 vistas, datos corruptos, cuota, borrado, importación, temporizador, frases, PIN,
   `.ics`, etiquetas, SM-2, excepciones de horario, fotos en IndexedDB, copia con fotos y
   **«sin red»** —con un espía de `fetch` que demuestra que el chat no llama a nada si no
