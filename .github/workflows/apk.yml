@@ -79,7 +79,7 @@ jobs:
           APK=android/app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
           BT="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
-          "$BT/apksigner" verify --print-certs "$APK" > firma.txt || true
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > firma.txt || true
           if python3 apk-overlay/comprobar-apk.py "$APK" firma.txt 2>&1 | tee comprobacion.txt; then
             while IFS= read -r linea; do
               echo "$linea" >> "$GITHUB_OUTPUT"

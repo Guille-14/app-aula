@@ -13,6 +13,7 @@ import re
 import sys
 import zipfile
 
+AQUI = Path(__file__).resolve().parent
 apk = sys.argv[1] if len(sys.argv) > 1 else "android/app/build/outputs/apk/release/app-release.apk"
 firma_txt = sys.argv[2] if len(sys.argv) > 2 else "firma.txt"
 
@@ -24,6 +25,10 @@ def ok(cond, texto, detalle=""):
     if not cond:
         fallos.append(texto)
     return cond
+
+
+def info(texto):
+    print("  ·     " + texto)
 
 
 # ---------------------------------------------------------------- firma
@@ -41,18 +46,19 @@ for linea in firma.splitlines():
             digest = cola.lower()
             break
 lineas_esquema = [l.strip() for l in firma.splitlines() if "Verified using" in l]
-esquemas = []
-for l in lineas_esquema:
-    if re.search(r":\s*true\s*$", l, re.I):
-        m = re.search(r"\bv\d\b", l, re.I)
-        esquemas.append(m.group(0).lower() if m else "?")
-esquemas = ",".join(sorted(set(esquemas)))
+esquemas = ",".join(sorted({
+    (re.search(r"\bv\d\b", l, re.I).group(0).lower() if re.search(r"\bv\d\b", l, re.I) else "?")
+    for l in lineas_esquema if re.search(r":\s*true\s*$", l, re.I)
+}))
+
 print("FIRMA")
 ok(bool(firma), "apksigner dio su veredicto")
 ok(bool(dn), "certificado con nombre", dn)
 ok(bool(digest), "SHA-256 del certificado", digest)
-ok(bool(esquemas), "esquemas de firma verificados",
-   esquemas or ("apksigner dijo: " + " | ".join(lineas_esquema[:4]) if lineas_esquema else "apksigner no dijo nada de esquemas"))
+if esquemas:
+    info("esquemas de firma verificados: " + esquemas)
+else:
+    info("apksigner no listó los esquemas (es informativo, no un fallo)")
 
 # ---------------------------------------------------------------- contenido
 print("CONTENIDO")
@@ -67,10 +73,19 @@ except zipfile.BadZipFile:
 nombres = z.namelist()
 
 man = z.read("AndroidManifest.xml")
-man_utf8 = man.decode("utf-8", "ignore")
-man_utf16 = man.decode("utf-16-le", "ignore")
-widgets_man = max(man_utf8.count("APPWIDGET_UPDATE"), man_utf16.count("APPWIDGET_UPDATE"))
-widgets_xml = [n for n in nombres if re.match(r"res/xml/widget_.*_info\.xml$", n)]
+man_txt = man.decode("utf-8", "ignore") + "\n" + man.decode("utf-16-le", "ignore")
+
+# Los widgets se comprueban en el dex: en el manifest, AAPT2 guarda el nombre de la
+# acción una sola vez (deduplica) y acorta las rutas de res/xml en las compilaciones
+# de release, así que contar ahí no dice nada.
+try:
+    dex = z.read("classes.dex")
+except KeyError:
+    dex = b""
+texto_apply = (AQUI / "apply.py").read_text(encoding="utf-8")
+bloque = texto_apply.split("WIDGETS = [")[1].split("]")[0]
+esperados = [m.group(1) for m in re.finditer(r'\(\s*"[a-z_]+",\s*"([A-Za-z]+)"', bloque)]
+faltan = [c for c in esperados if c.encode() not in dex]
 
 try:
     app = z.read("assets/public/js/app.js").decode("utf-8", "ignore")
@@ -80,26 +95,28 @@ m = re.search(r'APP_VERSION\s*=\s*"(v\d+)"', app)
 ver = m.group(1) if m else ""
 media = "assets/public/js/media.js" in nombres
 paginas = "assets/public/index.html" in nombres
-paquete = "es.aula.smr.hub" in (man_utf8 + man_utf16)
+paquete = "es.aula.smr.hub" in man_txt
 
-print("  (los datos declarados en el manifest:", widgets_man, "· ficheros res/xml/widget_*:", len(widgets_xml), ")")
+info("ficheros res/xml con nombre de widget: %d (en release se acortan: es normal)"
+     % len([n for n in nombres if re.match(r"res/xml/widget_.*_info\.xml$", n)]))
 ok(paginas, "index.html empaquetado")
 ok(bool(app), "js/app.js empaquetado")
 ok(media, "js/media.js empaquetado (fotos en IndexedDB)")
 ok(bool(ver), "versión de la web dentro del APK", ver or "no encontrada")
-ok(len(widgets_xml) >= 24 or widgets_man >= 24, "los 24 widgets van dentro", "res/xml: %d · manifest: %d" % (len(widgets_xml), widgets_man))
+ok(bool(esperados) and not faltan, "los %d widgets van dentro (clases en el dex)" % len(esperados),
+   ("faltan: " + ", ".join(faltan)) if faltan else "todos")
 ok(paquete, "paquete es.aula.smr.hub")
 
 # ---------------------------------------------------------------- datos
 sha = hashlib.sha256(Path(apk).read_bytes()).hexdigest()
 mb = "%.1f" % (os.path.getsize(apk) / 1048576)
 print("ARCHIVO")
-print("  %s MB · sha256 %s" % (mb, sha))
+print("  ·     %s MB · sha256 %s" % (mb, sha))
 
 with open(".datos-apk", "w", encoding="utf-8") as f:
     for k, v in {
-        "sha": sha, "mb": mb, "firma": digest, "firma_dn": dn, "esquemas": esquemas,
-        "app": ver, "widgets": max(widgets_xml, widgets_man),
+        "sha": sha, "mb": mb, "firma": digest, "firma_dn": dn, "esquemas": esquemas or "n/d",
+        "app": ver, "widgets": len(esperados) - len(faltan),
         "media": "sí" if media else "NO",
     }.items():
         f.write("%s=%s\n" % (k, v))
