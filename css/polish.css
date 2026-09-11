@@ -168,3 +168,6 @@ button:focus-visible, a:focus-visible, [data-action]:focus-visible { outline-off
 .note-photo figcaption { display: flex; align-items: center; gap: 6px; padding: 4px 6px; font-size: 11px; }
 .note-photo figcaption { justify-content: space-between; }
 .note-photo figcaption button { padding: 0 6px; line-height: 1.4; }
+
+/* Aviso de la hoja «Más»: recuerda que las vistas principales ya tienen botón abajo */
+.sheet-hint { margin: 2px 2px 10px; font-size: 12px; color: var(--muted); }

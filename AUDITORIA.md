@@ -48,7 +48,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 **Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas),
 `7d2d814` (herramientas y red), `ee04323` (accesibilidad y detalles), `5654dd6`
 (fotos en IndexedDB, repetición espaciada real y excepciones de horario), `718e69d`
-(receta del APK) y `v51` (la app deja de tener servidor).
+(receta del APK), `v51` (la app deja de tener servidor) y `v52` (navegación sin duplicados).
 
 | Bug | Estado | Cómo se ha arreglado |
 |---|---|---|
@@ -125,11 +125,14 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
   contesta sigue el motor local. Se añadió `capacitor.config.json` para que el APK sea
   reproducible, y dentro del APK (`isNativeShell()`) no se registra Service Worker: los
   ficheros ya van dentro y una caché solo serviría versiones viejas.
-- **Pruebas:** `npm test` ejecuta **81 comprobaciones** con jsdom en 14 secciones (arranque de
+- **Navegación (v52):** la hoja «Más» ya no repite lo que está en la barra de abajo
+  (se quitaron «Exámenes» y «Calificaciones», que duplicaban los botones de abajo), con un
+  aviso en la propia hoja y una prueba que falla si vuelve a colarse un repetido.
+- **Pruebas:** `npm test` ejecuta **85 comprobaciones** con jsdom en 14 secciones (arranque de
   las 28 vistas, datos corruptos, cuota, borrado, importación, temporizador, frases, PIN,
   `.ics`, etiquetas, SM-2, excepciones de horario, fotos en IndexedDB, copia con fotos y
   **«sin red»** —con un espía de `fetch` que demuestra que el chat no llama a nada si no
-  configuras tu Ollama—)
+  configuras tu Ollama— y **navegación** —que «Más» y la barra de abajo no compartan vistas—)
   y hay CI en `.github/workflows/tests.yml`. También `.gitignore` y `package.json`.
 
 **Pendiente (lo que queda de los sprints 3 y 4):**

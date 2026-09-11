@@ -480,6 +480,22 @@ async function testSinRed() {
   check(/Ollama/i.test(html), "datos locales: sigue estando el ajuste de Ollama local");
 }
 
+// --------------------------- 16. navegación: la barra de abajo no se repite en «Más»
+{
+  const vistasDe = (bloque) => [...bloque.matchAll(/data-view="([a-z]+)"/g)].map((m) => m[1]);
+  const navHTML = HTML.split('id="bottom-nav"')[1].split('id="more-sheet"')[0];
+  const hojaHTML = HTML.split('id="more-sheet"')[1].split('id="capture"')[0];
+  const enBarra = vistasDe(navHTML);
+  const enHoja = vistasDe(hojaHTML);
+  const repetidas = enBarra.filter((v) => enHoja.includes(v));
+  check(enBarra.length >= 4, "navegación: la barra de abajo tiene sus vistas fijas (" + enBarra.join(", ") + ")");
+  check(enHoja.length >= 10, "navegación: la hoja «Más» sigue teniendo el resto (" + enHoja.length + " vistas)");
+  check(repetidas.length === 0, "navegación: nada de la barra de abajo se repite en «Más»" + (repetidas.length ? " (repetido: " + repetidas.join(", ") + ")" : ""));
+  const conocidas = VIEWS.concat(["admin", "examode", "quickreview", "inbox", "review", "achievements", "agenda", "timeline", "kanban", "chatbot", "simulator", "habits", "glossary", "trash", "guide", "rendimiento", "tools"]);
+  const raras = enBarra.concat(enHoja).filter((v) => !conocidas.includes(v));
+  check(raras.length === 0, "navegación: todos los botones llevan a una vista que existe" + (raras.length ? " (raro: " + raras.join(", ") + ")" : ""));
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
