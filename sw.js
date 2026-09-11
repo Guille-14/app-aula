@@ -1,4 +1,4 @@
-const CACHE = "aula-smr-v62-1";
+const CACHE = "aula-smr-v63";
 const ICON_CACHE = "aula-app-icon";
 const PRECACHE = [
   "./",
@@ -7,6 +7,8 @@ const PRECACHE = [
   "./css/skins.css",
   "./css/themes.css",
   "./css/ui.css",
+  "./js/tema.js",
+  "./js/avisos.js",
   "./js/media.js",
   "./js/app.js",
   "./js/studio.js",
@@ -39,6 +41,19 @@ const PRECACHE = [
   "./assets/avatars/venusaur.jpg",
   "./assets/avatars/zekrom.jpg",
 ];
+
+// Rutas del precache, normalizadas a «pathname»: se usan para decidir cuándo servir
+// desde caché sin ni siquiera tocar la red.
+const PRECACHE_PATHS = new Set(
+  PRECACHE.map((u) => {
+    try { return new URL(u, self.location.href).pathname.replace(/\/+$/, "") || "/"; }
+    catch { return ""; }
+  })
+);
+const esPrecache = (url) => {
+  const p = url.pathname.replace(/\/+$/, "") || "/";
+  return PRECACHE_PATHS.has(p) || (p === "/" && PRECACHE_PATHS.has(""));
+};
 
 self.addEventListener("install", (e) => {
   // addAll es todo o nada: si un solo recurso falla, se cachea uno a uno para saber cuál.
@@ -129,6 +144,18 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+
+  // CACHÉ PRIMERO para todo lo que va dentro del precache (la app entera: HTML, CSS, JS,
+  // iconos y avatares). Es una app local: los archivos solo cambian al publicar una versión
+  // nueva, y entonces CACHE cambia de nombre, se llena en el install y el activate borra el
+  // viejo. Antes esto era «red primero» para TODO, así que cada apertura esperaba un viaje de
+  // red (que en el instituto con wifi floja es eterno) para servir algo que no había cambiado.
+  // Si algún día hay contenido remoto de verdad, ese contenido NO va aquí: usa otra ruta.
+  if (esPrecache(url)) {
+    e.respondWith(cachePrimero(e.request));
+    return;
+  }
+
   const ik = iconCacheKey(url);
   if (ik) {
     e.respondWith(
@@ -160,6 +187,22 @@ self.addEventListener("fetch", (e) => {
   );
 });
 
+// Sirve de caché al instante, sin tocar la red. La frescura la garantiza el ciclo del
+// propio service worker: al publicar, sw.js cambia (lleva el número de versión), el
+// navegador instala el nuevo, llena la caché nueva entera y borra la vieja.
+async function cachePrimero(req) {
+  const cache = await caches.open(CACHE);
+  const hit = await cache.match(req, { ignoreSearch: true });
+  if (hit) return hit;
+  try {
+    const res = await fetch(req);
+    if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
+    return res;
+  } catch {
+    return offlineFallback(req);
+  }
+}
+
 // Si el recurso no está en caché: el HTML cae a index.html (modo app),
 // pero un JS/CSS/imagen NUNCA se sustituye por HTML: eso rompía la app entera.
 function offlineFallback(req) {
@@ -169,6 +212,15 @@ function offlineFallback(req) {
   if (tipo === "script") return new Response("/* sin conexión y sin caché */", { status: 504, headers: { "Content-Type": "application/javascript" } });
   if (tipo === "style") return new Response("/* sin conexión y sin caché */", { status: 504, headers: { "Content-Type": "text/css" } });
   if (tipo === "image") return new Response("", { status: 504 });
-  if (req.mode === "navigate" || dest === "document" || tipo === "") return caches.match("./index.html");
+  if (req.mode === "navigate" || dest === "document" || tipo === "") {
+    return caches.match("./index.html").then(
+      (hit) =>
+        hit ||
+        new Response(
+          "<!DOCTYPE html><meta charset=\"utf-8\"><title>Aula SMR</title><p style=\"font:16px system-ui;padding:24px\">Sin conexión y sin copia guardada. Abre la app una vez con internet y quedará lista para siempre.",
+          { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } }
+        )
+    );
+  }
   return new Response("", { status: 504 });
 }

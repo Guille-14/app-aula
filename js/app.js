@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v62.1";
+  const APP_VERSION = "v63";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -246,7 +246,46 @@
     };
     send();
   }
+  // Dentro del APK, Android sabe despertarse solo: js/avisos.js programa los avisos de
+  // verdad (clase, exámenes, resumen) y suenan con la app cerrada. En el navegador no es
+  // posible, así que ahí se sigue avisando solo mientras la app está abierta.
+  function avisosNativos() { return !!(window.AulaAvisos && window.AulaAvisos.disponible()); }
+  function avisosProgramados() { return avisosNativos() && state.settings.notifyNative === true; }
+  function activarAvisosNativos() {
+    if (!avisosNativos()) return false;
+    window.AulaAvisos.activar().then((r) => {
+      state.settings.notifyNative = !!r.permiso;
+      state.settings.notify = !!r.permiso;
+      save();
+      toast(r.permiso ? "Avisos del móvil activados: " + r.programados : "Sin permiso de avisos");
+      if (view === "settings" || view === "dashboard") render();
+    }).catch(() => toast("No se pudieron programar los avisos"));
+    return true;
+  }
+  function apagarAvisosNativos() {
+    pushUndo();
+    state.settings.notifyNative = false;
+    state.settings.notify = false;
+    save();
+    if (window.AulaAvisos) window.AulaAvisos.apagar().catch(() => {});
+    toast("Avisos del móvil desactivados");
+    render();
+  }
+  let avisosTimer = null;
+  function reprogramarAvisos(pedirPermiso) {
+    if (!avisosNativos()) return;
+    if (!avisosProgramados() && !pedirPermiso) return;
+    clearTimeout(avisosTimer);
+    avisosTimer = setTimeout(() => {
+      avisosTimer = null;
+      window.AulaAvisos.sincronizar({ pedirPermiso: !!pedirPermiso }).then((r) => {
+        if (r && r.permiso === false && state.settings.notifyNative) { state.settings.notifyNative = false; save(); }
+      }).catch(() => {});
+    }, 1500);
+  }
+
   function requestNotify() {
+    if (activarAvisosNativos()) return;
     if (!("Notification" in window)) { toast("Este navegador no avisa"); return; }
     Notification.requestPermission().then((p) => {
       state.settings.notify = p === "granted";
@@ -734,6 +773,7 @@
     saveTimer = setTimeout(() => { saveTimer = null; save(); }, delay == null ? 400 : delay);
   }
   function flushSave() {
+    reprogramarAvisos();
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     save();
   }
@@ -778,6 +818,7 @@
   let view = ["dashboard","schedule","timer","review","achievements"].includes(state.settings.startView) ? state.settings.startView : "dashboard";
   let calendarCursor = new Date(); calendarCursor.setDate(1);
   let noteId = null, notePreview = false, noteFilter = "all", noteQuery = "";
+  let noteQueryTimer = null;   // retardo del buscador de apuntes
   let cardFilter = "all", cardFlip = false, cardQueue = [];
   let subjectFocus = null, cmdOpen = false, cmdIndex = 0, cmdItems = [];
   let deferredInstall = null, wakeLock = null;
@@ -1187,7 +1228,7 @@
       rendimiento: renderRendimiento, exams: renderExams,
       tools: () => (window.AulaTools && typeof window.AulaTools.view === "function")
         ? window.AulaTools.view()
-        : `<div class="empty"><b>Herramientas</b>Recarga la página.</div>`,
+        : (cargarTools(), `<div class="empty"><b>Herramientas SMR</b><p>Cargando el hub técnico…</p></div>`),
     };
     // Una vista que falle no debe dejar la app en blanco: se enseña el aviso y se sigue.
     let cuerpo = "";
@@ -1968,16 +2009,16 @@
     if (imgs) {
       t = t.replace(/!\[([^\]]*)\]\(aula-img:([^)\s]+)\)/g, (m, alt, id) => {
         const nombre = alt || "foto";
-        if (imgs[id]) return `<img class="note-img" src="${safeImgSrc(imgs[id]) || PUNTO_TRANSPARENTE}" alt="${esc(nombre)}">`;   // foto antigua, dentro del texto
+        if (imgs[id]) return `<img class="note-img" src="${safeImgSrc(imgs[id]) || PUNTO_TRANSPARENTE}" alt="${esc(nombre)}" loading="lazy" decoding="async">`;   // foto antigua, dentro del texto
         if (mediaOk()) {
           const ya = Media().urlFor(id);   // en memoria se pinta ya; si no, se carga sola y se rellena
-          return `<img class="note-img ${ya ? "" : "is-loading"}" data-media="${esc(id)}" src="${ya || PUNTO_TRANSPARENTE}" alt="${esc(nombre)}">`;
+          return `<img class="note-img ${ya ? "" : "is-loading"}" data-media="${esc(id)}" src="${ya || PUNTO_TRANSPARENTE}" alt="${esc(nombre)}" loading="lazy" decoding="async">`;
         }
         return `<span class="hint">[imagen no disponible]</span>`;
       });
       // Compatibilidad con fotos antiguas guardadas como data URL dentro del texto
       t = t.replace(/!\[([^\]]*)\]\((data:image\/[^)\s]+)\)/g, (m, alt, src) =>
-        `<img class="note-img" src="${safeImgSrc(src) || PUNTO_TRANSPARENTE}" alt="${esc(alt || "foto")}">`);
+        `<img class="note-img" src="${safeImgSrc(src) || PUNTO_TRANSPARENTE}" alt="${esc(alt || "foto")}" loading="lazy" decoding="async">`);
     }
     t = t.replace(/^### (.*)$/gm, "<h4>$1</h4>").replace(/^## (.*)$/gm, "<h3>$1</h3>").replace(/^# (.*)$/gm, "<h2>$1</h2>");
     t = t.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
@@ -1989,10 +2030,10 @@
     // Texto de la nota sin las marcas de imagen (para la lista, el buscador y el recuento)
     return String(n.content || "").replace(/!\[[^\]]*\]\((?:aula-img|data:image)[^)]*\)/g, "").trim();
   }
-  function renderNotes() {
+  // Notas que pasan el filtro de módulo y el buscador (las protegidas no se destapan)
+  function notasFiltradas() {
     let notes = [...state.notes].sort((a, b) => (b.pinned - a.pinned) || (b.updatedAt - a.updatedAt));
     if (noteFilter !== "all") notes = notes.filter((n) => n.subjectId === noteFilter);
-    // Buscador: filtra por título y texto (las notas con PIN no se destapan)
     const q = noteQuery.trim().toLowerCase();
     if (q) {
       notes = notes.filter((n) => {
@@ -2000,6 +2041,26 @@
         return (n.title || "").toLowerCase().includes(q) || notePlain(n).toLowerCase().includes(q);
       });
     }
+    return notes;
+  }
+
+  // Solo la lista: así el buscador repinta esto y no la vista entera (ni el cursor del campo).
+  function notasListaHTML() {
+    const notes = notasFiltradas();
+    if (!notes.length) {
+      return `<div class="empty">${noteQuery.trim() ? "Ninguna nota coincide con «" + esc(noteQuery.trim()) + "»." : "Sin notas."}</div>`;
+    }
+    return notes.map((n) => {
+      const bloqueada = n.locked && !unlockedNotes.has(n.id);
+      return `<button class="note-item ${n.id === noteId ? "is-active" : ""}" data-action="open-note" data-id="${n.id}">
+        <h4>${n.pinned ? "📌 " : ""}${bloqueada ? "🔒 " : ""}${esc(n.title || "Sin título")}</h4>
+        <p>${bloqueada ? "Nota protegida con PIN" : esc(notePlain(n).replace(/\s+/g, " ").slice(0, 80))}</p>
+      </button>`;
+    }).join("");
+  }
+
+  function renderNotes() {
+    const notes = notasFiltradas();
     if (!noteId && notes[0]) noteId = notes[0].id;
     const current = state.notes.find((n) => n.id === noteId);
     const lockedNow = current && current.locked && !unlockedNotes.has(current.id);
@@ -2014,14 +2075,8 @@
           <button class="chip ${noteFilter === "all" ? "is-on" : ""}" data-action="note-filter" data-id="all">Todas</button>
           ${state.subjects.map((s) => `<button class="chip ${noteFilter === s.id ? "is-on" : ""}" data-action="note-filter" data-id="${s.id}">${esc(s.name)}</button>`).join("")}
         </div>
-        <div class="notes-list">
-          ${notes.map((n) => {
-            const bloqueada = n.locked && !unlockedNotes.has(n.id);
-            return `<button class="note-item ${n.id === noteId ? "is-active" : ""}" data-action="open-note" data-id="${n.id}">
-            <h4>${n.pinned ? "📌 " : ""}${bloqueada ? "🔒 " : ""}${esc(n.title || "Sin título")}</h4>
-            <p>${bloqueada ? "Nota protegida con PIN" : esc(notePlain(n).replace(/\s+/g, " ").slice(0, 80))}</p>
-          </button>`;
-          }).join("") || `<div class="empty">${noteQuery.trim() ? "Ninguna nota coincide con «" + esc(noteQuery.trim()) + "»." : "Sin notas."}</div>`}
+        <div class="notes-list" id="notes-list">
+          ${notasListaHTML()}
         </div>
       </div>
       <div class="editor">
@@ -2048,7 +2103,7 @@
           ${(current.attachments || []).length ? `<div class="note-photos">${current.attachments.map((a) => {
             const src = a.data || (mediaOk() ? Media().urlFor(a.id) : "") || "";
             return `<figure class="note-photo">
-              <img class="note-img ${src ? "" : "is-loading"}" src="${safeImgSrc(src) || PUNTO_TRANSPARENTE}" data-media="${esc(a.id)}" alt="${esc(a.name || "foto")}" loading="lazy">
+              <img class="note-img ${src ? "" : "is-loading"}" src="${safeImgSrc(src) || PUNTO_TRANSPARENTE}" data-media="${esc(a.id)}" alt="${esc(a.name || "foto")}" loading="lazy" decoding="async">
               <figcaption>${esc(a.name || "foto")}<button class="btn btn-sm btn-danger" data-action="note-photo-del" data-id="${esc(a.id)}" aria-label="Quitar ${esc(a.name || "foto")}">×</button></figcaption>
             </figure>`;
           }).join("")}</div>` : ""}
@@ -2475,7 +2530,7 @@
     const ic = state.settings.avatarIcon || "letter";
     const src = avatarSrc(ic);
     const safe = safeImgSrc(src);
-    if (safe) return `<img src="${safe}" alt="">`;
+    if (safe) return `<img src="${safe}" alt="" loading="lazy" decoding="async">`;
     const map = { book: "📘", pc: "💻", wrench: "🔧", shield: "🛡️", net: "🌐", bolt: "⚡", lab: "🧪" };
     if (map[ic]) return map[ic];
     return esc(((state.settings.name || "A").trim().charAt(0) || "A").toUpperCase());
@@ -2498,12 +2553,12 @@
     return `
       ${simpleHtml}
       <div class="ava-grid">
-        <button type="button" data-action="${setA}" data-id="dragon" class="ava-ph ${ic === "dragon" ? "is-on" : ""}" aria-label="Icono dragón" title="Dragón"><img src="assets/icon-192.png" alt=""></button>
+        <button type="button" data-action="${setA}" data-id="dragon" class="ava-ph ${ic === "dragon" ? "is-on" : ""}" aria-label="Icono dragón" title="Dragón"><img src="assets/icon-192.png" alt="" loading="lazy" decoding="async"></button>
         ${AVATAR_PACK.map((a) =>
-          `<button type="button" data-action="${setA}" data-id="${a.id}" class="ava-ph ${ic === a.id ? "is-on" : ""}" aria-label="${esc(a.name || a.id)}" title="${esc(a.name || a.id)}"><img src="${a.src}" alt=""></button>`
+          `<button type="button" data-action="${setA}" data-id="${a.id}" class="ava-ph ${ic === a.id ? "is-on" : ""}" aria-label="${esc(a.name || a.id)}" title="${esc(a.name || a.id)}"><img src="${a.src}" alt="" loading="lazy" decoding="async"></button>`
         ).join("")}
         ${customs.map((c) =>
-          `<button type="button" data-action="${setA}" data-id="c:${c.id}" class="ava-ph ${ic === "c:" + c.id ? "is-on" : ""}" aria-label="Tu foto" title="Tu foto"><img src="${safeImgSrc(c.data) || PUNTO_TRANSPARENTE}" alt=""><span class="ava-x" data-action="del-avatar" data-id="${c.id}" role="presentation">×</span></button>`
+          `<button type="button" data-action="${setA}" data-id="c:${c.id}" class="ava-ph ${ic === "c:" + c.id ? "is-on" : ""}" aria-label="Tu foto" title="Tu foto"><img src="${safeImgSrc(c.data) || PUNTO_TRANSPARENTE}" alt="" loading="lazy" decoding="async"><span class="ava-x" data-action="del-avatar" data-id="${c.id}" role="presentation">×</span></button>`
         ).join("")}
         <button type="button" class="ava-ph ava-add" data-action="${addA}" title="Añadir foto" aria-label="Añadir foto">+</button>
       </div>
@@ -2816,10 +2871,15 @@
 
       <p class="tools-kicker">Avisos</p>
       <div class="card">
-        <p class="hint" style="margin-top:0">Son avisos del navegador: suenan con la app abierta o recién usada. iOS no permite programarlos con la app cerrada.</p>
-        <button class="btn btn-block ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify">
-          ${st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos"}
+        <p class="hint" style="margin-top:0">${avisosNativos()
+          ? "En el APK los avisos los programa Android: suenan <b>aunque la app esté cerrada</b> y el móvil bloqueado."
+          : "Son avisos del navegador: suenan con la app abierta o recién usada. En el APK se programan en Android y suenan con la app cerrada."}</p>
+        <button class="btn btn-block ${avisosProgramados() || (st.notify && typeof Notification !== "undefined" && Notification.permission === "granted") ? "btn-primary" : ""}" type="button" data-action="enable-notify">
+          ${avisosProgramados() ? "Avisos del móvil activos"
+            : avisosNativos() ? "Programar avisos en el móvil"
+            : (st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos")}
         </button>
+        ${avisosProgramados() && window.AulaAvisos ? `<p class="hint">${esc(window.AulaAvisos.resumen(window.AulaAvisos.datos()))}</p>` : ""}
         ${chk("set-nclass", st.notifyClass !== false, "Clase (10 min antes)")}
         ${chk("set-nca", st.notifyCards !== false, "Fichas de repaso")}
         ${chk("set-night", st.nightRemind !== false, "Aviso nocturno para no romper la racha")}
@@ -2841,7 +2901,7 @@
       <p class="tools-kicker">Icono de la app</p>
       <div class="card">
         <div class="app-ico-preview">
-          <div class="app-ico-tile"><img src="${esc(avatarSrc(st.appIcon || "dragon") || "assets/icon-192.png")}" alt="Icono actual"></div>
+          <div class="app-ico-tile"><img src="${esc(avatarSrc(st.appIcon || "dragon") || "assets/icon-192.png")}" alt="Icono actual" loading="lazy" decoding="async"></div>
           <div>
             <b>Pantalla de inicio</b>
             <small>Es el dibujo del escritorio, no el de la esquina. En el APK cambia al tocarlo.</small>
@@ -3895,7 +3955,7 @@
     }
     if (action === "clear-demo") { state = defaultState(); state.settings.demo = false; noteId = null; view = "subjects"; toast("Empieza por Módulos"); render(); }
     if (action === "keep-demo") { state.settings.demo = false; toast("Tus datos"); render(); }
-    if (action === "enable-notify") requestNotify();
+    if (action === "enable-notify") { if (state.settings.notifyNative === true && avisosNativos()) apagarAvisosNativos(); else requestNotify(); }
     if (action === "skip-onboard" || action === "on-finish") {
       collectOnboard();
       const ncl = on("#set-nclass"); if (ncl !== undefined) state.settings.notifyClass = ncl;
@@ -4041,11 +4101,16 @@
     if (e.target.id === "cmdk-input") { cmdItems = collectCmd(e.target.value); cmdIndex = 0; renderCmd(); }
     if (e.target.id === "note-title" || e.target.id === "note-body") persistNote();
     if (e.target.id === "note-query") {
+      // Con retardo: se filtra cuando dejas de teclear, no en cada letra (repintar Apuntes
+      // entero por pulsación se nota en un móvil modesto). Y solo se repinta la lista: el
+      // campo no se toca, así el cursor se queda donde estaba.
       noteQuery = e.target.value;
-      const keep = e.target.selectionStart;
-      render();
-      const q = $("#note-query");
-      if (q) { q.focus(); try { q.setSelectionRange(keep, keep); } catch {} }
+      clearTimeout(noteQueryTimer);
+      noteQueryTimer = setTimeout(() => {
+        const lista = $("#notes-list");
+        if (!lista) { render(); return; }
+        lista.innerHTML = notasListaHTML();
+      }, 180);
     }
   });
 
@@ -4354,6 +4419,21 @@
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },
   };
+  // Herramientas SMR pesa más que todo el resto de vistas juntas y se usa de vez en cuando:
+  // el script se pide la primera vez que se entra en la vista (y queda cacheado por el
+  // service worker, así que después funciona sin conexión igual que el resto).
+  let toolsPidiendo = false;
+  function cargarTools() {
+    if (toolsPidiendo || (window.AulaTools && typeof window.AulaTools.view === "function")) return;
+    toolsPidiendo = true;
+    const etiqueta = document.createElement("script");
+    etiqueta.src = "js/tools.js";
+    etiqueta.async = true;
+    etiqueta.onload = () => { toolsPidiendo = false; if (view === "tools") { try { render(); } catch {} } };
+    etiqueta.onerror = () => { toolsPidiendo = false; toast("No se pudieron cargar las herramientas"); };
+    document.head.appendChild(etiqueta);
+  }
+
   const EXTRA_VIEWS = { agenda: 1, chatbot: 1, habits: 1, glossary: 1, examode: 1, quickreview: 1, admin: 1, achievements: 1, rendimiento: 1, tools: 1, exams: 1 };
   const esVista = (v) => !!(v && (titles[v] || EXTRA_VIEWS[v]));
   const hash = (location.hash || "").replace("#", "");
@@ -4405,7 +4485,15 @@
   // Dentro del APK (Capacitor) todo está empaquetado: el Service Worker no hace falta
   // y solo añadiría una caché que puede servir una versión vieja.
   if ("serviceWorker" in navigator && !isNativeShell()) {
-    navigator.serviceWorker.register("./sw.js").then(() => applyAppIcon()).catch(() => {});
+    // updateViaCache: "none" → la comprobación de versión del sw.js no se queda pegada en la
+    // caché HTTP del navegador, así las versiones nuevas entran en la siguiente apertura.
+    const reg = navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" });
+    reg.then(() => applyAppIcon()).catch(() => {});
+    // Si al volver a la app hay una versión esperando, se activa sola.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
+    });
     navigator.serviceWorker.addEventListener("controllerchange", () => applyAppIcon());
   }
   function tickLiveUI() {

@@ -14,11 +14,6 @@ body::before {
   z-index: 1;
 }
 .timer-bar, .bottom-nav, .cmdk, .sheet, .overlay, .focus-fab { z-index: 35; }
-.cmdk { z-index: 70; }
-.sheet { z-index: 55; }
-.overlay { z-index: 40; }
-.modal { z-index: 50; }
-.toasts { z-index: 60; }
 
 .sidebar { background: var(--navy); color: var(--sidebar-fg, #f3ece3); }
 .nav-item { color: var(--nav-fg, #d7cfc4); border-radius: var(--nav-radius, 12px); }
@@ -50,10 +45,6 @@ body::before {
 .btn-primary { background: var(--accent); color: var(--accent-ink, #fff); box-shadow: var(--glow, none); }
 .nav-count { background: var(--accent); border-radius: var(--pill, 999px); }
 .bar > i { background: var(--accent); }
-.heat i[data-v="1"] { background: var(--heat-1, #edd5c0); }
-.heat i[data-v="2"] { background: var(--heat-2, #e0a078); }
-.heat i[data-v="3"] { background: var(--heat-3, #c45c26); }
-.heat i[data-v="4"] { background: var(--heat-4, #8a3512); }
 
 /* —— 1 Rack SMR (por defecto) —— */
 [data-skin="redes"] {
@@ -313,7 +304,6 @@ body::before {
   --greeting: linear-gradient(160deg, #4c1d95, #db2777 60%, #22d3ee);
   --heat-1: #6b21a8; --heat-2: #db2777; --heat-3: #22d3ee; --heat-4: #fde68a;
 }
-
 
 .install-banner {
   display: flex; gap: 12px; align-items: center; flex-wrap: wrap;

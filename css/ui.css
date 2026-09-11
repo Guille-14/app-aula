@@ -188,19 +188,7 @@ body.hub-body {
   min-height: 100vh;
   min-height: 100dvh;
   padding: 0;
-}
-.phone {
-  position: relative;
-  width: 100%;
-  max-width: var(--phone-w);
-  height: 100vh;
-  height: 100dvh;
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transition: background-color .3s ease, color .3s ease;
-}
+}.phone { position: relative; width: 100%; max-width: var(--phone-w); height: 100vh; height: 100dvh; background: var(--bg); display: flex; flex-direction: column; overflow: hidden; transition: background-color .3s ease, color .3s ease;; z-index: 1; }
 @media (min-width: 640px) {
   body.hub-body { padding: 18px; background: #050506; }
   .phone {
@@ -211,23 +199,18 @@ body.hub-body {
     box-shadow: 0 0 0 1px rgba(0, 0, 0, .6), 0 40px 90px rgba(0, 0, 0, .75);
   }
 }
+/* En una pantalla de ordenador (1200 px o más) el móvil se queda pequeño: el marco se
+   ensancha y el Inicio reparte sus tarjetas en columnas en vez de apilarlas. El diseño de
+   móvil no cambia (todo esto vive dentro del @media). */
 @media (min-width: 1200px) {
+  :root { --phone-w: 1060px; }
   body.hub-body { background: #050506; }
-}
-
-/* ------------------------------------------------------------- 4. Cabecera */
-.hub-header {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  padding: calc(env(safe-area-inset-top, 0px) + 18px) var(--pad) 12px;
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
-  z-index: 12;
-}
+  .bento { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .soon-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .week-pills { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .course-soon { gap: 12px; }
+  .hub-header h1 { font-size: 32px; }
+}/* ------------------------------------------------------------- 4. Cabecera */.hub-header { flex: 0 0 auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: calc(env(safe-area-inset-top, 0px) + 18px) var(--pad) 12px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(18px) saturate(160%); -webkit-backdrop-filter: blur(18px) saturate(160%); z-index: 12;; border-bottom: 1px solid transparent; }
 .hub-title-block { min-width: 0; }
 .hub-header h1 {
   margin: 0;
@@ -276,8 +259,7 @@ body.hub-body {
   flex-direction: column;
   gap: 18px;
   animation: viewIn .32s cubic-bezier(.16, 1, .3, 1) both;
-}
-.hub-scroll > * { flex: 0 0 auto; min-width: 0; }
+}.hub-scroll > * { flex: 0 0 auto; min-width: 0;; margin-block: 0 !important; }
 @keyframes viewIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -314,15 +296,7 @@ body.hub-body {
   text-transform: none;
 }
 .card-head { align-items: center; }
-.card-head h3 { margin: 0; }
-.k {
-  display: block;
-  font-size: 11px;
-  font-weight: 620;
-  letter-spacing: 0.085em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
+.card-head h3 { margin: 0; }.k { display: block; font-size: 11px; font-weight: 620; letter-spacing: 0.085em; text-transform: uppercase; color: var(--muted);; line-height: 1.3; }
 .hint, .muted { color: var(--muted); font-size: 13px; line-height: 1.5; font-weight: 480; }
 .hint b, .muted b { color: var(--ink-2); font-weight: 620; }
 .linkish {
@@ -375,15 +349,7 @@ body.hub-body {
   padding: 12px 14px;
   font-size: 13px;
   color: var(--muted);
-}
-.save-warn {
-  background: color-mix(in srgb, var(--amber) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--amber) 34%, transparent);
-  color: var(--amber);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  font-size: 13px;
-}
+}.save-warn { background: color-mix(in srgb, var(--amber) 12%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 34%, transparent); color: var(--amber); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px;; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .save-warn b { color: var(--amber); font-weight: 640; }
 .kbd {
   font-family: var(--mono);
@@ -697,8 +663,7 @@ input[type="range"] { width: 100%; accent-color: var(--ink); }
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .hub-nav button.is-active svg { transform: translateY(-1px); }
-.hub-nav button:active { transform: scale(.93); }
-.hub-nav .nav-lbl { white-space: nowrap; }
+.hub-nav button:active { transform: scale(.93); }.hub-nav .nav-lbl { white-space: nowrap;; font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; }
 .hub-nav .nav-gap { display: none; }
 .hub-nav .nav-dot { position: absolute; }
 body.onboarding .hub-nav { display: none; }
@@ -1113,8 +1078,7 @@ body.examode .att { display: none !important; }
 .study-rec .k { margin-bottom: 8px; }
 .study-rec p { margin: 0; font-size: 15px; font-weight: 560; letter-spacing: -0.015em; line-height: 1.45; }
 .course-soon { display: flex; gap: 10px; }
-.course-soon > div { flex: 1 1 0; min-width: 0; padding: 14px 16px; border-radius: 20px; border: 1px solid var(--line); background: var(--surface); }
-.course-soon .v { font-size: 24px; font-weight: 680; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; }
+.course-soon > div { flex: 1 1 0; min-width: 0; padding: 14px 16px; border-radius: 20px; border: 1px solid var(--line); background: var(--surface); }.course-soon .v { font-size: 24px; font-weight: 680; letter-spacing: -0.045em; font-variant-numeric: tabular-nums;; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .course-soon .k { margin-top: 4px; }
 .demo-banner { display: flex; flex-direction: column; gap: 12px; border-color: var(--line-2); }
 
@@ -1173,13 +1137,10 @@ body.examode .att { display: none !important; }
 .att button.att-r.on { background: color-mix(in srgb, var(--amber) 18%, transparent); border-color: color-mix(in srgb, var(--amber) 45%, transparent); color: var(--amber); }
 .att button.att-f.on { background: color-mix(in srgb, var(--red) 18%, transparent); border-color: color-mix(in srgb, var(--red) 45%, transparent); color: var(--red); }
 .att-legend { margin: 0; font-size: 12px; color: var(--muted); }
-.att-legend b { color: var(--ink); font-weight: 620; }
-
-/* ============================================== 21. Calendario escolar
+.att-legend b { color: var(--ink); font-weight: 620; }/* ============================================== 21. Calendario escolar
    La rejilla se dimensiona sola: cada casilla es un cuadrado de 46 px como
    mucho, centrado en su columna. Así no se sale de la tarjeta ni se corta,
-   ni en pantallas de 320 px. */
-.cal-escuela { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+   ni en pantallas de 320 px. */.cal-escuela { display: flex; flex-direction: column; gap: 12px; padding: 14px;; max-width: 100%; }
 .cal-head { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; align-items: center; gap: 8px; }
 .cal-arrow {
   width: 40px; height: 40px;
@@ -1203,12 +1164,10 @@ body.examode .att { display: none !important; }
   line-height: 1.3;
   color: var(--muted);
 }
-.cal-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.cal-sum > div { min-width: 0; padding: 9px 6px; border-radius: 14px; background: var(--surface-2); text-align: center; }
+.cal-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }.cal-sum > div { min-width: 0; padding: 9px 6px; border-radius: 14px; background: var(--surface-2); text-align: center;; overflow: hidden; }
 .cal-sum b { display: block; font-size: 19px; font-weight: 660; letter-spacing: -0.04em; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .cal-sum small { display: block; margin-top: 3px; font-size: 10px; color: var(--muted); font-weight: 560; line-height: 1.2; }
-.cal-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.cal-actions .chip { min-height: 30px; font-size: 11.5px; padding: 5px 11px; }
+.cal-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }.cal-actions .chip { min-height: 30px; font-size: 11.5px; padding: 5px 11px;; max-width: 100%; white-space: normal; text-align: left; line-height: 1.25; }
 .cal-hoy { cursor: pointer; }
 .chip.is-vac {
   background: color-mix(in srgb, var(--amber) 13%, transparent);
@@ -1752,11 +1711,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .ico-simple button { font-size: 20px; }
 .live { font-variant-numeric: tabular-nums; }
 .curve, .spark { display: block; width: 100%; }
-.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-
-/* ---------------------------------------------- 34. Remates de composición */
-.hub-scroll > * { margin-block: 0 !important; }            /* el ritmo lo marca gap */
-.save-warn { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }/* ---------------------------------------------- 34. Remates de composición *//* el ritmo lo marca gap */
 .save-warn > span { flex: 1 1 100%; font-size: 13.5px; line-height: 1.45; }
 .save-warn > .btn { flex: 0 0 auto; }
 .save-warn.is-guest {
@@ -1769,7 +1724,6 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .today-row.is-live .t { color: var(--green); }
 .today-row.is-live .n { font-weight: 640; }
 .demo-banner .hint { margin: 4px 0 0; }
-.course-soon .v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* En un móvil estrecho, una tarjeta con texto y cifras no cabe a media anchura:
    las rejillas de contenido pasan a una sola columna (las de cifras siguen a dos). */
 @media (max-width: 460px) {
@@ -1846,12 +1800,9 @@ html.is-touch .week-pill { min-height: 52px; }
 html.is-touch .btn { min-height: 42px; }
 html.is-touch .icon-btn,
 html.is-touch .hub-round { min-width: 40px; min-height: 40px; }
-html.is-touch :is(.btn, .sheet-grid button, .cal-day, .cal-item, .week-pill):hover { transform: none; }
-
-/* --------------------------- 36. Las pieles siguen mandando donde les toca
+html.is-touch :is(.btn, .sheet-grid button, .cal-day, .cal-item, .week-pill):hover { transform: none; }/* --------------------------- 36. Las pieles siguen mandando donde les toca
    skins.css/themes.css se cargan antes: aquí se enganchan sus variables y sus
    ganchos al cromo nuevo, para que cambiar de piel siga notándose. */
-.phone { z-index: 1; }
 .hub-title-block h1,
 .cal-title b,
 .sec-head h2,
@@ -1926,7 +1877,6 @@ html[data-skin="redteam"] .hub-title-block h1::before { content: "⚠ "; color: 
 
 /* — Píldoras y etiquetas — */
 .badge { letter-spacing: 0.01em; }
-.k { line-height: 1.3; }
 .idle-note, .save-warn { border-radius: var(--radius-sm); }
 
 /* — Barra inferior: cristal más limpio y etiqueta legible — */
@@ -1935,13 +1885,9 @@ html[data-skin="redteam"] .hub-title-block h1::before { content: "⚠ "; color: 
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
-.hub-nav .nav-lbl { font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; }
 @supports not (backdrop-filter: blur(1px)) {
   .hub-nav, .hub-header { background: var(--bg); }
-}
-
-/* — Cabecera: sombra al separarse del contenido — */
-.hub-header { border-bottom: 1px solid transparent; }
+}/* — Cabecera: sombra al separarse del contenido — */
 body.scrolled .hub-header { border-bottom-color: var(--card-bd, var(--line)); }
 
 /* — Formularios: campos con relieve suave — */
@@ -2177,10 +2123,5 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 .chat-shortcuts { margin-top: 10px; }
 .chat-shortcuts .chip { text-align: left; white-space: normal; line-height: 1.3; }
 .chat-ia .card-head b { font-size: 15px; font-weight: 640; }
-.chat-ia .card-head .hint { margin-top: 2px; word-break: break-word; }
-
-/* — El calendario, a prueba de desbordes: nada se sale de su tarjeta — */
-.cal-escuela { max-width: 100%; }
-.cal-actions .chip { max-width: 100%; white-space: normal; text-align: left; line-height: 1.25; }
+.chat-ia .card-head .hint { margin-top: 2px; word-break: break-word; }/* — El calendario, a prueba de desbordes: nada se sale de su tarjeta — */
 .cal-sum small, .cal-key, .cal-title b, .cal-title small { overflow-wrap: anywhere; }
-.cal-sum > div { overflow: hidden; }

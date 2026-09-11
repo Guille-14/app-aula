@@ -18,16 +18,24 @@ CODE=$(node -e "
 ")
 echo "== Aula SMR $VERSION (versionCode $CODE) =="
 
-echo "-- 1/5  web que va dentro del APK"
-rm -rf www && mkdir -p www
-cp -r index.html manifest.webmanifest sw.js css js assets www/
+echo "-- 1/5  web que va dentro del APK (minificada)"
+# En el APK no hace falta el código legible: se minifica para que pese menos y se parsee
+# antes en un móvil modesto. Los nombres de archivo no cambian, así que el precache del
+# service worker y las rutas de index.html siguen valiendo tal cual.
+if ! node tools/minificar.mjs www; then
+  echo "La minificación falló; se empaqueta sin minificar (mejor eso que no tener APK)."
+  rm -rf www && mkdir -p www
+  cp -r index.html manifest.webmanifest sw.js css js assets www/
+fi
 
 echo "-- 2/5  proyecto Android (Capacitor)"
 if [ ! -d android ]; then
   npm install --no-audit --no-fund --save-dev @capacitor/cli@6 @capacitor/core@6 @capacitor/android@6
   npx cap add android
 fi
-npx cap copy android
+# `cap sync` (no `copy`): además de meter la web, enlaza los plugins instalados en
+# node_modules. Es lo que hace que las notificaciones programadas existan en el APK.
+npx cap sync android
 
 # Gradle necesita saber dónde está el SDK (en los runners viene en el entorno)
 SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"

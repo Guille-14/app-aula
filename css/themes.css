@@ -310,9 +310,7 @@
   --mark-from: #60a5fa; --mark-to: #1d4ed8; --mark-ink: #fff;
   --greeting: radial-gradient(circle at 80% 0, #1e3a8a, #07080e 55%);
   --heat-1: #1e3a8a; --heat-2: #60a5fa; --heat-3: #fde68a; --heat-4: #fff;
-}
-[data-skin="holocron"] .brand-mark { transform: rotate(45deg); border-radius: 4px; }
-[data-skin="holocron"] .brand-mark { font-size: 0; }
+}[data-skin="holocron"] .brand-mark { transform: rotate(45deg); border-radius: 4px;; font-size: 0; }
 
 /* Pixel */
 [data-skin="pixel"] {
@@ -341,4 +339,3 @@
   background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,.08) 2px 3px);
   mix-blend-mode: multiply;
 }
-

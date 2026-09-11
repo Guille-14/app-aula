@@ -2,6 +2,11 @@
 <html lang="es" class="dark" data-theme="dark" data-skin="hub">
 <head>
   <meta charset="UTF-8" />
+  <!-- CSP: la app es 100% local y no incrusta scripts. Se deja margen solo en lo que
+       de verdad necesita: estilos en línea (los usa el propio marcado), imágenes y audios
+       en data:/blob: (avatares y fotos guardadas en el móvil) y conexión http(s) para el
+       chat de Ollama, que apunta al servidor que configures tú. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http: https:; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#000000" />
@@ -11,33 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Aula SMR" />
   <title>Aula SMR</title>
-  <script>
-    /* Aplica el tema guardado antes del primer pintado para que no haya fogonazo. */
-    (function () {
-      try {
-        var raw = localStorage.getItem("aula.smr.v4");
-        if (!raw) return;
-        var st = (JSON.parse(raw) || {}).settings || {};
-        var html = document.documentElement;
-        if (st.skin) html.setAttribute("data-skin", st.skin);
-        var theme = st.uiTheme;
-        if (theme !== "light" && theme !== "dark") {
-          theme = ["minimal","azul","lima","coral","pergamino","gameboy","isla","kawaii","cafe","win95","azulgrana"].indexOf(st.skin) >= 0 ? "light" : "dark";
-        }
-        if (st.autoTheme) {
-          var h = new Date().getHours();
-          if ((h < 8 || h >= 21) && ["minimal","azul","lima","coral","pergamino","gameboy","isla","kawaii","cafe","win95","azulgrana"].indexOf(st.skin) >= 0) {
-            theme = "dark";
-          }
-        }
-        html.setAttribute("data-theme", theme);
-        html.classList.toggle("dark", theme === "dark");
-        html.classList.toggle("light", theme === "light");
-        var meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.content = theme === "dark" ? "#000000" : "#f9fafb";
-      } catch (e) {}
-    })();
-  </script>
+  <script src="js/tema.js"></script>
   <link rel="manifest" href="manifest.webmanifest" id="app-manifest" />
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" id="app-apple-icon" />
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png" id="app-favicon-192" />
@@ -224,8 +203,11 @@
   </main>
 
   <script src="js/media.js"></script>
+  <script src="js/avisos.js"></script>
   <script src="js/app.js"></script>
   <script src="js/studio.js"></script>
-  <script src="js/tools.js"></script>
+  <!-- js/tools.js NO se carga aquí: son ~56 KB que solo hacen falta si entras en
+       «Herramientas SMR». app.js lo pide en ese momento (sigue en el precache, así que
+       funciona igual sin conexión). -->
 </body>
 </html>

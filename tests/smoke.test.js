@@ -60,7 +60,7 @@ function boot(opts = {}) {
   if (opts.seed !== undefined) window.localStorage.setItem("aula.smr.v4", opts.seed);
   if (opts.extra) Object.entries(opts.extra).forEach(([k, v]) => window.localStorage.setItem(k, v));
 
-  for (const f of ["js/media.js", "js/app.js", "js/studio.js", "js/tools.js"]) {
+  for (const f of ["js/media.js", "js/avisos.js", "js/app.js", "js/studio.js", "js/tools.js"]) {
     try {
       window.eval(fs.readFileSync(path.join(ROOT, f), "utf8"));
     } catch (e) {
@@ -673,18 +673,24 @@ async function testAuditoria() {
       { id: "q2", subjectId: sid, title: "DHCP", content: "reparte IP por rango", pinned: false, attachments: [], versions: [], createdAt: 1, updatedAt: 3 },
     ];
     env.A.go("notes");
-    const buscar = (t) => {
-      const caja = env.doc.getElementById("note-query");
-      caja.value = t;
-      caja.dispatchEvent(new env.window.Event("input", { bubbles: true }));
-      return [...env.doc.querySelectorAll(".note-item h4")].map((h) => h.textContent).join(", ");
+    // La búsqueda va con retardo (180 ms) y solo repinta la lista.
+    const caja0 = env.doc.getElementById("note-query");
+    const lista0 = env.doc.getElementById("notes-list");
+    const textoLista = () => (env.doc.getElementById("notes-list") || {}).textContent || "";
+    const buscar = async (t, cumple) => {
+      caja0.value = t;
+      caja0.dispatchEvent(new env.window.Event("input", { bubbles: true }));
+      const listo = await hasta(() => cumple(textoLista()), 1500);
+      return { listo, txt: textoLista() };
     };
-    const uno = buscar("dhcp");
-    check(/DHCP/.test(uno) && !/Puertos/.test(uno), "buscador de apuntes: filtra por título (" + uno + ")");
-    const dos = buscar("rango");
-    check(/DHCP/.test(dos), "buscador de apuntes: también busca dentro del texto");
-    buscar("noexiste");
-    check(/Ninguna nota coincide/.test(env.doc.querySelector(".notes-list").textContent), "buscador de apuntes: avisa si no hay resultados");
+    const uno = await buscar("dhcp", (t) => /DHCP/.test(t) && !/Puertos/.test(t));
+    check(uno.listo, "buscador de apuntes: filtra por título (" + uno.txt.trim().replace(/\s+/g, " ").slice(0, 30) + ")");
+    const dos = await buscar("rango", (t) => /DHCP/.test(t) && !/Puertos/.test(t));
+    check(dos.listo, "buscador de apuntes: también busca dentro del texto");
+    const tres = await buscar("noexiste", (t) => /Ninguna nota coincide/.test(t));
+    check(tres.listo, "buscador de apuntes: avisa si no hay resultados");
+    check(env.doc.getElementById("note-query") === caja0, "buscador de apuntes: al filtrar no se repinta el campo (el cursor no se mueve)");
+    check(env.doc.getElementById("notes-list") === lista0, "buscador de apuntes: se repinta el contenido de la lista, no la vista entera");
   }
 
   // --- Las flechas del horario avanzan de semana (antes se quedaban en la siguiente) ---
@@ -919,6 +925,88 @@ async function testAuditoria() {
     check(/curso hasta el/.test(r.querySelector(".cal-title small").textContent), "calendario: el subtítulo cabe (" + r.querySelector(".cal-title small").textContent.trim() + ")");
   }
 
+  // --- v62: el service worker sirve el precache desde la caché, sin tocar la red ---
+  {
+    // Se ejecuta sw.js de verdad en un entorno falso (caché en memoria y fetch espía):
+    // es la única forma de comprobar que «cache-first» es cache-first y no una promesa.
+    const vm = require("vm");
+    const montarSW = (opciones = {}) => {
+      const almacen = new Map();
+      const eventos = {};
+      const cacheObj = {
+        async match(req) { return almacen.get(typeof req === "string" ? req : req.url) || undefined; },
+        async put(req, res) { almacen.set(typeof req === "string" ? req : req.url, res); },
+        async add(req) { almacen.set(new URL(req, "https://aula.test/sw.js").href, new Response("precache")); },
+        async addAll(lista) { lista.forEach((u) => almacen.set(new URL(u, "https://aula.test/sw.js").href, new Response("precache"))); },
+      };
+      const red = [];
+      const sandbox = {
+        console: { warn() {}, log() {}, error() {} },
+        location: { origin: "https://aula.test", href: "https://aula.test/sw.js" },
+        URL, Response, Request, Blob, Uint8Array, atob: (t) => Buffer.from(t, "base64").toString("binary"),
+        setTimeout: (fn) => fn(), clearTimeout() {},
+        caches: {
+          async open() { return cacheObj; },
+          // como el navegador: las rutas relativas se resuelven contra el ámbito del sw
+          async match(req) { return cacheObj.match(new URL(typeof req === "string" ? req : req.url, "https://aula.test/sw.js").href); },
+          async keys() { return ["aula-smr-v55"]; }, async delete() {},
+        },
+        self: {
+          location: { origin: "https://aula.test", href: "https://aula.test/sw.js" },
+          addEventListener: (t, fn) => { eventos[t] = fn; }, skipWaiting() {}, clients: { claim() {}, matchAll: async () => [] },
+        },
+        fetch: async (req) => {
+          if (opciones.sinRed) throw new Error("sin conexión");
+          red.push(typeof req === "string" ? req : req.url);
+          return new Response("de la red");
+        },
+      };
+      sandbox.self.self = sandbox.self;
+      sandbox.globalThis = sandbox;
+      vm.createContext(sandbox);
+      vm.runInContext(fs.readFileSync(path.join(ROOT, "sw.js"), "utf8"), sandbox, { filename: "sw.js" });
+      return { sandbox, eventos, almacen, red };
+    };
+    const pide = async (env, url, opciones) => {
+      let capturada = null;
+      await env.eventos.fetch({ request: new Request(url, opciones), respondWith: (p) => { capturada = p; } });
+      return capturada ? await capturada : null;
+    };
+
+    const env = montarSW();
+    let instalar = null;
+    env.eventos.install({ waitUntil: (p) => { instalar = p; } });
+    await instalar;
+    check(env.almacen.size > 30, "service worker: el install deja la app precacheada (" + env.almacen.size + " archivos)");
+    const guardadas = [...env.almacen.keys()];
+    check(guardadas.some((u) => u.endsWith("/index.html")) && guardadas.some((u) => u.endsWith("/js/app.js")) && guardadas.some((u) => u.endsWith("/css/ui.css")),
+      "service worker: el precache incluye la app shell (HTML, JS y CSS)");
+
+    const antes = env.red.length;
+    const cacheado = await pide(env, "https://aula.test/js/app.js");
+    check(await cacheado.text() === "precache" && env.red.length === antes,
+      "service worker: un archivo precacheado se sirve de caché SIN tocar la red (" + (env.red.length - antes) + " peticiones)");
+
+    const otro = await pide(env, "https://aula.test/datos-remotos.json");
+    check(!!otro && env.red.some((u) => u.endsWith("datos-remotos.json")), "service worker: lo que no está en el precache sí va a la red");
+
+    // Sin conexión y sin caché: un JS nunca se sustituye por HTML (eso rompía la app entera)
+    const sinRed = montarSW({ sinRed: true });
+    let r3 = null;
+    await sinRed.eventos.fetch({ request: new Request("https://aula.test/js/nuevo.js"), respondWith: (p) => { r3 = p; } });
+    const res3 = r3 ? await r3 : null;
+    check(!!res3 && res3.status === 504 && /javascript/.test(res3.headers.get("Content-Type") || ""),
+      "service worker: sin conexión un JS da 504 (nunca HTML en su lugar)");
+    // y una navegación sin caché sí cae al index.html (modo app)
+    const reqNav = new Request("https://aula.test/otra-ruta", { headers: { Accept: "text/html" } });
+    Object.defineProperty(reqNav, "mode", { value: "navigate" });
+    let r4 = null;
+    await sinRed.eventos.fetch({ request: reqNav, respondWith: (p) => { r4 = p; } });
+    const res4 = r4 ? await r4 : null;
+    check(!!res4 && /precache|html/i.test((res4.headers.get("Content-Type") || "") + (await res4.clone().text())),
+      "service worker: una navegación sin caché cae al index.html (modo app)");
+  }
+
   // --- v62: la versión de la web y la del paquete no se separan (rompía el APK) ---
   {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
@@ -970,6 +1058,124 @@ async function testAuditoria() {
     // Y el boletín de Gráficos ya no sale todo en «—»
     const filas = [...r.querySelectorAll("#view .card .row")].filter((f) => /Seguridad|Aplicaciones/.test(f.textContent));
     check(filas.length > 0 && filas.some((f) => /8\.0|6\.0/.test(f.textContent)), "boletín: cada módulo enseña su nota (antes salía siempre «—»)");
+  }
+
+  // --- v63: el precache no se queda corto, la CSP aguanta y las fotos no se cargan de más ---
+  {
+    const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+    const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
+    const precacheados = new Set((sw.match(/"\.\/[^"]+"/g) || []).map((x) => x.slice(3, -1)));
+    const referenciados = [...html.matchAll(/(?:src|href)="(?!https?:|data:|#|mailto:)([^"]+)"/g)].map((m) => m[1].replace(/^\.\//, ""));
+    const sinPrecache = referenciados.filter((r) => !precacheados.has(r));
+    check(sinPrecache.length === 0, "service worker: todo lo que carga index.html está en el precache (" + (sinPrecache.join(", ") || "todo") + ")");
+    check(precacheados.has("index.html") && precacheados.has("js/avisos.js") && precacheados.has("js/tema.js"),
+      "service worker: el precache lleva la app shell, el tema y los avisos");
+
+    // CSP: nada de scripts en línea (por eso el tema vive en js/tema.js)
+    const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || "";
+    check(/script-src 'self'/.test(csp), "CSP: solo se ejecuta JavaScript propio (script-src 'self')");
+    check(/object-src 'none'/.test(csp) && /base-uri 'none'/.test(csp) && /frame-src 'none'/.test(csp),
+      "CSP: sin objetos incrustados, sin base-uri y sin marcos externos");
+    check(/connect-src[^;]*http:/.test(csp), "CSP: se puede hablar con Ollama en la red local (connect-src http/https)");
+    const enLinea = [...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1].trim()).filter(Boolean);
+    check(enLinea.length === 0, "CSP: no queda ningún script en línea en index.html (" + enLinea.length + ")");
+
+    // Imágenes: todas cargan cuando hacen falta, no al abrir la vista
+    const app = fs.readFileSync(path.join(ROOT, "js", "app.js"), "utf8");
+    const imgs = [...app.matchAll(/<img\s[^>]*>/g)].map((m) => m[0]);
+    const sinPerezosa = imgs.filter((t) => !/loading="lazy"/.test(t) || !/decoding="async"/.test(t));
+    check(imgs.length > 0 && sinPerezosa.length === 0, "imágenes: todas las de las plantillas cargan en diferido (" + imgs.length + " vistas, " + sinPerezosa.length + " sin lazy/async)");
+
+    // El APK se empaqueta minificado y con los plugins enlazados
+    const build = fs.readFileSync(path.join(ROOT, "apk-overlay", "build.sh"), "utf8");
+    check(/node tools\/minificar\.mjs www/.test(build), "APK: la web se minifica antes de empaquetarla");
+    check(/cap sync android/.test(build), "APK: cap sync enlaza los plugins (notificaciones programadas)");
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+    check(!!pkg.scripts.minificar && !!pkg.devDependencies.terser, "minificado: hay script npm y minificador instalado");
+    check(!!pkg.devDependencies["@capacitor/local-notifications"], "APK: el plugin de notificaciones locales está en las dependencias");
+  }
+
+  // --- v63: los avisos que se programan en Android (clases, exámenes, resumen) ---
+  {
+    const env = boot();
+    ready(env.A);
+    const AV = env.window.AulaAvisos;
+    check(!!AV && typeof AV.plan === "function", "avisos: el módulo de avisos nativos se carga con la app");
+    check(AV && AV.disponible() === false, "avisos: en el navegador no se programa nada (solo dentro del APK)");
+
+    const datos = {
+      ajustes: { notifyClass: true, notifyCards: true, morningSummary: true, remindHour: 8 },
+      dias: [
+        { iso: "2026-09-14", lectivo: true, etiqueta: "", clases: [{ start: "15:15", subject: "IPE", room: "AULA 1NF3" }, { start: "16:05", subject: "DIG", room: "AULA 2" }] },
+        { iso: "2026-09-15", lectivo: false, etiqueta: "Festivo", clases: [] },
+        { iso: "2026-09-16", lectivo: true, etiqueta: "", clases: [{ start: "15:15", subject: "PRO", room: "AULA 1NF3" }] },
+      ],
+      examenes: [{ title: "Tema 3", subject: "Seguridad informática", date: "2026-09-17", time: "16:45", room: "AULA 1NF3" }],
+      fichas: 12,
+    };
+    const ahora = new Date("2026-09-14T08:30:00");
+    const avisos = AV.plan(datos, ahora);
+    const con = (tipo, texto) => avisos.filter((a) => a.tipo === tipo && (!texto || (a.titulo + " " + a.cuerpo).includes(texto)));
+    const hora = (a) => a.cuando.getHours() + ":" + String(a.cuando.getMinutes()).padStart(2, "0");
+
+    check(avisos.length === 9, "avisos: el plan de dos semanas sale completo (" + avisos.length + " avisos)");
+    check(con("clase", "IPE").length === 1 && hora(con("clase", "IPE")[0]) === "15:05",
+      "avisos: cada clase avisa 10 minutos antes (15:15 → 15:05)");
+    check(con("clase", "DIG").length === 1 && con("clase").every((a) => hora(a).endsWith("5") || hora(a).endsWith("55")),
+      "avisos: la segunda clase del día también avisa 10 minutos antes");
+    check(con("clase").every((a) => a.cuando.getDate() !== 15), "avisos: un día festivo no programa clases (ni aunque tuviera horario)");
+    const vispera = con("examen").find((a) => a.titulo === "Mañana examen");
+    const unaHora = con("examen").find((a) => a.titulo === "Examen en 1 hora");
+    check(!!vispera && vispera.cuando.getDate() === 16 && hora(vispera) === "18:00",
+      "avisos: el examen avisa la tarde anterior a las 18:00");
+    check(!!unaHora && unaHora.cuando.getDate() === 17 && hora(unaHora) === "15:45",
+      "avisos: el examen avisa una hora antes (16:45 → 15:45)");
+    check(con("resumen").length === 2 && hora(con("resumen")[0]) === "8:00",
+      "avisos: el resumen de la mañana sale a la hora configurada (8:00) y no repite el de hoy si ya pasó");
+    check(con("resumen").some((a) => a.cuerpo === "Festivo") && con("resumen").some((a) => /1 clase · primera a las 15:15/.test(a.cuerpo)),
+      "avisos: el resumen cuenta las clases del día o avisa del festivo");
+    check(con("fichas").length === 2 && con("fichas")[0].cuerpo === "12 para repasar", "avisos: las fichas pendientes se avisan a las 18:00");
+    check(new Set(avisos.map((a) => a.id)).size === avisos.length && avisos.every((a) => Number.isInteger(a.id) && a.id > 0),
+      "avisos: cada aviso tiene un id entero y único (Android lo exige)");
+    check(avisos.every((a) => a.cuando > ahora) && avisos.every((a, i, l) => i === 0 || l[i - 1].cuando <= a.cuando),
+      "avisos: no se programa nada pasado ni desordenado");
+
+    const sinClases = AV.plan({ ...datos, ajustes: { ...datos.ajustes, notifyClass: false } }, ahora);
+    check(sinClases.filter((a) => a.tipo === "clase").length === 0, "avisos: apagar «Clase (10 min antes)» quita todos los avisos de clase");
+    const sinFichas = AV.plan({ ...datos, fichas: 0 }, ahora);
+    check(sinFichas.filter((a) => a.tipo === "fichas").length === 0, "avisos: sin fichas pendientes no se molesta a nadie");
+    const sinResumen = AV.plan({ ...datos, ajustes: { ...datos.ajustes, morningSummary: false } }, ahora);
+    check(sinResumen.filter((a) => a.tipo === "resumen").length === 0, "avisos: el resumen de la mañana se puede apagar");
+
+    // El texto que ve el usuario en Ajustes
+    check(/Programados 9 avisos · el siguiente, hoy a las 15:05/.test(AV.resumen(datos, ahora)), "avisos: Ajustes cuenta los avisos y cuándo es el siguiente (" + AV.resumen(datos, ahora) + ")");
+    // Sin Capacitor no se llama a nada nativo (y no revienta)
+    const r = await AV.sincronizar({ datos });
+    check(r && r.nativo === false && r.programados === 0, "avisos: fuera del APK, sincronizar no programa (ni falla)");
+    // Con un Capacitor de mentira: se pide permiso, se limpia lo viejo y se programa el plan
+    const llamadas = [];
+    env.window.Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {
+        LocalNotifications: {
+          checkPermissions: async () => ({ display: "granted" }),
+          requestPermissions: async () => ({ display: "granted" }),
+          createChannel: async (c) => llamadas.push(["canal", c.id]),
+          getPending: async () => ({ notifications: [{ id: 7 }, { id: 8 }] }),
+          cancel: async (o) => llamadas.push(["cancelar", o.notifications.length]),
+          schedule: async (o) => llamadas.push(["programar", o.notifications.length, o.notifications[0].channelId]),
+        },
+      },
+    };
+    check(AV.disponible() === true, "avisos: dentro del APK el módulo se declara disponible");
+    const r2 = await AV.sincronizar({ datos, ahora });
+    check(r2.nativo === true && r2.permiso === true && r2.programados === 9, "avisos: se programan los 9 avisos del plan en Android");
+    check(JSON.stringify(llamadas) === JSON.stringify([["canal", "aula-smr"], ["cancelar", 2], ["programar", 9, "aula-smr"]]),
+      "avisos: antes de programar se cancelan los viejos y se prepara el canal de Android (" + JSON.stringify(llamadas) + ")");
+    // Y si el usuario dice que no al permiso, no se programa nada
+    env.window.Capacitor.Plugins.LocalNotifications.checkPermissions = async () => ({ display: "denied" });
+    const r3 = await AV.sincronizar({ pedirPermiso: false, datos, ahora });
+    check(r3.permiso === false && r3.programados === 0, "avisos: sin permiso de Android no se programa nada");
   }
 
   // --- v62: nada se sale de la tarjeta en un móvil estrecho (360 px) ---

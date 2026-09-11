@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v63:** cache-first de verdad en el Service Worker, minificado antes de publicar (y dentro del APK), avisos programados en Android, CSS sin duplicados y pantalla ancha (326 pruebas ✓).
 **Ronda v62-b:** los diálogos salían desplazados media pantalla por la herencia de `styles.css`; ahora son hojas con tirador, scroll y botones alcanzables (281 pruebas ✓).
 **Tamaño analizado:** 9.225 líneas / 454 KB (189 KB de `app.js`, 148 KB de CSS).
 
@@ -877,6 +878,134 @@ publican también `app_esperada` y `paquete` en `.datos-apk` para poder verlo en
 **Y una prueba más** (`npm test`): la versión de `js/app.js` tiene que coincidir con la del
 `package.json`, y la caché del service worker tiene que llevar ese número. Es justo el fallo que
 acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compilar el APK.
+
+---
+
+## Ronda v63 · Todo lo que pediste: arranque instantáneo, minificado y avisos de verdad
+
+Punto por punto, lo que decía tu lista (los 10) y qué se ha hecho con cada uno.
+
+### 1. Service Worker cache-first (carga instantánea, con red o sin ella)
+Antes el SW iba **network-first para todo**, incluida la app shell: cada apertura esperaba a la
+red (con wifi floja, segundos de pantalla en blanco). Ahora los archivos del precache se sirven
+**de la caché al instante, sin tocar la red**; solo lo que no está precacheado (tu Ollama, por
+ejemplo) sale a la red.
+
+La frescura se garantiza por el **ciclo de versión** del SW: cada publicación cambia `sw.js`
+(que contiene `CACHE`), el navegador instala el SW nuevo, llena la caché nueva (`aula-smr-v63`)
+y borra la vieja. Además el registro usa `updateViaCache: "none"` (que el `sw.js` no se sirva de
+una caché HTTP rancia) y al volver la app a primer plano se llama `update()`.
+
+**Verificado con navegador real**, contando peticiones al servidor:
+
+| recarga | peticiones al servidor |
+|---|---|
+| 1.ª tras instalar el SW | **0** |
+| 2.ª | 1 (`/sw.js`, la comprobación de versión) |
+| 3.ª | 1 (`/sw.js`) |
+
+Y **sin conexión**: la app abre entera (5 pestañas, «3 días para empezar», etc.) y si algún
+archivo faltara en la caché, un JS nunca se sustituye por HTML (da 504), que era el fallo que
+podía dejarte la app en blanco.
+
+### 2. Buscador de apuntes
+Cada tecla llamaba a `render()` **entero** (volviendo a pintar toda la vista y recolocando el
+cursor a mano). Ahora hay **debounce de 180 ms** y, cuando toca repintar, solo se reescribe la
+lista (`#notes-list.innerHTML`), no la vista. Medido: el nodo de la lista sigue siendo el mismo
+y el filtro se aplica tras el debounce.
+
+### 3. Minificado antes de publicar y de empaquetar el APK
+Nuevo `tools/minificar.mjs` (terser + clean-css + html-minifier-terser) y script `npm run
+minificar`. El paso 1/5 del `build.sh` ya no copia la web: la **minifica** (con respaldo: si
+fallara, empaqueta sin minificar antes que quedarse sin APK). Los nombres de archivo no cambian,
+así que el precache, las rutas y el comprobador del APK siguen valiendo.
+
+**527 KB → 389 KB (−26 %; gzip 145 KB → 115 KB)**. `app.js` 251→176 KB, `tools.js` 56→44 KB,
+`ui.css` 88→69 KB. El APK arranca con menos bytes que parsear, que en un móvil modesto se nota.
+
+### 4. `app.js`, que ya pasa de 4.500 líneas: carga bajo demanda
+`js/tools.js` (56 KB, lo más pesado después de `app.js`) **ya no se carga al abrir**: se pide la
+primera vez que entras en «Herramientas SMR» (cargador en `app.js`, sin `eval` ni scripts en
+línea). Sigue en el precache, así que funciona igual sin conexión. Verificado: al abrir Inicio no
+se pide; al entrar en Herramientas aparece la vista y las 37 tarjetas.
+
+### 5. Avatares y fotos
+`loading="lazy"` + `decoding="async"` en **todas** las plantillas de imagen (9 en `app.js`),
+incluidas las fotos de notas y el icono de la app. Comprobado en el navegador: **47 de 47
+imágenes** de Ajustes cargan en diferido. Hay prueba automática para que no se vuelva a colar
+ninguna.
+
+### 6. CSS solapado: una fuente de verdad por componente
+`styles.css` definía su propio `:root` (paleta crema/naranja que `ui.css` pisaba) y `.modal`,
+`.toast`, `.badge`, `.btn`, `.grid`… aparecían dos y tres veces. Nuevo `tools/limpiar-css.py`, que
+**demuestra** qué está muerto antes de borrarlo:
+
+* **reglas enteras** cuyo selector existe igual en `ui.css` con todas sus propiedades cubiertas
+  (59 reglas fuera: `.btn`, `.grid`, `.timer-bar`, `.btn-primary`, `.toast`…);
+* **declaraciones pisadas por especificidad** (`[data-theme="dark"]` pierde contra
+  `html[data-theme="dark"]`, gane quien gane por orden): 15 fuera;
+* **variables del `:root` viejo** que `ui.css` define siempre: 18 fuera (`--bg`, `--paper`,
+  `--ink`, `--accent`, `--shadow`…);
+* **reglas repetidas del mismo selector con propiedades disjuntas** unidas (11 fuera).
+
+Se quedan los **tokens** que te gustan y las variables que solo existen ahí (con otra piel
+`ui.css` no las define: `--font`, `--radius`, `--serif`, `--sidebar`). Total: **−6 % de CSS**
+(`ui.css` −0,3 KB, `styles.css` −4,8 KB, `skins.css` −0,4 KB).
+
+**Verificado sin margen de duda**: se cargan las dos versiones del CSS en la MISMA página (mismo
+DOM, mismo estado) y se comparan las capturas **píxel a píxel** en 22 vistas × 2 anchuras (360 y
+1280 px): **idénticas**. (En la primera tanda el detector cazó un fallo real que la vista no
+mostraba: se había borrado `--font`/`--radius` del `:root` viejo y, con una piel distinta de la
+de por defecto, la app perdía la tipografía; restaurado.) Y de paso apareció un fallo de la
+herramienta: aplicaba ediciones con índices desplazados y se **comió un `@media`**; corregido y
+comprobado que las 11 consultas de medios siguen en su sitio.
+
+### 7. CSP en `index.html`
+`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:
+blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http: https:;
+manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'`.
+
+Para poder prohibir el JavaScript incrustado, el script del tema (que tiene que correr antes del
+primer pintado) se ha movido a `js/tema.js`. Verificado en Chromium real: 7 vistas + menú «Más» +
+modal, **0 violaciones**, y un `<script>` en línea inyectado a mano **no se ejecuta**.
+
+### 8. Avisos que suenan con la app cerrada (Android)
+Nuevo `js/avisos.js` + plugin `@capacitor/local-notifications`. Dentro del APK, Android
+**programa** los avisos:
+
+* **10 minutos antes de cada clase** (solo días lectivos, con el horario real del día;
+  `notifyClass`);
+* **exámenes**: la tarde anterior a las 18:00 y una hora antes;
+* **resumen por la mañana** a la hora que tengas puesta (`morningSummary`, `remindHour`);
+* **fichas de repaso** pendientes a las 18:00 (`notifyCards`).
+
+Se programan 14 días vista, con canal propio, ids estables y tope de 64 avisos; al abrir la app
+(o al volver a primer plano) se recalcula el plan con los exámenes y el horario de ese momento
+(primero se cancelan los viejos). En Ajustes la tarjeta de Avisos explica la diferencia entre
+navegador y APK, el botón pide el permiso de Android y cuenta lo que ha quedado programado
+(«Programados 24 avisos · el que viene, hoy a las 15:05»). En el navegador todo sigue como antes
+(avisos con la app abierta).
+
+La parte del plan es una **función pura** (`plan(datos, ahora)`) y tiene **pruebas automáticas**
+(clase a las 15:15 → aviso a las 15:05, víspera de examen a las 18:00, nada en pasado, festivos
+sin clases, interruptores que apagan cada tipo…). El circuito nativo completo está probado con un
+Capacitor de mentira en el navegador: canal → cancelar viejos → programar 9 avisos, y con el
+permiso denegado no se programa nada. El `build.sh` pasa de `cap copy` a **`cap sync`**, que es lo
+que enlaza el plugin (comprobado generando el proyecto Android: `implementation
+project(':capacitor-local-notifications')`).
+
+### 9. Pantalla ancha (opcional, hecho)
+A partir de 1200 px el marco se ensancha a 1060 px y el Inicio se reparte: las 4 tarjetas del
+bento en una fila, la semana en 7 columnas y las listas a dos columnas. Comprobado a 1200, 1280 y
+1440 px en las vistas clave: **sin desbordes**; y a 360 px el marco sigue siendo el de móvil.
+
+### 10. Lo que ya estaba bien (y ahora está comprobado)
+Sintaxis de los 4 JS, escapado, sin `eval`/`document.write` y delegación de eventos: sigue igual,
+más **invariantes nuevas** en las pruebas (todo lo que carga `index.html` está en el precache,
+CSP sin scripts en línea, todas las imágenes en diferido, el APK minificado y con plugins).
+
+**Pruebas: 285 → 326 ✓** (41 nuevas). Todo lo de esta ronda está verificado o en el navegador
+real o ejecutando el código de verdad (`sw.js` dentro de una caché de mentira).
 
 ---
 
