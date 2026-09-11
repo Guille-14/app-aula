@@ -228,49 +228,49 @@
 
   const CATS = [
     ["Red", [
-      ["subnet", "#3b82f6", "net", "Subnetting IPv4", "CIDR, broadcast y hosts"],
-      ["vlsm", "#60a5fa", "calc", "Hosts → CIDR", "Prefijo mínimo para N equipos"],
-      ["ipbin", "#38bdf8", "hash", "IP ↔ binario", "Octetos en bits"],
-      ["ranges", "#22c55e", "globe", "Clases y rangos", "Privadas, APIPA, CGNAT…"],
-      ["wild", "#34d399", "net", "Wildcard ACL", "Máscara inversa Cisco"],
-      ["ipv6", "#2dd4bf", "globe", "IPv6", "Comprimir / expandir"],
-      ["vlan", "#14b8a6", "layers", "VLAN 802.1Q", "ID, rango y tag"],
-      ["t568", "#f59e0b", "bolt", "T568A / T568B", "Pinout RJ45"],
-      ["cable", "#fb923c", "bolt", "Directo vs cruzado", "Cuándo cada cable"],
-      ["wifi", "#a78bfa", "wifi", "Canales Wi‑Fi", "2,4 GHz y 5 GHz"],
-      ["dns", "#818cf8", "globe", "Registros DNS", "A, AAAA, MX, PTR…"],
-      ["osi", "#c084fc", "layers", "Modelo OSI", "7 capas y ejemplos"],
-      ["nat", "#f472b6", "net", "NAT / PAT", "Tipos y puertos"],
-      ["macbit", "#fb7185", "chip", "Dirección MAC", "Local/global, unicast"],
-      ["dhcp", "#38bdf8", "calc", "Ámbito DHCP", "Leases de un rango"],
+      ["subnet", "blue", "net", "Subnetting IPv4", "CIDR, broadcast y hosts"],
+      ["vlsm", "sky", "calc", "Hosts → CIDR", "Prefijo mínimo para N equipos"],
+      ["ipbin", "sky", "hash", "IP ↔ binario", "Octetos en bits"],
+      ["ranges", "green", "globe", "Clases y rangos", "Privadas, APIPA, CGNAT…"],
+      ["wild", "green", "net", "Wildcard ACL", "Máscara inversa Cisco"],
+      ["ipv6", "teal", "globe", "IPv6", "Comprimir / expandir"],
+      ["vlan", "teal", "layers", "VLAN 802.1Q", "ID, rango y tag"],
+      ["t568", "amber", "bolt", "T568A / T568B", "Pinout RJ45"],
+      ["cable", "orange", "bolt", "Directo vs cruzado", "Cuándo cada cable"],
+      ["wifi", "violet", "wifi", "Canales Wi‑Fi", "2,4 GHz y 5 GHz"],
+      ["dns", "violet", "globe", "Registros DNS", "A, AAAA, MX, PTR…"],
+      ["osi", "violet", "layers", "Modelo OSI", "7 capas y ejemplos"],
+      ["nat", "rose", "net", "NAT / PAT", "Tipos y puertos"],
+      ["macbit", "rose", "chip", "Dirección MAC", "Local/global, unicast"],
+      ["dhcp", "sky", "calc", "Ámbito DHCP", "Leases de un rango"],
     ]],
     ["Sistemas", [
-      ["chmod", "#a78bfa", "lock", "Permisos CHMOD", "Octal y simbólico"],
-      ["ntfs", "#818cf8", "lock", "NTFS vs compartir", "Permisos Windows"],
-      ["raid", "#f43f5e", "disk", "Calculadora RAID", "Capacidad 0/1/5/6/10"],
-      ["units", "#f43f5e", "disk", "GB vs GiB", "Base 10 vs Base 2"],
-      ["backup", "#38bdf8", "down", "Tiempo de copia", "GB a Mbps"],
-      ["fw", "#ef4444", "lock", "Cortafuegos", "iptables, UFW, firewalld"],
-      ["remote", "#f97316", "globe", "Acceso remoto", "SSH, RDP, VNC"],
-      ["systemd", "#94a3b8", "chip", "systemd", "Comandos de servicio"],
-      ["poe", "#eab308", "bolt", "PoE", "802.3af / at / bt"],
-      ["pass", "#f59e0b", "key", "Generador Pass", "AD y root"],
+      ["chmod", "violet", "lock", "Permisos CHMOD", "Octal y simbólico"],
+      ["ntfs", "violet", "lock", "NTFS vs compartir", "Permisos Windows"],
+      ["raid", "rose", "disk", "Calculadora RAID", "Capacidad 0/1/5/6/10"],
+      ["units", "rose", "disk", "GB vs GiB", "Base 10 vs Base 2"],
+      ["backup", "sky", "down", "Tiempo de copia", "GB a Mbps"],
+      ["fw", "red", "lock", "Cortafuegos", "iptables, UFW, firewalld"],
+      ["remote", "orange", "globe", "Acceso remoto", "SSH, RDP, VNC"],
+      ["systemd", "grey", "chip", "systemd", "Comandos de servicio"],
+      ["poe", "lime", "bolt", "PoE", "802.3af / at / bt"],
+      ["pass", "amber", "key", "Generador Pass", "AD y root"],
     ]],
     ["Consulta", [
-      ["ports", "#22c55e", "ports", "Puertos SMR", "TCP / UDP y protocolos"],
-      ["http", "#3b82f6", "globe", "Códigos HTTP", "200, 404, 502…"],
-      ["acro", "#14b8a6", "list", "Acrónimos SMR", "DHCP, VLAN, GPO…"],
-      ["sheet", "#34d399", "file", "Chuleta de comandos", "Linux, Cisco, PowerShell"],
-      ["ascii", "#64748b", "list", "Tabla ASCII", "32–126"],
+      ["ports", "green", "ports", "Puertos SMR", "TCP / UDP y protocolos"],
+      ["http", "blue", "globe", "Códigos HTTP", "200, 404, 502…"],
+      ["acro", "teal", "list", "Acrónimos SMR", "DHCP, VLAN, GPO…"],
+      ["sheet", "green", "file", "Chuleta de comandos", "Linux, Cisco, PowerShell"],
+      ["ascii", "grey", "list", "Tabla ASCII", "32–126"],
     ]],
     ["Utilidades", [
-      ["conv", "#eab308", "calc", "Bin / Dec / Hex", "Conversor de bases"],
-      ["hash", "#a3a3a3", "hash", "Hash SHA-256", "Huella local"],
-      ["b64", "#94a3b8", "file", "Base64", "Codificar / decodificar"],
-      ["json", "#38bdf8", "file", "JSON", "Indentar o compactar"],
-      ["regex", "#c084fc", "hash", "Regex", "Probar una expresión"],
-      ["uuid", "#818cf8", "chip", "UUID", "Identificador aleatorio"],
-      ["cron", "#f59e0b", "calc", "Cron", "Min hora día mes sem"],
+      ["conv", "lime", "calc", "Bin / Dec / Hex", "Conversor de bases"],
+      ["hash", "grey", "hash", "Hash SHA-256", "Huella local"],
+      ["b64", "grey", "file", "Base64", "Codificar / decodificar"],
+      ["json", "sky", "file", "JSON", "Indentar o compactar"],
+      ["regex", "violet", "hash", "Regex", "Probar una expresión"],
+      ["uuid", "violet", "chip", "UUID", "Identificador aleatorio"],
+      ["cron", "amber", "calc", "Cron", "Min hora día mes sem"],
     ]],
   ];
 
@@ -280,7 +280,7 @@
       ${CATS.map(([cat, cards]) => `
         <div class="tools-sec">${esc(cat)}</div>
         <div class="tools-grid">${cards.map(([id, color, ico, t, s]) => `<button class="tool-card${id === "sheet" ? " tool-wide" : ""}" data-action="tool-open" data-id="${id}">
-          <div class="tool-ico" style="color:${color}">${ICO[ico] || ICO.net}</div>
+          <div class="tool-ico" style="--c:var(--acc-${color}, var(--ink))">${ICO[ico] || ICO.net}</div>
           <b>${esc(t)}</b><small>${esc(s)}</small>
         </button>`).join("")}</div>
       `).join("")}
@@ -297,7 +297,7 @@
   }
   function cardBox(inner) { return `<div class="card">${inner}</div>`; }
   function liveBtn(action, label) {
-    return `<button class="btn btn-primary" data-action="${action}" style="width:100%">${label}</button>`;
+    return `<button class="btn btn-primary btn-block" data-action="${action}">${label}</button>`;
   }
 
   function panel() {
@@ -355,8 +355,8 @@
           <div class="info-row"><b>Trunk</b><span>Varias VLAN, con tag</span></div>
         </div>`)}`);
     if (id === "t568") {
-      const A = [["1", "#f5ee54", "Blanco/Verde"], ["2", "#22c55e", "Verde"], ["3", "#fef9c3", "Blanco/Naranja"], ["4", "#3b82f6", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "#f97316", "Naranja"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
-      const B = [["1", "#fef9c3", "Blanco/Naranja"], ["2", "#f97316", "Naranja"], ["3", "#f5ee54", "Blanco/Verde"], ["4", "#3b82f6", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "#22c55e", "Verde"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
+      const A = [["1", "#f5ee54", "Blanco/Verde"], ["2", "green", "Verde"], ["3", "#fef9c3", "Blanco/Naranja"], ["4", "blue", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "orange", "Naranja"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
+      const B = [["1", "#fef9c3", "Blanco/Naranja"], ["2", "orange", "Naranja"], ["3", "#f5ee54", "Blanco/Verde"], ["4", "blue", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "green", "Verde"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
       const col = (rows, title) => `<div class="card"><h3 style="text-transform:none;font-size:15px;color:var(--ink)">${title}</h3>
         <div class="pinout">${rows.map(([n, c, l]) => `<div><b>${n}</b><i class="pin-dot" style="background:${c}"></i>${l}</div>`).join("")}</div></div>`;
       return wrap("T568A / T568B", col(A, "T568A") + col(B, "T568B") + `<p class="hint">En Europa suele usarse T568B en los dos extremos (cable directo).</p>`);

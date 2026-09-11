@@ -742,13 +742,69 @@ async function testAuditoria() {
     check(r.querySelectorAll(".cal-sum > div").length === 3, "calendario: resumen con días de clase, festivos y vacaciones");
     check(r.querySelectorAll(".cal-key .k").length === 4, "calendario: leyenda de colores");
     check(celdas.some((c) => c.hasAttribute("data-date") && c.getAttribute("aria-label")), "calendario: cada día se puede pulsar y se anuncia");
-    const conMarcador = celdas.filter((c) => c.querySelector(".mk")).length;
-    check(conMarcador >= 1, "calendario: los festivos llevan su punto (" + conMarcador + ")");
+    const senalados = celdas.filter((c) => c.classList.contains("is-hol") || c.classList.contains("is-vac")).length;
+    check(senalados >= 1, "calendario: los festivos y las vacaciones del mes van marcados (" + senalados + ")");
+    check(celdas.every((c) => !c.querySelector(".mk")), "calendario: sin puntos sueltos bajo el número");
+    const fichas = [...r.querySelectorAll(".cal-item")];
+    check(fichas.length === senalados, "calendario: cada día sin clase tiene su fila en la lista (" + fichas.length + ")");
+    check(fichas.every((f) => f.querySelector(".cal-item-d b") && f.querySelector(".cal-item-t b")), "calendario: la lista enseña el día en grande y el motivo");
+    const pildoras = [...r.querySelectorAll(".cal-actions .chip")];
+    check(pildoras.length >= 1, "calendario: la cabecera lleva píldoras de contexto (" + pildoras.map((c) => c.textContent.trim()).join(" · ") + ")");
+    check(pildoras.some((c) => /^En \d+ d/.test(c.textContent.trim())), "calendario: se ve cuánto queda para lo próximo");
+    const atajoHoy = r.querySelector('[data-action="cal-today"]');
+    check(!atajoHoy || /Ver hoy/.test(atajoHoy.textContent), "calendario: el atajo a hoy, cuando sale, está bien puesto");
     act(env, "cal-day", { date: "2026-09-14" });
     const aviso = [...r.querySelectorAll(".toast")].map((t) => t.textContent).join(" ");
     check(/Semana del/.test(aviso), "calendario: pulsar un día lleva a su semana (" + aviso.trim() + ")");
     check(!!r.querySelector('[data-action="sch-view"][data-mode="week"].is-on'), "calendario: al elegir un día se vuelve a la vista de semana");
     check(env.errors.length === 0, "calendario: sin errores de consola (" + env.errors.slice(0, 1).join("") + ")");
+  }
+
+  // --- v60: ninguna vista enseña «undefined», «NaN» ni «[object Object]» ---
+  {
+    const env = boot();
+    ready(env.A);
+    const malos = [];
+    for (const v of VIEWS) {
+      try { env.A.go(v); } catch (e) { malos.push(v + ": " + e.message); continue; }
+      const html = env.doc.getElementById("view").innerHTML;
+      for (const feo of ["undefined", "NaN", "[object Object]", "&lt;undefined"]) {
+        if (html.includes(feo)) malos.push(v + " → " + feo);
+      }
+    }
+    check(malos.length === 0, "vistas: ninguna enseña huecos sin rellenar (" + malos.slice(0, 3).join(", ") + ")");
+  }
+
+  // --- v60: módulos como lista de tarjetas con su color y su nota ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.go("subjects");
+    const r = env.doc;
+    check(r.querySelectorAll(".mini-stats > div").length === 3, "módulos: cabecera con nº de módulos, horas y media");
+    const cuantas = env.A.state.subjects.length + 1;   // + la tarjeta de «nuevo módulo»
+    check(r.querySelectorAll(".subject-card .subj-code").length === cuantas, "módulos: cada tarjeta lleva su etiqueta de color");
+    check(r.querySelectorAll(".subject-card .subj-name").length === cuantas, "módulos: cada tarjeta lleva el nombre del módulo");
+    const notas = [...r.querySelectorAll(".subject-card .subj-nota")].map((n) => n.textContent.trim());
+    check(notas.every((n) => /^\d+\.[0-9]$/.test(n)), "módulos: la nota se enseña con un decimal (" + notas.slice(0, 3).join(", ") + ")");
+    check(!!r.querySelector(".subject-card.is-new"), "módulos: hay tarjeta para añadir uno nuevo");
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+    check(/\.subject-grid \{ display: flex;/.test(ui), "módulos: la rejilla es de una columna (los nombres largos respiran)");
+  }
+
+  // --- v60: píldoras de contexto y botón de guardar a mano en Ajustes ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.go("schedule");
+    const r = env.doc;
+    check(!!r.querySelector(".chips-row .chip"), "horario: la info va en píldoras, no en párrafos sueltos");
+    check(/Semana del/.test(r.getElementById("view").textContent), "horario: el título dice de qué semana habla");
+    env.A.go("settings");
+    check(!!r.querySelector(".set-actions .btn-primary"), "ajustes: guardar sigue a mano aunque bajes por la pantalla");
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+    check(/--acc-blue:/.test(ui) && (ui.match(/--acc-blue:/g) || []).length >= 2, "interfaz: la paleta de acentos está en claro y en oscuro");
+    check(/\.tool-ico \{[^}]*var\(--c/.test(ui), "herramientas: el icono se tiñe con su propio color");
   }
 
   // --- v59: una sola hoja de interfaz y el aviso de invitado en la cabecera ---

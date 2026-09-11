@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v59";
+  const APP_VERSION = "v60";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -798,6 +798,12 @@
     subjectId: "", cycles: 0, tick: null,
   };
 
+  // La cabecera se separa del contenido en cuanto se hace scroll
+  function marcarScroll() {
+    const v = $("#view");
+    document.body.classList.toggle("scrolled", !!v && v.scrollTop > 4);
+  }
+
   function applyTheme() {
     const id = state.settings.skin || "hub";
     document.documentElement.setAttribute("data-skin", id);
@@ -1171,6 +1177,7 @@
       cuerpo = errorViewHTML(view, err);
     }
     $("#view").innerHTML = bannersHTML() + cuerpo;
+    marcarScroll();
     if (view === "stats") drawStats();
     if (view === "timer") updateTimerUI();
     if (view === "schedule" && schView === "week") {
@@ -1507,7 +1514,7 @@
       ${onDots(6)}
       <h2>Avisos</h2>
       <p>Locales, en este móvil: aviso de clase y fichas de repaso. En Android hay que dar permiso.</p>
-      <button class="btn ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify" style="width:100%;margin-bottom:12px">
+      <button class="btn btn-block mb-12 ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify">
         ${st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos"}
       </button>
       ${chk("set-nclass", st.notifyClass !== false, "Clase (10 min antes)")}
@@ -1518,7 +1525,7 @@
       ${onDots(6)}
       <h2>Todo listo</h2>
       <p>Ya puedes usar Aula SMR. En Ajustes se cambia lo que quieras, y hay <b>Configurar de nuevo</b> si hace falta.</p>
-      <button class="btn btn-primary" data-action="on-finish" style="width:100%">Entrar a Inicio</button>
+      <button class="btn btn-primary btn-block" data-action="on-finish">Entrar a Inicio</button>
     </div>`;
   }
   function renderDashboard() {
@@ -1772,19 +1779,22 @@
     const tramos = OFFICIAL_SLOTS[plantilla] || OFFICIAL_SLOTS.curso;
     const rango = new Date(dias[0] + "T12:00:00").getDate() + " – " + fmtDate(dias[daysN - 1]);
     const auto = state.settings.timetableAuto !== false;
-    const avisoAuto = `<p class="hint sch-hint">Horario ${plantilla === "temporal" ? "temporal (septiembre y junio)" : "del curso"} ·
-      entrada a las <b>${tramos[0][0]}</b> · salida a las <b>${tramos[tramos.length - 1][1]}</b>${auto ? " <b>· se cambia solo</b>" : " · cambio automático desactivado"}.</p>`;
+    const avisoAuto = `<span class="chip is-quiet" title="El horario cambia solo en septiembre y junio">
+      ${plantilla === "temporal" ? "Horario temporal" : "Horario del curso"} · ${tramos[0][0]}–${tramos[tramos.length - 1][1]}${auto ? " · automático" : ""}</span>`;
+    const semanaActiva = dias.filter((iso) => dayInfo(iso).kind === "lectivo").length;
     const weekHtml = `
-      <div class="sec-head"><h3>Semana</h3>
-        <span style="display:flex;gap:6px;align-items:center">
+      <div class="sec-head"><h3>Semana del <span class="sem-rango">${rango}</span></h3>
+        <span class="sec-tools">
           <button class="btn btn-sm" data-action="sch-week" data-delta="-1" aria-label="Semana anterior">‹</button>
           <button class="btn btn-sm" data-action="sch-week" data-delta="0" ${schWeek === 0 ? "disabled" : ""}>Hoy</button>
           <button class="btn btn-sm" data-action="sch-week" data-delta="1" aria-label="Semana siguiente">›</button>
           <button class="hub-round" data-action="add-event" aria-label="Añadir clase">+</button>
         </span></div>
-      <p class="hint sch-hint">Semana del <b>${rango}</b>. Solo sale clase en los días que hay: si es festivo, vacaciones o el curso no ha empezado, el día va en blanco.</p>
-      ${avisoAuto}
-      ${state.settings.showAttendance !== false ? `<p class="att-legend">Hoy: <b>P</b> presente · <b>R</b> retraso · <b>F</b> falta</p>` : ""}
+      <div class="chips-row">
+        ${avisoAuto}
+        <span class="chip is-quiet">${semanaActiva === 1 ? "1 día de clase" : semanaActiva + " días de clase"}</span>
+        ${state.settings.showAttendance !== false ? `<span class="chip is-quiet att-legend">P presente · R retraso · F falta</span>` : ""}
+      </div>
       <div class="week-board">
         ${dias.map((iso, i) => {
           const info = dayInfo(iso);
@@ -1835,6 +1845,7 @@
     if (seSale) calendarCursor = new Date(cur);   // el cursor se queda dentro del curso
     const enElPrimero = cur.getTime() === minMes.getTime();
     const enElUltimo = cur.getTime() === maxMes.getTime();
+    const hoyISO = todayISO();
     const y = cur.getFullYear(), m = cur.getMonth();
     const startPad = weekdayMon0(new Date(y, m, 1));
     const daysIn = new Date(y, m + 1, 0).getDate();
@@ -1848,25 +1859,25 @@
       if (info.kind === "lectivo") lectivos++;
       if (info.kind === "festivo") { festivosMes++; sinClase.push({ iso, info }); }
       if (info.kind === "vacaciones") { vacasMes++; sinClase.push({ iso, info }); }
-      cells.push({ out: false, n: d, iso, info, hoy: iso === todayISO() });
+      cells.push({ out: false, n: d, iso, info, hoy: iso === hoyISO });
     }
     while (cells.length % 7) cells.push({ out: true });
     const claseDia = (k) => k === "festivo" ? "is-hol" : k === "vacaciones" ? "is-vac" : k === "lectivo" ? "is-lectivo" : k === "finde" ? "is-finde" : "is-fuera";
     const celdas = cells.map((c) => c.out
       ? `<div class="cal-day out" aria-hidden="true"></div>`
-      : `<button type="button" class="cal-day ${claseDia(c.info.kind)} ${c.hoy ? "today" : ""}" data-action="cal-day" data-date="${c.iso}"
-          aria-label="${esc(fmtDateLong(c.iso) + " · " + (c.info.kind === "lectivo" ? "día de clase" : c.info.label || "sin clase"))}">
-          <span class="n">${c.n}</span>
-          ${c.info.kind === "festivo" || c.info.kind === "vacaciones" ? `<span class="mk"></span>` : ""}
-        </button>`).join("");
-    // Si el mes toca unas vacaciones, se avisa arriba con el nombre y las fechas
+      : `<button type="button" class="cal-day ${claseDia(c.info.kind)}${c.hoy ? " is-hoy" : ""}" data-action="cal-day" data-date="${c.iso}"${c.hoy ? ' aria-current="date"' : ""}
+          aria-label="${esc(fmtDateLong(c.iso) + " · " + (c.info.kind === "lectivo" ? "día de clase" : c.info.label || "sin clase"))}"><span class="n">${c.n}</span></button>`).join("");
+    // Si el mes toca unas vacaciones, se avisa con una píldora (nombre y fechas)
     const mesIni = new Date(y, m, 1);
     const mesFin = new Date(y, m + 1, 0, 23, 59);
     const vacaMes = VACATIONS.find((v) => {
       const desde = new Date(v.from + "T12:00:00"), hasta = new Date(v.to + "T12:00:00");
       return desde <= mesFin && hasta >= mesIni;
     });
+    const enCurso = hoyISO >= COURSE.start && hoyISO <= COURSE.end;
+    const mesDeHoy = enCurso && hoyISO.slice(0, 7) === `${y}-${pad(m + 1)}`;
     const proximo = diasSinClase(1)[0];
+    const tipo = (k) => k === "vacaciones" ? "Vacaciones" : k === "festivo" ? "Festivo" : k === "finde" ? "Fin de semana" : k === "lectivo" ? "Clase" : "Sin curso";
     return `<div class="card cal-escuela">
       <div class="cal-head">
         <button class="cal-arrow" data-action="cal-prev" aria-label="Mes anterior" ${enElPrimero ? "disabled" : ""}>‹</button>
@@ -1877,11 +1888,15 @@
         <button class="cal-arrow" data-action="cal-next" aria-label="Mes siguiente" ${enElUltimo ? "disabled" : ""}>›</button>
       </div>
       <div class="cal-sum">
-        <div><b>${lectivos}</b><small>días de clase</small></div>
+        <div><b>${lectivos}</b><small>${lectivos === 1 ? "día de clase" : "días de clase"}</small></div>
         <div><b>${festivosMes}</b><small>${festivosMes === 1 ? "festivo" : "festivos"}</small></div>
-        <div><b>${vacasMes}</b><small>días de vacaciones</small></div>
+        <div><b>${vacasMes}</b><small>${vacasMes === 1 ? "día de vacaciones" : "días de vacaciones"}</small></div>
       </div>
-      ${vacaMes ? `<p class="cal-vaca"><span class="dot"></span>${esc(vacaMes.name)} · del ${esc(fmtDate(vacaMes.from))} al ${esc(fmtDate(vacaMes.to))}</p>` : ""}
+      <div class="cal-actions">
+        ${!mesDeHoy && enCurso ? `<button class="chip cal-hoy" data-action="cal-today">Ver hoy</button>` : ""}
+        ${vacaMes ? `<span class="chip is-vac">${esc(vacaMes.name)} · ${esc(fmtDate(vacaMes.from))} → ${esc(fmtDate(vacaMes.to))}</span>` : ""}
+        ${proximo ? `<span class="chip">En ${daysUntil(proximo.iso)} d · ${esc(proximo.info.label)}</span>` : ""}
+      </div>
       <div class="cal-weekdays">${DAYS_SHORT.map((d) => `<span class="dow">${d}</span>`).join("")}</div>
       <div class="cal">${celdas}</div>
       <p class="cal-key">
@@ -1892,14 +1907,14 @@
       </p>
     </div>
     <div class="card">
-      <div class="sec-head"><h3>Este mes no hay clase</h3>${sinClase.length ? `<span class="badge">${sinClase.length} ${sinClase.length === 1 ? "día" : "días"}</span>` : ""}</div>
+      <div class="sec-head"><h3>${sinClase.length ? "Festivos y vacaciones del mes" : "Este mes no hay clase"}</h3>${sinClase.length ? `<span class="badge">${sinClase.length} ${sinClase.length === 1 ? "día" : "días"}</span>` : ""}</div>
       ${sinClase.length
-        ? `<div class="cal-list">${sinClase.map((x) => `<button type="button" class="cal-item" data-action="cal-day" data-date="${x.iso}">
-            <span class="cal-item-d">${esc(fmtDate(x.iso))}</span>
-            <span class="cal-item-t"><b>${esc(x.info.label)}</b><small>${esc(x.info.kind === "vacaciones" ? "Vacaciones" : "Festivo")}</small></span>
+        ? `<div class="cal-list">${sinClase.map((x) => `<button type="button" class="cal-item ${x.info.kind === "vacaciones" ? "is-vac" : "is-hol"}" data-action="cal-day" data-date="${x.iso}">
+            <span class="cal-item-d"><b>${new Date(x.iso + "T12:00:00").getDate()}</b><small>${DAYS_SHORT[weekdayMon0(new Date(x.iso + "T12:00:00"))]}</small></span>
+            <span class="cal-item-t"><b>${esc(x.info.label)}</b><small>${new Date(x.iso + "T12:00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })} · ${tipo(x.info.kind)}</small></span>
             <span class="cal-item-x" aria-hidden="true">›</span>
           </button>`).join("")}</div>`
-        : `<p class="hint">Este mes no hay ningún festivo ni vacaciones: todo son días de clase.</p>`}
+        : `<p class="hint">Todo el mes son días de clase. Los días sueltos que caigan en fin de semana van marcados en gris.</p>`}
     </div>
     <div class="card">
       <div class="sec-head"><h3>Curso 2026-27</h3>${proximo ? `<span class="hint">lo próximo: ${esc(fmtDate(proximo.iso))}</span>` : ""}</div>
@@ -1960,7 +1975,7 @@
     setTimeout(() => Media() && Media().hydrate($("#view")), 0);
     return `<div class="notes-layout">
       <div>
-        <button class="btn btn-primary" data-action="add-note" style="width:100%;margin-bottom:10px">Nueva nota</button>
+        <button class="btn btn-primary btn-block mb-10" data-action="add-note">Nueva nota</button>
         <input class="note-search" id="note-query" placeholder="Buscar…" aria-label="Buscar en las notas" value="${esc(noteQuery)}" />
         <div class="filters">
           <button class="chip ${noteFilter === "all" ? "is-on" : ""}" data-action="note-filter" data-id="all">Todas</button>
@@ -2080,7 +2095,7 @@
     return `
       <h2 style="margin:0;font-size:24px;font-weight:900;letter-spacing:-.04em">Enfoque</h2>
       <div class="card timer-card">
-        <div class="seg" style="width:100%;max-width:260px;margin-bottom:8px">
+        <div class="seg seg-timer">
           <button data-action="timer-mode" data-mode="work" class="${timer.mode === "work" ? "is-on" : ""}">${state.settings.pomodoroWork}m</button>
           <button data-action="timer-mode" data-mode="break" class="${timer.mode === "break" ? "is-on" : ""}">${state.settings.pomodoroBreak}m</button>
           <button data-action="timer-mode" data-mode="long" class="${timer.mode === "long" ? "is-on" : ""}">${state.settings.pomodoroLong}m</button>
@@ -2090,7 +2105,7 @@
           <circle class="ring-fg" id="ring-fg" cx="60" cy="60" r="52"></circle></svg>
           <div class="ring-center"><div><div class="time" id="timer-display">25:00</div><div class="mode" id="timer-mode-lbl">Listo</div></div></div>
         </div>
-        <div class="field" style="width:100%"><label>Módulo</label>
+        <div class="field"><label>Módulo</label>
           <select id="timer-subject" aria-label="Módulo del bloque de estudio">${subjectOptions(timer.subjectId)}</select></div>
         <div class="timer-actions">
           <button class="btn btn-primary" data-action="timer-toggle" id="timer-toggle">INICIAR</button>
@@ -2164,15 +2179,36 @@
   }
 
   function renderSubjects() {
-    return `<div class="subject-grid">
-      ${state.subjects.map((s) => `<button class="subject-card" style="--c:${safeColor(s.color)}" data-action="open-subject" data-id="${s.id}">
-        <h4 style="margin:6px 0 0;font-size:18px">${esc(s.name)}</h4>
-        <p style="margin:8px 0 0;color:var(--muted);font-size:13px">${esc(s.teacher || "—")} · ${esc(s.room || "")}</p>
-        <p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)">${fmtHours(studiedFor(s.id))} · ${s.grade === "" || s.grade == null ? "sin nota" : "nota " + Number(s.grade).toFixed(1)}</p>
-      </button>`).join("")}
-      <button class="subject-card" data-action="add-subject" style="border-style:dashed;min-height:110px;display:grid;place-items:center;color:var(--muted)">+ Nuevo módulo</button>
+    const total = state.subjects.length;
+    const horas = state.subjects.reduce((a, s) => a + studiedFor(s.id), 0);
+    const notas = state.subjects.map((s) => (s.grade === "" || s.grade == null ? null : Number(s.grade))).filter((n) => n != null && isFinite(n));
+    const media = notas.length ? notas.reduce((a, b) => a + b, 0) / notas.length : null;
+    return `
+    <div class="mini-stats">
+      <div><b>${total}</b><small>${total === 1 ? "módulo" : "módulos"}</small></div>
+      <div><b>${fmtHours(horas)}</b><small>estudiado</small></div>
+      <div><b>${media == null ? "—" : media.toFixed(1)}</b><small>nota media</small></div>
+    </div>
+    <div class="subject-grid">
+      ${state.subjects.map((s) => {
+        const nota = s.grade === "" || s.grade == null ? null : Number(s.grade);
+        return `<button class="subject-card" style="--c:${safeColor(s.color)}" data-action="open-subject" data-id="${s.id}">
+          <span class="subj-code">${esc(String(s.key || s.name || "?").slice(0, 4))}</span>
+          <b class="subj-name">${esc(s.name)}</b>
+          ${nota == null ? "" : `<span class="subj-nota${nota >= 5 ? " is-ok" : " is-bad"}">${nota.toFixed(1)}</span>`}
+          <span class="subj-meta">${esc(s.teacher || "Sin profesor")}${s.room ? " · " + esc(s.room) : ""}</span>
+          <span class="subj-foot">${fmtHours(studiedFor(s.id))}${nota == null ? " · sin nota" : ""}</span>
+        </button>`;
+      }).join("")}
+      <button class="subject-card is-new" data-action="add-subject">
+        <span class="subj-code">+</span>
+        <b class="subj-name">Nuevo módulo</b>
+        <span class="subj-meta">Añade uno que no esté en la lista</span>
+        <span class="subj-foot">Nombre, profesor, aula y color</span>
+      </button>
     </div>`;
   }
+
 
   function renderSubject() {
     const s = subjectById(subjectFocus);
@@ -2197,7 +2233,7 @@
         <p class="hint" style="margin:10px 0 0">La nota es la del módulo, la que te sale al final. Con todas puestas, en <b>Calificaciones</b> ves la media del ciclo.</p>
       </div>
       ${notes.length ? `<div class="card" style="margin-top:16px"><h3>Apuntes de ${esc(s.name)}</h3>
-        ${notes.slice(0, 6).map((n) => `<button class="row" style="width:100%;text-align:left" data-action="open-note" data-id="${n.id}">
+        ${notes.slice(0, 6).map((n) => `<button class="row is-tap" data-action="open-note" data-id="${n.id}">
           <span class="dot" style="background:${safeColor(s.color)}"></span><div>${esc(n.title)}</div><div class="meta">${esc(fmtDate(localISO(new Date(n.updatedAt || Date.now()))))}</div>
         </button>`).join("")}</div>` : ""}
     `;
@@ -2245,12 +2281,12 @@
           <div style="flex:1"><b>${esc(x.s.name)}</b><div class="bar"><i style="width:${clamp((x.m / Math.max(mins, 1)) * 100, 0, 100)}%"></i></div></div>
           <div class="meta">${fmtHours(x.m)}</div>
         </div>`).join("") || `<div class="empty">Aún no hay sesiones esta semana. Dale al temporizador.</div>`}
-        ${best ? `<p style="color:var(--muted);font-size:13px;margin:12px 0 0">Mejor día: <strong>${fmtDate(best[0])}</strong> (${fmtHours(best[1])}).</p>` : ""}
+        ${best ? `<p class="hint best-day">Mejor día: <strong>${fmtDate(best[0])}</strong> (${fmtHours(best[1])}).</p>` : ""}
       </div>
       <div class="grid grid-2" style="margin-top:16px">
         <div class="card">
           <h3>Días sin clase</h3>
-          ${diasSinClase(3).map((x) => `<div class="row"><span class="dot" style="background:${x.info.kind === "vacaciones" ? "#f59e0b" : "#ef4444"}"></span>
+          ${diasSinClase(3).map((x) => `<div class="row"><span class="dot ${x.info.kind === "vacaciones" ? "is-vac" : "is-hol"}"></span>
             <div style="flex:1">${esc(x.info.label)}</div><div class="meta">${fmtDate(x.iso)}</div></div>`).join("") || `<div class="empty">Sin festivos a la vista.</div>`}
         </div>
         <div class="card">
@@ -2570,7 +2606,7 @@
         ${chk("set-showxp", st.showXp !== false, "Mostrar XP")}
         ${chk("set-showmedals", st.showMedals !== false, "Mostrar medallas")}
         ${chk("set-showweek", st.showWeekStrip !== false, "Tira de la semana en Inicio")}
-        <button class="btn ${st.uiTheme === "dark" ? "" : "btn-primary"}" type="button" data-action="toggle-theme" style="width:100%;margin-top:10px">
+        <button class="btn btn-block mt-10 ${st.uiTheme === "dark" ? "" : "btn-primary"}" type="button" data-action="toggle-theme">
           Cambiar a tema ${st.uiTheme === "dark" ? "claro" : "oscuro"}
         </button>
       </div>
@@ -2623,7 +2659,7 @@
       <p class="tools-kicker">Avisos</p>
       <div class="card">
         <p class="hint" style="margin-top:0">Son avisos del navegador: suenan con la app abierta o recién usada. iOS no permite programarlos con la app cerrada.</p>
-        <button class="btn ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify" style="width:100%">
+        <button class="btn btn-block ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify">
           ${st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos"}
         </button>
         ${chk("set-nclass", st.notifyClass !== false, "Clase (10 min antes)")}
@@ -2654,8 +2690,8 @@
           </div>
         </div>
         <div class="field"><label>Elige icono</label>${avatarPicksHTML("app")}</div>
-        <button class="btn btn-primary" type="button" data-action="apply-desktop-icon" style="width:100%">Aplicar en el escritorio</button>
-        <button class="btn" type="button" data-action="app-icon-from-profile" style="width:100%;margin-top:8px">Usar el del perfil</button>
+        <button class="btn btn-primary btn-block" type="button" data-action="apply-desktop-icon">Aplicar en el escritorio</button>
+        <button class="btn btn-block mt-8" type="button" data-action="app-icon-from-profile">Usar el del perfil</button>
       </div>
 
       <p class="tools-kicker">Widgets del escritorio</p>
@@ -2687,11 +2723,13 @@
       <div class="card">
         ${chk("set-confirm", st.confirmDelete !== false, "Preguntar antes de borrar")}
         ${chk("set-avatar", st.avatarOn !== false, "Foto de perfil en la cabecera")}
-        <button class="btn" data-action="undo" style="width:100%;margin-top:10px">Deshacer el último borrado</button>
+        <button class="btn btn-block mt-10" data-action="undo">Deshacer el último borrado</button>
       </div>
 
-      <button class="btn btn-primary" data-action="save-settings" style="width:100%;margin-top:16px">Guardar ajustes</button>
-      <button class="btn" data-action="redo-onboard" style="width:100%;margin-top:8px">Volver a configurar desde el principio</button>
+      <div class="set-actions">
+        <button class="btn btn-primary btn-block" data-action="save-settings">Guardar ajustes</button>
+        <button class="btn btn-block" data-action="redo-onboard">Volver a configurar desde el principio</button>
+      </div>
       <p class="footer-note">Aula SMR · datos solo en este dispositivo · ${APP_VERSION}</p>
     `;
   }
@@ -2711,7 +2749,7 @@
     `;
   }
   function subjectForm(s = {}) {
-    const color = s.color || "#3b82f6";
+    const color = s.color || "#5b9bff";
     return `
       <div class="field"><label>Nombre</label><input name="name" required value="${esc(s.name || "")}" /></div>
       <div class="form-row">
@@ -2720,7 +2758,7 @@
       </div>
       <div class="field"><label>Color</label>
         <input type="hidden" name="color" id="color-val" value="${esc(color)}" />
-        <div class="color-picks">${["#3b82f6","#22c55e","#f59e0b","#8b5cf6","#ef4444","#14b8a6","#ec4899","#64748b"].map((c) =>
+        <div class="color-picks">${["#5b9bff","#34d07f","#ffb020","#b08cff","#ff5c5c","#34d3c8","#ff7a9c","#9aa0aa"].map((c) =>
           `<button type="button" data-action="pick-color" data-color="${c}" style="background:${c}" class="${c === color ? "is-on" : ""}"></button>`).join("")}</div>
       </div>
     `;
@@ -3142,6 +3180,8 @@
     view = v;
     $("#overlay").hidden = true;
     closeCmd(); closeMore();
+    const scroller = $("#view");
+    if (scroller && anterior !== v) scroller.scrollTop = 0;
     // Con pushState, el gesto/botón "atrás" del móvil vuelve a la vista anterior
     try {
       const actual = (location.hash || "").replace("#", "");
@@ -3585,6 +3625,12 @@
     if (action === "cal-prev") { calendarCursor.setMonth(calendarCursor.getMonth() - 1); render(); }
     if (action === "cal-next") { calendarCursor.setMonth(calendarCursor.getMonth() + 1); render(); }
     if (action === "sch-week") { const d = Number(btn.dataset.delta) || 0; schWeek = d === 0 ? 0 : clamp(schWeek + d, -52, 52); render(); }
+    if (action === "cal-today") {
+      const d = new Date(todayISO() + "T12:00:00");
+      calendarCursor = new Date(d.getFullYear(), d.getMonth(), 1);
+      render();
+      toast("Hoy es " + fmtDateLong(todayISO()));
+    }
     if (action === "cal-day") {
       const dia = btn.dataset.date;
       exDate = dia;
@@ -3812,6 +3858,7 @@
 
   $("#overlay").addEventListener("click", () => { closeModal(); closeMore(); });
   $("#more-sheet")?.addEventListener("click", (e) => { if (e.target.id === "more-sheet") closeMore(); });
+  $("#view")?.addEventListener("scroll", marcarScroll, { passive: true });
   $("#capture")?.addEventListener("click", (e) => { if (e.target.id === "capture") closeCapture(); });
   $("#capture-text")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); captureToInbox(); }
@@ -4075,7 +4122,10 @@
       </div>
       <div class="sec-head"><h3>Por módulo</h3>
         <button class="hub-round" data-action="go" data-to="subjects" title="Ver módulos" aria-label="Ver módulos">+</button></div>
-      ${radarSVG()}
+      <div class="chart-wrap">
+        <div class="chart-head"><span class="k">Perfil de notas</span><small>cada eje, un módulo</small></div>
+        ${radarSVG()}
+      </div>
       ${boletin}
     `;
   }

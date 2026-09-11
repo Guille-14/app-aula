@@ -71,8 +71,24 @@ html[data-theme="dark"] {
   --amber: #ffb020;
   --blue: #5b9bff;
 
+  /* acentos de familia (iconos de herramientas, módulos, avisos) */
+  --acc-blue: #5b9bff;
+  --acc-sky: #4cc4ff;
+  --acc-teal: #34d3c8;
+  --acc-green: #34d07f;
+  --acc-lime: #9ed44f;
+  --acc-amber: #ffb020;
+  --acc-orange: #ff9256;
+  --acc-rose: #ff7a9c;
+  --acc-red: #ff5c5c;
+  --acc-violet: #b08cff;
+  --acc-grey: #9aa0aa;
+
   --shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 30px 70px rgba(0, 0, 0, 0.7);
+  --card-bd: rgba(255, 255, 255, 0.075);
+  --card-in: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --card-sh: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 
 /* D. Paleta clara */
@@ -106,8 +122,23 @@ html[data-theme="light"] {
   --amber: #a15c00;
   --blue: #1a73e8;
 
+  --acc-blue: #1a73e8;
+  --acc-sky: #0b7fc4;
+  --acc-teal: #0f8f86;
+  --acc-green: #0f9d58;
+  --acc-lime: #5c8a00;
+  --acc-amber: #a15c00;
+  --acc-orange: #c2621a;
+  --acc-rose: #c2185b;
+  --acc-red: #d93025;
+  --acc-violet: #6b3fd4;
+  --acc-grey: #6b6b72;
+
   --shadow: 0 14px 34px rgba(0, 0, 0, 0.10);
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.16);
+  --card-bd: rgba(16, 24, 40, 0.08);
+  --card-in: inset 0 1px 0 #ffffff;
+  --card-sh: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 24px -18px rgba(16, 24, 40, 0.30);
 }
 
 /* ------------------------------------------------- 2. Base y tipografía */
@@ -154,6 +185,7 @@ body.hub-body {
   display: flex;
   justify-content: center;
   align-items: center;
+  min-height: 100vh;
   min-height: 100dvh;
   padding: 0;
 }
@@ -161,6 +193,7 @@ body.hub-body {
   position: relative;
   width: 100%;
   max-width: var(--phone-w);
+  height: 100vh;
   height: 100dvh;
   background: var(--bg);
   display: flex;
@@ -171,6 +204,7 @@ body.hub-body {
 @media (min-width: 640px) {
   body.hub-body { padding: 18px; background: #050506; }
   .phone {
+    height: min(884px, calc(100vh - 36px));
     height: min(884px, calc(100dvh - 36px));
     border-radius: 40px;
     border: 1px solid var(--line);
@@ -804,11 +838,12 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
 .sheet-grid button:hover { background: var(--surface-2); border-color: var(--line-2); }
 .sheet-grid button:active { transform: scale(.975); }
 .sheet-ico {
-  width: 36px; height: 36px;
+  width: 38px; height: 38px;
   display: grid; place-items: center;
-  border-radius: 12px;
-  background: color-mix(in srgb, currentColor 14%, transparent);
-  color: var(--ink);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--c, var(--ink)) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--ink)) 24%, transparent);
+  color: var(--c, var(--ink));
 }
 .sheet-ico svg { width: 19px; height: 19px; }
 .sheet-txt { display: block; font-size: 13.5px; font-weight: 600; line-height: 1.3; }
@@ -1121,110 +1156,128 @@ body.examode .att { display: none !important; }
 .att-legend b { color: var(--ink); font-weight: 620; }
 
 /* ============================================== 21. Calendario escolar */
-.cal-escuela { display: flex; flex-direction: column; gap: 18px; }
-.cal-head { display: flex; align-items: center; gap: 12px; }
+.cal-escuela { display: flex; flex-direction: column; gap: 16px; }
+.cal-head { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; gap: 8px; }
 .cal-arrow {
-  flex: 0 0 38px;
-  width: 38px; height: 38px;
+  width: 40px; height: 40px;
   display: grid; place-items: center;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-2);
   color: var(--ink);
-  font-size: 18px;
-  line-height: 1;
+  font-size: 19px; line-height: 1;
   transition: background .18s ease, transform .14s ease, opacity .18s ease;
 }
-.cal-arrow:hover { background: color-mix(in srgb, var(--surface-2) 76%, var(--ink) 12%); }
+.cal-arrow:hover { background: color-mix(in srgb, var(--surface-2) 74%, var(--ink) 12%); }
 .cal-arrow:active { transform: scale(.92); }
-.cal-arrow:disabled { opacity: .3; pointer-events: none; }
-.cal-title { flex: 1; min-width: 0; text-align: center; }
-.cal-title b { display: block; font-size: 24px; font-weight: 680; letter-spacing: -0.035em; text-transform: capitalize; }
-.cal-title small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); font-weight: 500; }
-.cal-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.cal-sum > div {
-  padding: 12px 10px;
-  border-radius: 16px;
-  background: var(--surface-2);
-  text-align: center;
-}
-.cal-sum b { display: block; font-size: 21px; font-weight: 680; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
-.cal-sum small { display: block; margin-top: 3px; font-size: 10.5px; font-weight: 560; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
-.cal-vaca {
-  display: flex; align-items: center; gap: 9px;
-  margin: 0;
-  padding: 11px 14px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--amber) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
+.cal-arrow:disabled { opacity: .28; pointer-events: none; }
+.cal-title { min-width: 0; text-align: center; }
+.cal-title b { display: block; font-size: 20px; font-weight: 660; letter-spacing: -0.03em; text-transform: capitalize; }
+.cal-title small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cal-sum > div { padding: 12px 8px; border-radius: 16px; background: var(--surface-2); text-align: center; }
+.cal-sum b { display: block; font-size: 21px; font-weight: 660; letter-spacing: -0.04em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.cal-sum small { display: block; margin-top: 4px; font-size: 10.5px; color: var(--muted); font-weight: 560; }
+.cal-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cal-actions .chip { min-height: 32px; font-size: 12px; padding: 6px 12px; }
+.cal-hoy { cursor: pointer; }
+.chip.is-vac {
+  background: color-mix(in srgb, var(--amber) 13%, transparent);
+  border-color: color-mix(in srgb, var(--amber) 32%, transparent);
   color: var(--amber);
-  font-size: 12.5px;
-  font-weight: 560;
+  font-weight: 600;
 }
-.cal-vaca .dot { background: var(--amber); }
 .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .cal .dow, .cal-weekdays .dow {
   text-align: center;
-  font-size: 10.5px;
-  font-weight: 620;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 10.5px; font-weight: 620;
+  letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--muted-2);
-  padding-bottom: 6px;
 }
 .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.cal-day {
+button.cal-day {
   position: relative;
-  display: grid;
-  place-items: center;
+  display: grid; place-items: center;
   aspect-ratio: 1 / 1;
   padding: 0;
-  border: 0;
-  border-radius: 14px;
+  border: 0; border-radius: 50%;
   background: transparent;
   color: var(--ink);
-  font-family: inherit;
-  transition: background .16s ease, transform .12s ease;
+  font: inherit;
+  transition: background .16s ease, transform .14s ease, box-shadow .18s ease;
 }
-.cal-day .n { font-size: 14px; font-weight: 560; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-button.cal-day:active { transform: scale(.92); }
-.cal-day.out { visibility: hidden; }
-.cal-day.is-lectivo:hover { background: var(--surface-2); }
-.cal-day.is-finde { color: var(--muted-2); }
-.cal-day.is-finde:hover { background: var(--surface-2); }
-.cal-day.is-fuera { color: var(--muted-2); opacity: .5; }
-.cal-day.is-hol { color: var(--red); background: color-mix(in srgb, var(--red) 9%, transparent); }
-.cal-day.is-vac { color: var(--amber); background: color-mix(in srgb, var(--amber) 11%, transparent); }
-.cal-day.is-hol:hover, .cal-day.is-vac:hover { background: color-mix(in srgb, currentColor 16%, transparent); }
-.cal-day .mk { position: absolute; bottom: 6px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
-.cal-day.today { background: var(--invert); color: var(--invert-ink) !important; }
-.cal-day.today .n { font-weight: 680; }
-.cal-day.today .mk { background: var(--invert-ink); }
-.cal-key { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; font-size: 11.5px; color: var(--muted); }
-.cal-key .k { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: -4px; }
-.k-lectivo { background: var(--ink); }
+button.cal-day .n { font-size: 13.5px; font-weight: 560; font-variant-numeric: tabular-nums; }
+button.cal-day.out { visibility: hidden; }
+button.cal-day:active { transform: scale(.9); }
+button.cal-day.is-lectivo:hover, button.cal-day.is-finde:hover { background: var(--surface-2); }
+button.cal-day.is-finde { color: var(--muted-2); }
+button.cal-day.is-fuera { color: var(--muted-2); opacity: .4; }
+button.cal-day.is-hol {
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: color-mix(in srgb, var(--red) 86%, var(--ink));
+  font-weight: 620;
+}
+button.cal-day.is-hol:hover { background: color-mix(in srgb, var(--red) 26%, transparent); }
+button.cal-day.is-vac {
+  background: color-mix(in srgb, var(--amber) 16%, transparent);
+  color: color-mix(in srgb, var(--amber) 86%, var(--ink));
+  font-weight: 620;
+}
+button.cal-day.is-vac:hover { background: color-mix(in srgb, var(--amber) 26%, transparent); }
+button.cal-day.is-hoy {
+  background: var(--invert);
+  color: var(--invert-ink);
+  font-weight: 680;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+button.cal-day.is-hoy .n { font-weight: 700; }
+.cal-key {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 11.5px; color: var(--muted);
+}
+.cal-key .k { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.k-lectivo { background: color-mix(in srgb, var(--ink) 62%, transparent); }
 .k-hol { background: var(--red); }
 .k-vac { background: var(--amber); }
-.k-fuera { background: var(--line-2); }
+.k-fuera { background: color-mix(in srgb, var(--muted) 55%, transparent); }
 .cal-list { display: flex; flex-direction: column; }
 .cal-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: flex; align-items: center; gap: 12px;
   width: 100%;
-  padding: 12px 0;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  background: none;
-  color: inherit;
-  text-align: left;
+  padding: 10px 0;
+  border: 0; border-bottom: 1px solid var(--line);
+  background: none; color: inherit; text-align: left;
 }
 .cal-item:last-child { border-bottom: 0; }
-.cal-item-d { flex: 0 0 46px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-weight: 560; }
+.cal-item:active { opacity: .68; }
+.cal-item-d {
+  flex: 0 0 44px; height: 44px;
+  display: grid; place-content: center; text-align: center;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.cal-item-d b { display: block; font-size: 16px; font-weight: 660; line-height: 1; font-variant-numeric: tabular-nums; }
+.cal-item-d small { display: block; margin-top: 3px; font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.cal-item.is-hol .cal-item-d { background: color-mix(in srgb, var(--red) 14%, transparent); }
+.cal-item.is-hol .cal-item-d b { color: var(--red); }
+.cal-item.is-vac .cal-item-d { background: color-mix(in srgb, var(--amber) 14%, transparent); }
+.cal-item.is-vac .cal-item-d b { color: var(--amber); }
 .cal-item-t { flex: 1; min-width: 0; }
 .cal-item-t b { display: block; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-item-t small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
 .cal-item-x { color: var(--muted-2); font-size: 16px; }
+.cal-vaca {
+  display: flex; align-items: center; gap: 9px;
+  margin: 0; padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
+  color: var(--amber);
+  font-size: 12.5px; font-weight: 560;
+}
+.cal-vaca .dot { background: var(--amber); }
 .cal-ev { display: none; }
 
 /* ============================================================= 22. Apuntes */
@@ -1304,23 +1357,61 @@ button.cal-day:active { transform: scale(.92); }
 .flip-face.back { transform: rotateY(180deg); color: var(--green); background: color-mix(in srgb, var(--green) 8%, var(--surface-2)); }
 
 /* =========================================================== 24. Módulos */
-.subject-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.subject-grid { display: flex; flex-direction: column; gap: 10px; }
 .subject-card {
   position: relative;
-  display: block;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  grid-template-areas: "code name nota" "code meta meta" "code foot foot";
+  align-items: center;
+  gap: 2px 12px;
+  padding: 14px;
   text-align: left;
-  padding: 16px;
-  min-height: 118px;
-  overflow: hidden;
   color: inherit;
+  overflow: hidden;
   transition: background .18s ease, transform .14s ease, border-color .18s ease;
 }
+.subject-card::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--c, var(--ink)) 15%, transparent), transparent 62%);
+  pointer-events: none;
+}
+.subject-card > * { position: relative; }
 .subject-card:hover { background: var(--surface-2); }
-.subject-card:active { transform: scale(.985); }
-.subject-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--c, var(--line-2)); }
-.subject-card h4 { margin: 6px 0 0; font-size: 15.5px; font-weight: 640; letter-spacing: -0.02em; }
-.subject-card p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
-@media (max-width: 360px) { .subject-grid { grid-template-columns: 1fr; } }
+.subj-code {
+  grid-area: code;
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--c, var(--ink)) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--ink)) 26%, transparent);
+  color: color-mix(in srgb, var(--c, var(--ink)) 90%, var(--ink));
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.subj-name { grid-area: name; font-size: 15.5px; font-weight: 640; letter-spacing: -0.02em; line-height: 1.25; }
+.subj-nota { grid-area: nota; font-size: 18px; font-weight: 680; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.subj-nota.is-bad { color: var(--red); }
+.subj-meta { grid-area: meta; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subj-foot { grid-area: foot; color: var(--muted-2); font-size: 11.5px; font-weight: 560; }
+.subject-card.is-new { border-style: dashed; }
+.subject-card.is-new .subj-code { background: var(--surface-2); box-shadow: none; color: var(--muted); font-size: 20px; }
+.subject-card.is-new .subj-name { color: var(--ink-2); }
+.mini-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mini-stats > div {
+  padding: 12px 8px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  text-align: center;
+}
+.mini-stats b {
+  display: block;
+  font-size: 21px; font-weight: 660;
+  letter-spacing: -0.04em; line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.mini-stats small { display: block; margin-top: 4px; font-size: 10.5px; color: var(--muted); font-weight: 560; }
 
 /* =========================================================== 25. Ajustes */
 .profile-card { display: flex; align-items: center; gap: 14px; text-align: left; }
@@ -1436,7 +1527,15 @@ button.cal-day:active { transform: scale(.92); }
 .tool-card:hover { background: var(--surface-2); }
 .tool-card:active { transform: scale(.985); }
 .tool-wide { grid-column: 1 / -1; min-height: 0; flex-direction: row; align-items: center; gap: 12px; }
-.tool-ico { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; background: var(--surface-2); font-size: 18px; }
+.tool-ico {
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--c, var(--ink)) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--ink)) 26%, transparent);
+  color: var(--c, var(--ink));
+  font-size: 18px;
+}
 .tool-title { font-size: 14.5px; font-weight: 620; letter-spacing: -0.015em; }
 .tool-card small { color: var(--muted); font-size: 12px; margin-top: auto; }
 .tool-pass { font-family: var(--mono); font-size: 18px; font-weight: 620; letter-spacing: 0.02em; word-break: break-all; }
@@ -1692,7 +1791,7 @@ img.is-loading {
 }
 
 /* En táctil: más área para pulsar y sin hover pegajoso */
-html.is-touch .cal-day { min-height: 46px; }
+html.is-touch button.cal-day { min-height: 46px; }
 html.is-touch .week-pill { min-height: 52px; }
 html.is-touch .btn { min-height: 42px; }
 html.is-touch .icon-btn,
@@ -1726,3 +1825,179 @@ html[data-skin="arcade"] .hub-title-block h1 { text-transform: uppercase; letter
 html[data-skin="shonen"] .hub-title-block h1 { text-transform: uppercase; font-style: italic; letter-spacing: -.04em; }
 html[data-skin="pixel"] .hub-title-block h1 { text-transform: uppercase; letter-spacing: .04em; }
 html[data-skin="redteam"] .hub-title-block h1::before { content: "⚠ "; color: var(--red); }
+
+/* ================================ 37. Pulido de interfaz (ronda v60) ===== */
+
+/* — Superficies: hairline + brillo mínimo, sin sombras duras — */
+.card, .stat, .subject-card, .editor, .timer-card, .review-item, .ach-card,
+.tool-card, .wa-day, .widget-card, .sch-day, .live-card, .study-rec, .bento-card {
+  border-color: var(--card-bd, var(--line));
+  box-shadow: var(--card-in, none), var(--card-sh, 0 0 #0000);
+}
+.hub-nav { border-top-color: var(--card-bd, var(--line)); }
+.hub-round, .icon-btn, .cal-arrow { box-shadow: var(--card-in, none); }
+
+/* — Jerarquía de texto: titulares equilibrados y números alineados — */
+.card h3, .sec-head h2, .live-card h2, .sheet-card h3, .empty b, .modal-card h2 {
+  text-wrap: balance;
+}
+.hint, .empty p, .cal-item-t small, .sheet-hint, .row small.hint, .info-row span {
+  text-wrap: pretty;
+}
+.stat .v, .bento-card .num, .course-soon .v, .xp-head b, .kv b, .tool-out b,
+.ring-center .time, .cal-sum b, .cal-item-d b, .timer-bar strong, .live-time,
+.sch-n, .today-row .t, .soon-row .t, .att-legend b { font-variant-numeric: tabular-nums; }
+
+/* — Foco visible (ratón no, teclado sí) — */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: 2px;
+}
+.field :is(input, select, textarea):focus-visible,
+.cmdk-box input:focus-visible { outline-offset: 0; }
+::placeholder { color: var(--muted-2); opacity: 1; }
+
+/* — Todo lo pulsable responde igual — */
+:where(.chip, .icon-btn, .cal-item, .today-row, .soon-row, .tool-back, .note-item,
+.review-item, .ach-card, .kv, .sheet-grid button, .bento-card, .week-pill,
+.seg button, .hub-round, .hub-nav button, .subject-card, .row.is-tap, .tabs .btn):active {
+  transform: scale(.985);
+}
+.cal-day:active, .icon-btn:active, .hub-round:active { transform: scale(.92); }
+
+/* — Estados vacíos: menos caja vacía y más intención — */
+.empty {
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  border-color: var(--line-2);
+  padding: 28px 18px;
+}
+.empty b { font-size: 15.5px; letter-spacing: -0.02em; }
+.empty .btn { margin-top: 2px; }
+
+/* — Píldoras y etiquetas — */
+.badge { letter-spacing: 0.01em; }
+.k { line-height: 1.3; }
+.idle-note, .save-warn { border-radius: var(--radius-sm); }
+
+/* — Barra inferior: cristal más limpio y etiqueta legible — */
+.hub-nav {
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+.hub-nav .nav-lbl { font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; }
+@supports not (backdrop-filter: blur(1px)) {
+  .hub-nav, .hub-header { background: var(--bg); }
+}
+
+/* — Cabecera: sombra al separarse del contenido — */
+.hub-header { border-bottom: 1px solid transparent; }
+body.scrolled .hub-header { border-bottom-color: var(--card-bd, var(--line)); }
+
+/* — Formularios: campos con relieve suave — */
+.field :is(input, select, textarea) { box-shadow: var(--card-in, none); }
+
+/* — Mensajes del sistema (avisos, toasts) — */
+.toast { box-shadow: var(--card-in, none), 0 12px 30px rgba(0, 0, 0, .45); }
+html[data-theme="light"] .toast { box-shadow: var(--card-sh, none), 0 12px 30px rgba(16, 24, 40, .12); }
+
+/* — Detalles finos — */
+.best-day { margin: 12px 0 0; }
+.row.is-tap { cursor: pointer; }
+.subj-accent { box-shadow: inset 3px 0 0 var(--c, transparent); }
+@media (prefers-reduced-transparency: reduce) {
+  .hub-nav, .hub-header { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (min-width: 640px) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* — Utilidades de composición (sustituyen a los estilos en línea) — */
+.btn-block { width: 100%; }
+.mt-8 { margin-top: 8px; }
+.mt-10 { margin-top: 10px; }
+.mt-16 { margin-top: 16px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-10 { margin-bottom: 10px; }
+.mb-12 { margin-bottom: 12px; }
+button.row { width: 100%; text-align: left; }
+.seg-timer { width: 100%; max-width: 260px; margin-bottom: 8px; }
+.set-actions {
+  position: sticky;
+  bottom: calc(var(--nav-h) + 6px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--card-bd, var(--line));
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: var(--card-in, none), var(--card-sh, 0 0 #0000);
+}
+@media (prefers-reduced-transparency: reduce) { .set-actions { background: var(--bg); backdrop-filter: none; } }
+
+/* — Cabeceras de vista con herramientas a la derecha — */
+.sec-tools { display: flex; align-items: center; gap: 6px; }
+.chips-row { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 0; }
+.chip.is-quiet {
+  background: var(--surface);
+  border-color: var(--card-bd, var(--line));
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 560;
+  min-height: 30px;
+  padding: 6px 11px;
+}
+.chip.att-legend { cursor: default; }
+.sec-head h3 .sem-rango { color: var(--muted); font-weight: 600; }
+.chart-wrap {
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--card-bd, var(--line));
+  background: var(--surface);
+  box-shadow: var(--card-in, none), var(--card-sh, 0 0 #0000);
+}
+.chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.chart-head small { color: var(--muted); font-size: 11.5px; }
+
+/* — Agenda: tablero de mes compacto (celdas cuadradas, no círculos) — */
+.cal-dense { gap: 5px; }
+.cal-dense .dow {
+  text-align: center;
+  font-size: 10px; font-weight: 620;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted-2);
+}
+.cal-dense .cal-day {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 1px;
+  aspect-ratio: 1 / 1;
+  padding: 2px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 11.5px;
+  overflow: hidden;
+}
+.cal-dense .cal-day .n { font-size: 11.5px; font-weight: 600; line-height: 1; }
+.cal-dense .cal-day.out { background: transparent; color: var(--muted-2); opacity: .6; }
+.cal-dense .cal-day.today { background: var(--invert); color: var(--invert-ink); }
+.cal-dense .cal-ev {
+  display: block;
+  max-width: 100%;
+  font-size: 8.5px; line-height: 1.15;
+  color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cal-dense .cal-day.today .cal-ev { color: color-mix(in srgb, var(--invert-ink) 72%, transparent); }
+.cal-dense .cal-tag { font-size: 8.5px; font-weight: 620; color: var(--amber); }
+.cal-dense .cal-day.today .cal-tag { color: var(--invert-ink); }
+.wa-day .wa-ev.is-soft { opacity: .6; }
+.agenda-head { display: flex; flex-direction: column; gap: 10px; }
+.agenda-head .hub-seg { align-self: flex-start; }

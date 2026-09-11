@@ -5,6 +5,7 @@
 **Commit auditado:** `e820a3a` (rama `arena/01a0902e-app-aula`, creada desde `main`).
 **Ronda v58:** commits `6c70d71` y `de1c2a1` (auditoría línea a línea + arreglos, 182 pruebas ✓).
 **Ronda v59:** rediseño de interfaz (una sola hoja `css/ui.css`, calendario escolar nuevo, 198 pruebas ✓).
+**Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Tamaño analizado:** 9.225 líneas / 454 KB (189 KB de `app.js`, 148 KB de CSS).
 
 ## Cómo se ha auditado (para que te fíes de los hallazgos)
@@ -708,6 +709,39 @@ Y **9 funciones muertas** en `app.js`: `maybeNotify`, `greeting`, `medals`, `hea
 ### Lo que no se pudo verificar (honestidad)
 
 No hay navegador headless disponible en este entorno (`playwright`, `chromium` y Electron están bloqueados), así que **no hay capturas**: la revisión visual se ha hecho leyendo el HTML que genera cada vista en jsdom y comprobando que cada clase pintada tiene su regla. Los 20 temas y las 14 pieles se han revisado por código, no a ojo.
+
+---
+
+## Ronda v60 · Segunda pasada de interfaz (pulido fino)
+
+Segunda vuelta sobre la interfaz, ya con la hoja única de la v59 como base. Cambios, todos verificables en el código:
+
+### Calendario escolar, otra vez a mejor
+
+Se rehízo el marcado y el CSS (la v59 dejaba puntos bajo los números y una lista con fechas en texto monoespaciado):
+
+- **Días redondos** del tamaño justo para el dedo (≈47 px) en rejilla de semanas completas; los fines de semana bajan a gris, los días fuera del curso al 40 % de opacidad.
+- **Hoy** es un círculo blanco con el número en negro y `aria-current="date"`; festivos en rojo suave y vacaciones en ámbar suave, sin puntos sueltos.
+- **Píldoras de contexto** bajo el resumen: vacaciones que tocan el mes, el próximo día sin clase («En 21 d · …») y un atajo **Ver hoy** cuando estás en otro mes.
+- La lista de días sin clase pasa a filas con **ficha de día** (número grande + día de la semana) teñida según el tipo, motivo y fecha completa; la leyenda usa los mismos colores que la rejilla.
+- Se retiró el marcado antiguo (`.mk`, `.cal-vaca`) y el test se actualizó a la estructura nueva.
+
+### Lo que se veía peor, arreglado
+
+1. **Módulos (antes «Módulos», dos columnas).** Con nombres como «Itinerario personal para la empleabilidad II» en 170 px de ancho el texto se rompía en cinco líneas. Ahora es una **lista de una columna** con ficha de color (código del módulo), nombre, profesor/aula, horas y **nota** a la derecha; la tarjeta de «nuevo módulo» va con borde punteado. Arriba, cabecera con módulos, horas estudiadas y nota media.
+2. **Herramientas y panel «Más».** Los 40 iconos llevaban colores fijos de la paleta vieja (21 valores distintos, algunos casi fluorescentes). Ahora cada icono usa `--c` con una **paleta de 11 acentos por tema** (`--acc-*`), con valores propios en claro y en oscuro, y el icono va sobre un fondo del propio color.
+3. **Horario.** Tres párrafos de texto al principio (`sch-hint`, aviso de plantilla y leyenda de asistencia) pasan a **una fila de píldoras** (horario temporal + tramo, días de clase de la semana, leyenda P/R/F) y el rango de fechas sube al título.
+4. **Notas.** El radar iba suelto entre secciones como un dibujo sin contexto: ahora va en una caja con título y pie («cada eje, un módulo»).
+5. **Agenda.** Era la vista menos acabada (encabezados `<h3>` sueltos y párrafos sin tarjeta): ahora tiene **tarjetas** para bloques, huecos libres y resumen en tres cifras; el tablero de mes usa celdas cuadradas propias (`.cal-dense`) en vez de heredar los círculos del calendario escolar, con el nombre del módulo dentro.
+6. **Ajustes.** El botón **Guardar** vivía al final de una pantalla de 21 KB: ahora va en una barra fija (`.set-actions`, `position: sticky`) que flota por encima de la barra inferior.
+7. **Cromo general.** Superficies con hairline y brillo interior (`--card-in`, `--card-bd`, `--card-sh`) en vez de sombras duras; **foco visible** para teclado (`:focus-visible`); numeraciones tabulares en todos los marcadores; titulares con `text-wrap: balance`; estados vacíos con fondo suave; respuesta táctil homogénea en todo lo pulsable; cabecera con hairline al hacer scroll; `prefers-reduced-transparency` respetado; y respaldos `100vh` antes de cada `100dvh`.
+8. **Utilidades en vez de estilos en línea.** Se sustituyeron 16 `style="width:100%;margin…"` por clases (`.btn-block`, `.mt-8`, `.mb-12`, `.seg-timer`, `button.row`…), de forma que la interfaz se puede reajustar sin tocar JS.
+
+### Comprobaciones
+
+- `npm test` → **216 comprobaciones ✓** (12 nuevas: ninguna vista enseña `undefined`/`NaN`/`[object Object]` —se recorren las 20—, estructura de las tarjetas de módulos, píldoras del horario, barra de guardar de ajustes y paleta de acentos en claro y oscuro).
+- Sin IDs duplicados, sin botones sin nombre accesible y sin colores hexadecimales en línea en ninguna de las 21 vistas (comprobado sobre el DOM real con jsdom).
+- Sigue sin haber navegador headless en este entorno: la revisión es por código, DOM y comprobaciones automáticas, no por capturas.
 
 ---
 

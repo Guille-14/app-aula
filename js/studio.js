@@ -88,20 +88,31 @@
       const bloques = bloquesDe(cursor);
       const gaps = info.kind === "lectivo" ? freeSlots(weekdayMon0(d), cursor) : [];
       const mins = horasDeEstudio(cursor);
-      body = `<p class="hint">${esc(todayStudyHint())}</p>
-        ${info.kind !== "lectivo" ? `<p class="idle-note">${esc(info.label)} · no hay clase</p>` : ""}
-        <h3>Bloques de estudio</h3>
-        ${bloques.length ? bloques.map((e) => `<div class="row">
-            <span class="dot" style="background:${subjectColor(e.subjectId)}"></span>
-            <div style="flex:1"><b>${esc(subjectName(e.subjectId))}</b>${e.room ? `<small class="hint">${esc(e.room)}</small>` : ""}</div>
-            <div class="meta">${e.start}–${e.end}</div>
-          </div>`).join("") : `<div class="empty">Ninguno. Reserva un hueco libre y aparece aquí.</div>`}
-        <h3>Huecos libres</h3>
-        ${gaps.length ? gaps.map((g) => `<div class="row"><div>${g.start}–${g.end}</div>
-            <button class="btn btn-sm" data-action="slot-study" data-day="${weekdayMon0(d)}" data-start="${g.start}" data-end="${g.end}">Reservar estudio</button></div>`).join("")
-          : `<p class="muted">${info.kind === "lectivo" ? "Día lleno o sin huecos claros." : "Hoy no hay clases: todo el día es tuyo."}</p>`}
-        <h3>Estudiado hoy</h3>
-        <p><b>${mins}</b> min ${mins ? "· ¡bien!" : "· todavía nada"}</p>`;
+      body = `
+        <div class="mini-stats">
+          <div><b>${bloques.length}</b><small>${bloques.length === 1 ? "bloque" : "bloques"}</small></div>
+          <div><b>${gaps.length}</b><small>huecos libres</small></div>
+          <div><b>${mins}</b><small>min hoy</small></div>
+        </div>
+        <div class="card">
+          <p class="hint">${esc(todayStudyHint())}</p>
+          ${info.kind !== "lectivo" ? `<p class="idle-note">${esc(info.label)} · no hay clase</p>` : ""}
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Bloques de estudio</h3>${bloques.length ? `<span class="badge">${bloques.length}</span>` : ""}</div>
+          ${bloques.length ? bloques.map((e) => `<div class="row">
+              <span class="dot" style="background:${subjectColor(e.subjectId)}"></span>
+              <div style="flex:1"><b>${esc(subjectName(e.subjectId))}</b>${e.room ? `<small class="hint">${esc(e.room)}</small>` : ""}</div>
+              <div class="meta">${e.start}–${e.end}</div>
+            </div>`).join("") : `<div class="empty"><b>Nada reservado</b><p>Pilla un hueco libre y dale a «Reservar».</p></div>`}
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Huecos libres</h3></div>
+          ${gaps.length ? gaps.map((g) => `<div class="row"><div class="meta">${g.start}–${g.end}</div>
+              <div style="flex:1"></div>
+              <button class="btn btn-sm" data-action="slot-study" data-day="${weekdayMon0(d)}" data-start="${g.start}" data-end="${g.end}">Reservar</button></div>`).join("")
+            : `<p class="muted">${info.kind === "lectivo" ? "Día lleno o sin huecos claros." : "Hoy no hay clases: todo el día es tuyo."}</p>`}
+        </div>`;
     } else if (tab === "semana") {
       const mon = new Date(d); mon.setDate(d.getDate() - weekdayMon0(d));
       const days = Array.from({ length: 7 }, (_, i) => {
@@ -113,8 +124,8 @@
         const bloques = bloquesDe(iso);
         return `<div class="wa-day ${iso === hoyISO() ? "today" : ""} ${inf.kind === "lectivo" ? "" : "off"}">
           <b>${DAYS()[i] || DAYS_SHORT()[i]} ${iso.slice(8)}</b>
-          ${inf.kind === "lectivo" ? bloques.map((e) => `<div class="wa-ev">${e.start} ${esc(subjectName(e.subjectId))}</div>`).join("") || `<div class="wa-ev" style="opacity:.6">Libre</div>`
-            : `<div class="wa-ev" style="opacity:.7">${esc(inf.short)}</div>`}
+          ${inf.kind === "lectivo" ? bloques.map((e) => `<div class="wa-ev">${e.start} ${esc(subjectName(e.subjectId))}</div>`).join("") || `<div class="wa-ev is-soft">Libre</div>`
+            : `<div class="wa-ev is-soft">${esc(inf.short)}</div>`}
           <small>${horasDeEstudio(iso) ? horasDeEstudio(iso) + " min" : ""}</small>
         </div>`;
       }).join("")}</div>
@@ -127,24 +138,32 @@
       const cells = [];
       for (let i = 0; i < pad0; i++) cells.push("");
       for (let n = 1; n <= dim; n++) cells.push(`${y}-${pad(m + 1)}-${pad(n)}`);
-      body = `<div class="cal">${DAYS_SHORT().map((x) => `<div class="dow">${x}</div>`).join("")}
+      body = `<div class="cal cal-dense">${DAYS_SHORT().map((x) => `<div class="dow">${x}</div>`).join("")}
         ${cells.map((iso) => {
           if (!iso) return `<div class="cal-day out"></div>`;
           const inf = dayInfo(iso);
           const bloques = bloquesDe(iso);
           return `<div class="cal-day ${iso === hoyISO() ? "today" : ""} ${inf.kind === "lectivo" ? "" : "out"}" data-action="agenda-day" data-date="${iso}" title="${esc(inf.label || "Clase")}">
             <div class="n">${Number(iso.slice(8))}</div>
-            ${bloques.length ? `<div class="cal-ev" style="display:block">${esc(subjectName(bloques[0].subjectId)).slice(0, 12)}</div>` : ""}
-            ${inf.kind === "festivo" || inf.kind === "vacaciones" ? `<small style="font-size:9px">${esc(inf.short)}</small>` : ""}
+            ${bloques.length ? `<div class="cal-ev">${esc(subjectName(bloques[0].subjectId))}</div>` : ""}
+            ${inf.kind === "festivo" || inf.kind === "vacaciones" ? `<small class="cal-tag">${esc(inf.short)}</small>` : ""}
           </div>`;
         }).join("")}</div>`;
     }
-    return `<div class="tabs">
-      ${tabs.map(([id, l]) => `<button data-action="agenda-tab" data-tab="${id}" class="${tab === id ? "is-on" : ""}">${l}</button>`).join("")}
-      <button class="btn btn-sm" data-action="agenda-prev">‹</button>
-      <button class="btn btn-sm" data-action="agenda-next">›</button>
+    return `<div class="agenda-head">
+      <div class="hub-seg">
+        ${tabs.map(([id, l]) => `<button data-action="agenda-tab" data-tab="${id}" class="${tab === id ? "is-on" : ""}">${l}</button>`).join("")}
+      </div>
+      <div class="chips-row">
+        <span class="chip is-quiet">${esc(fmtDateLong(cursor))}</span>
+        ${info.kind === "lectivo" ? "" : `<span class="chip">${esc(info.label)}</span>`}
+      </div>
     </div>
-    <p><strong>${fmtDateLong(cursor)}</strong>${info.kind === "lectivo" ? "" : " · " + esc(info.label)}</p>
+    <div class="sec-head"><h3>Tu plan</h3>
+      <span class="sec-tools">
+        <button class="btn btn-sm" data-action="agenda-prev" aria-label="Anterior">‹</button>
+        <button class="btn btn-sm" data-action="agenda-next" aria-label="Siguiente">›</button>
+      </span></div>
     ${body}`;
   }
 
@@ -649,7 +668,7 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     if (action === "note-hist") {
       const n = st().notes.find((x) => x.id === Aula.noteId) || st().notes[0];
       if (!n || !(n.versions || []).length) { toast("Sin versiones"); return; }
-      openModal("Versiones", n.versions.map((v, i) => `<button class="btn" style="width:100%;margin:4px 0" data-action="note-ver" data-i="${i}">${new Date(v.t).toLocaleString("es-ES")} · ${(v.title || "").slice(0, 40)}</button>`).join(""), { confirm: "Cerrar", onSubmit: closeModal });
+      openModal("Versiones", n.versions.map((v, i) => `<button class="btn btn-block mb-8 mt-8" data-action="note-ver" data-i="${i}">${new Date(v.t).toLocaleString("es-ES")} · ${(v.title || "").slice(0, 40)}</button>`).join(""), { confirm: "Cerrar", onSubmit: closeModal });
     }
     if (action === "note-ver") {
       const n = st().notes.find((x) => x.id === Aula.noteId) || st().notes[0];
