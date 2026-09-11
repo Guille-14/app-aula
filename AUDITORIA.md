@@ -1004,8 +1004,16 @@ Sintaxis de los 4 JS, escapado, sin `eval`/`document.write` y delegación de eve
 más **invariantes nuevas** en las pruebas (todo lo que carga `index.html` está en el precache,
 CSP sin scripts en línea, todas las imágenes en diferido, el APK minificado y con plugins).
 
-**Pruebas: 285 → 326 ✓** (41 nuevas). Todo lo de esta ronda está verificado o en el navegador
+**Pruebas: 285 → 327 ✓** (42 nuevas). Todo lo de esta ronda está verificado o en el navegador
 real o ejecutando el código de verdad (`sw.js` dentro de una caché de mentira).
+
+**Y el APK se prueba antes de publicarlo.** El primer intento de publicar la v63 compiló bien
+pero la comprobación tumbó la entrega: terser convierte `const APP_VERSION = "v63"` en
+`APP_VERSION:"v63"` y el comprobador exigía el «=». Dos arreglos para que no se repita:
+el comprobador acepta las dos formas (y la compara entera, con la «v»), y las comprobaciones de
+formato del CSS ya no dependen de espacios ni saltos de línea. Además, `npm run test:min` pasa
+**la batería completa sobre la web minificada** (misma copia en un directorio temporal, con
+`AULA_ROOT`), y el CI lo ejecuta antes de empaquetar: 327 ✓ igual que en el código de casa.
 
 ---
 

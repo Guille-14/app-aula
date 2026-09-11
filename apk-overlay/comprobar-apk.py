@@ -94,7 +94,7 @@ except KeyError:
 # Ojo con la forma: la web va minificada dentro del APK y terser convierte
 # `const APP_VERSION = "v63"` en `APP_VERSION:"v63"` al meterlo en el objeto de la API.
 # Aceptamos las dos (y de paso cualquier espacio raro).
-m = re.search(r'APP_VERSION\s*[:=]\s*"v([\d.]+)"', app)
+m = re.search(r'APP_VERSION\s*[:=]\s*"(v[\d.]+)"', app)
 ver = m.group(1) if m else ""
 # La versión de la web tiene que ser la misma que la del paquete (de ahí sale la etiqueta
 # de la Release): v62 y v62.1 valen para 62.0.1, pero «v61» dentro de un APK 62 ya no.

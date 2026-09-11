@@ -1039,14 +1039,20 @@ async function testAuditoria() {
     const c = sw.match(/CACHE\s*=\s*"([^"]+)"/);
     check(!!c && c[1].includes(pkg.split(".")[0]), "versión: la caché del service worker lleva el número de la versión (" + (c ? c[1] : "?") + ")");
     const comp = fs.readFileSync(path.join(ROOT, "apk-overlay", "comprobar-apk.py"), "utf8");
-    check(/v\(\[\\d\.\]\+\)/.test(comp), "versión: el comprobador del APK acepta versiones con puntos (v63.0.1)");
+        let aceptaPuntos = false;
+    try { aceptaPuntos = ((('APP_VERSION = "v63.0.1"'.match(new RegExp((comp.match(/re\.search\(r'([^']*APP_VERSION[^']*)'/) || [])[1] || "$^") ) || [])[1]) === "v63.0.1"); } catch { aceptaPuntos = false; }
+    check(aceptaPuntos, "versión: el comprobador del APK acepta versiones con puntos (v63.0.1)");
     const patron = (comp.match(/re\.search\(r'([^']*APP_VERSION[^']*)'/) || [])[1] || "";
     let valeMinificado = false;
+    let versiones = [];
     try {
       const re = new RegExp(patron);
-      valeMinificado = re.test('APP_VERSION = "v63"') && re.test('APP_VERSION:"v63"');
+      // Las dos formas (código de casa y minificado) tienen que dar la MISMA versión, y con la
+      // «v» delante: el comprobador la compara con "v" + la del package.json.
+      versiones = ['APP_VERSION = "v63"', 'APP_VERSION:"v63"'].map((t) => ((t.match(re) || [])[1] || ""));
+      valeMinificado = versiones[0] === "v63" && versiones[0] === versiones[1];
     } catch { valeMinificado = false; }
-    check(valeMinificado, "versión: el comprobador del APK entiende la web minificada (el «=» se convierte en «:») [" + patron + "]");
+    check(valeMinificado, "versión: el comprobador del APK entiende la web minificada (el «=» se convierte en «:») [" + patron + " → " + versiones.join(" / ") + "]");
   }
 
   // --- v62: los diálogos no heredan la caja centrada de la hoja antigua ---
