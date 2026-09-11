@@ -919,6 +919,23 @@ async function testAuditoria() {
     check(/curso hasta el/.test(r.querySelector(".cal-title small").textContent), "calendario: el subtítulo cabe (" + r.querySelector(".cal-title small").textContent.trim() + ")");
   }
 
+  // --- v62: los diálogos no heredan la caja centrada de la hoja antigua ---
+  {
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const regla = ui.slice(ui.indexOf(".modal {"), ui.indexOf(".modal-card {"));
+    check(/transform: none/.test(regla), "modal: se resetea el translate(-50%,-50%) de styles.css (la hoja salía media caja fuera)");
+    check(/width: auto/.test(regla) && /max-height: none/.test(regla), "modal: se resetean el ancho y el alto máximos de la hoja antigua");
+
+    const env = boot();
+    ready(env.A);
+    act(env, "add-exam", {});
+    const r = env.doc;
+    check(!!r.querySelector("#modal-root .modal > .modal-card"), "modal: el contenido va dentro de la hoja (.modal-card), no suelto en el flex");
+    check(!!r.querySelector("#modal-root .modal-card h2"), "modal: el título vive dentro de la hoja");
+    check(!!r.querySelector("#modal-form .modal-actions"), "modal: los botones siguen dentro del formulario");
+    check(env.errors.length === 0, "modal: sin errores de consola (" + env.errors.slice(0, 1).join("") + ")");
+  }
+
   // --- v62: la media no cuenta los módulos sin nota, y el boletín enseña la nota ---
   {
     const env = boot();
@@ -946,7 +963,7 @@ async function testAuditoria() {
     const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
     check(!/grid-template-columns: (1fr|repeat\(\d+, 1fr\))/.test(ui), "anchura: ninguna rejilla usa 1fr a pelo (todas con minmax(0, 1fr))");
     check(/\.filters \{[^}]*flex-wrap: wrap/.test(ui), "anchura: los filtros de módulos envuelven en varias líneas");
-    check(/\.chips-row \.chip \{[^}]*overflow-wrap: anywhere/.test(ui), "anchura: un chip largo se parte dentro de su píldora");
+    check(/\.chips-row \.chip, \.filters \.chip[^{]*\{[^}]*overflow-wrap: anywhere/.test(ui), "anchura: un chip largo (módulo, fecha, aviso) se parte dentro de su píldora");
     check(/\.row > div, \.row b, \.row small \{[^}]*min-width: 0/.test(ui), "anchura: el texto de una fila puede encogerse (no empuja las cifras)");
     check(/@media \(max-width: 460px\)[\s\S]{0,200}\.stack-phone/.test(ui), "anchura: las tarjetas de texto se apilan en pantallas estrechas");
 

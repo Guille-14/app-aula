@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v62";
+  const APP_VERSION = "v62.1";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -876,15 +876,19 @@
   function openModal(title, bodyHTML, { confirm = "Guardar", onSubmit, danger = false } = {}) {
     if (!focoPrevio) focoPrevio = document.activeElement;
     $("#overlay").hidden = false;
+    // La hoja del modal va dentro de .modal-card: sin ella los campos se amontonaban
+    // en la fila del flex (título a la izquierda, formulario a la derecha y recortado).
     $("#modal-root").innerHTML = `
       <div class="modal" role="dialog" aria-modal="true">
-        <h2>${esc(title)}</h2>
-        <form id="modal-form">${bodyHTML}
-          <div class="modal-actions">
-            <button type="button" class="btn" data-action="close-modal">Cancelar</button>
-            <button type="submit" class="btn ${danger ? "btn-danger" : "btn-primary"}">${esc(confirm)}</button>
-          </div>
-        </form>
+        <div class="modal-card">
+          <h2>${esc(title)}</h2>
+          <form id="modal-form">${bodyHTML}
+            <div class="modal-actions">
+              <button type="button" class="btn" data-action="close-modal">Cancelar</button>
+              <button type="submit" class="btn ${danger ? "btn-danger" : "btn-primary"}">${esc(confirm)}</button>
+            </div>
+          </form>
+        </div>
       </div>`;
     const form = $("#modal-form");
     form.addEventListener("submit", (e) => {

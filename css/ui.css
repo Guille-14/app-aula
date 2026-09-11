@@ -742,6 +742,10 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
   animation: fadeIn .2s ease;
 }
 .overlay[hidden] { display: none !important; }
+/* OJO: css/styles.css (hoja antigua, sigue cargada) define `.modal` como una caja fija
+   centrada con `transform: translate(-50%, -50%)` y `width: min(560px, 100vw - 24px)`.
+   Si no se resetea aquí, la hoja del modal aparece desplazada media caja fuera de pantalla.
+   Todo el aspecto lo pone `.modal-card`, que es la que se ve. */
 .modal {
   position: absolute;
   inset: 0;
@@ -749,6 +753,15 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  width: auto;
+  max-height: none;
+  padding: 0;
+  transform: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
   animation: fadeIn .18s ease;
 }
 .modal-card {
@@ -1981,9 +1994,18 @@ button.row { width: 100%; text-align: left; }
 /* — Cabeceras de vista con herramientas a la derecha — */
 .sec-tools { display: flex; align-items: center; gap: 6px; }
 .chips-row { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 0; }
-/* Un chip largo (una fecha en palabras, un aviso del calendario) se parte dentro de su
-   píldora antes que salirse de la tarjeta: en un móvil de 360 px entraba a medias. */
-.chips-row .chip { flex: 0 1 auto; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
+/* Un chip largo (un módulo con nombre largo, una fecha en palabras, un aviso del
+   calendario) se parte dentro de su píldora antes que salirse de la tarjeta: en un móvil
+   de 360 px entraba a medias y el texto quedaba cortado por el borde de la pantalla. */
+.chips-row .chip, .filters .chip, .filters .mod-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  text-align: left;
+}
 .chip.is-quiet {
   background: var(--surface);
   border-color: var(--card-bd, var(--line));

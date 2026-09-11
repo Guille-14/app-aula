@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v62-b:** los diálogos salían desplazados media pantalla por la herencia de `styles.css`; ahora son hojas con tirador, scroll y botones alcanzables (281 pruebas ✓).
 **Tamaño analizado:** 9.225 líneas / 454 KB (189 KB de `app.js`, 148 KB de CSS).
 
 ## Cómo se ha auditado (para que te fíes de los hallazgos)
@@ -814,6 +815,51 @@ bibliotecas) y se han sacado capturas y medidas de las 22 vistas con datos de ve
   prueba, el calendario del centro, el tema claro, el modo concentración y el tamaño de texto
   grande.
 - Quedan tres avisos de 2 px por un `box-shadow` de un icono (no desplazan nada): no se tocan.
+
+---
+
+## Ronda v62-b · Los diálogos aparecían desplazados media pantalla (fallo crítico)
+
+Siguiendo con la revisión en navegador real, se probaron los **seis formularios de uso diario**
+(nueva prueba, nueva nota, nueva ficha, nuevo módulo, nuevo hábito, perfil) y apareció el peor
+fallo de los últimos tiempos:
+
+> Al abrir cualquier diálogo, la hoja **salía descuadrada**: el título a la izquierda en una
+> columna y el formulario a la derecha, todo amontonado y cortado por el borde de la pantalla.
+> Los campos se salían por la izquierda (x = −128 px en un móvil de 360) y no había manera de
+> rellenarlos con comodidad.
+
+**Causa.** Dos fallos sumados:
+
+1. `openModal()` generaba `<div class="modal">` con el `<h2>` y el `<form>` como hijos directos.
+   `.modal` es un contenedor flex (caja completa, alineado abajo): sin la hoja `.modal-card` que
+   lleva el tirador, el fondo, las esquinas y el scroll, los dos hijos se ponían **uno al lado
+   del otro**.
+2. `.modal-card` existía en `css/ui.css` desde el primer commit, pero **no se usaba en ningún
+   sitio**: nadie la había puesto en el HTML.
+
+Y por debajo, un tercer problema peor: `css/styles.css` (la hoja antigua, todavía cargada)
+define `.modal` como una caja centrada con `position: fixed; left: 50%; top: 50%;
+transform: translate(-50%, -50%); width: min(560px, calc(100vw - 24px))`. Como `ui.css` no lo
+reseteaba, la hoja nueva heredaba ese **desplazamiento de media caja** (x = −168 px) y salía
+fuera de pantalla por la izquierda.
+
+**Arreglo.**
+
+- El contenido del diálogo va dentro de `.modal-card` (tirador, fondo, esquinas, scroll propio
+  al 90 % de alto y animación de subida desde abajo).
+- `.modal` resetea explícitamente lo que le llega de `styles.css`: `position: absolute; inset: 0;
+  transform: none; width: auto; max-height: none; overflow: visible`.
+- Comprobado en Chromium: los seis diálogos salen pegados abajo, centrados, con scroll y con los
+  botones alcanzables; guardado, edición y borrado de una prueba de punta a punta sin errores
+  de consola, y el dato llega al almacenamiento y sobrevive a una recarga.
+
+**Nota de mantenimiento.** Las hojas antiguas (`styles.css`, `skins.css`, `themes.css`) siguen
+cargándose antes que `ui.css` y definen clases genéricas (`.sidebar`, `.topbar-title`,
+`.brand-mark`, `.modal`…). Se ha hecho un repaso automático de todas ellas: las únicas clases
+que el HTML usa de verdad y que llegaban con posicionamiento heredado eran `.modal` (arreglada)
+y las demás no aparecen en el marcado actual. Si se retoman algún día esas hojas, conviene
+borrarlas en vez de seguir resetando.
 
 ---
 
