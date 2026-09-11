@@ -29,7 +29,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "22"
 
       - uses: actions/setup-java@v6
         with:
@@ -57,28 +57,65 @@ jobs:
       - name: Compilar el APK
         run: bash apk-overlay/build.sh
 
-      - name: Comprobar el APK (firma y contenido)
+      - name: Comprobar el APK (firma, versión y widgets)
         id: comprobar
         run: |
+          set -e
           APK=android/app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
           BT="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
           "$BT/apksigner" verify --print-certs "$APK" | tee firma.txt
-          echo "sha=$(sha256sum "$APK" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "mb=$(awk "BEGIN{printf \"%.1f\", $(stat -c%s "$APK")/1048576}")" >> "$GITHUB_OUTPUT"
-          echo "firma=$(awk -F': ' '/certificate SHA-256 digest/ {print $2; exit}' firma.txt)" >> "$GITHUB_OUTPUT"
-          echo "firma_dn=$(awk -F': ' '/certificate DN/ {print $2; exit}' firma.txt)" >> "$GITHUB_OUTPUT"
-          echo "esquemas=$(grep -c 'Verified using' firma.txt)" >> "$GITHUB_OUTPUT"
-          # Qué se ha empaquetado de verdad (versión de la app y widgets dentro del APK)
-          unzip -q -o "$APK" "assets/public/js/app.js" "assets/public/js/media.js" -d comprobado
-          VER=$(grep -o 'APP_VERSION = \"v[0-9]*\"' comprobado/assets/public/js/app.js | head -1)
-          WID=$(unzip -l "$APK" | grep -c "res/xml/widget_")
-          echo "app=$(echo "$VER" | grep -o 'v[0-9]*')" >> "$GITHUB_OUTPUT"
-          echo "widgets=$WID" >> "$GITHUB_OUTPUT"
-          echo "--- resumen ---"
-          echo "versión dentro del APK: $VER"
-          echo "widgets empaquetados: $WID"
-          test -n "$VER" && test "$WID" -ge 24
+
+          python3 - "$APK" <<'PY'
+          import hashlib, os, re, sys, zipfile
+          apk = sys.argv[1]
+
+          # --- lo que dice la firma ---
+          firma = open("firma.txt", encoding="utf-8", errors="ignore").read()
+          def tras(etiqueta, texto):
+              m = re.search(re.escape(etiqueta) + r"[:\s]*([^\n]+)", texto)
+              return m.group(1).strip() if m else ""
+          dn = tras("certificate DN", firma)
+          digest = ""
+          for linea in firma.splitlines():
+              if "certificate SHA-256 digest" in linea:
+                  cola = linea.split(":")[-1].strip()
+                  if re.fullmatch(r"[0-9a-fA-F]{64}", cola):
+                      digest = cola.lower()
+                      break
+          esquemas = ",".join(re.findall(r"Verified using (v\d) scheme[^:]*: true", firma))
+
+          # --- lo que va dentro del APK ---
+          z = zipfile.ZipFile(apk)
+          nombres = z.namelist()
+          app = z.read("assets/public/js/app.js").decode("utf-8", "ignore")
+          ver = (re.search(r'APP_VERSION\s*=\s*"(v\d+)"', app) or [None, "?"])[1]
+          widgets = z.read("AndroidManifest.xml").count(b"APPWIDGET_UPDATE")
+          media = "assets/public/js/media.js" in nombres
+
+          sha = hashlib.sha256(open(apk, "rb").read()).hexdigest()
+          mb = "%.1f" % (os.path.getsize(apk) / 1048576)
+
+          filas = {
+              "sha": sha, "mb": mb, "firma": digest, "firma_dn": dn,
+              "esquemas": esquemas, "app": ver, "widgets": widgets, "media": "sí" if media else "NO",
+          }
+          with open(".datos-apk", "w", encoding="utf-8") as f:
+              for k, v in filas.items():
+                  f.write("%s=%s\n" % (k, v))
+          print("--- resumen del APK ---")
+          for k, v in filas.items():
+              print("  %-10s %s" % (k, v))
+
+          assert re.fullmatch(r"[0-9a-f]{64}", digest or ""), "no he podido leer el certificado"
+          assert ver != "?", "no encuentro la versión de la app dentro del APK"
+          assert widgets >= 24, "faltan widgets en el APK (%s)" % widgets
+          assert media, "falta js/media.js dentro del APK"
+          PY
+
+          while IFS= read -r linea; do
+            echo "${linea%%=*}=${linea#*=}" >> "$GITHUB_OUTPUT"
+          done < .datos-apk
 
       - name: Guardar el APK como artefacto (por si la release falla)
         uses: actions/upload-artifact@v7
@@ -97,23 +134,40 @@ jobs:
           ASSET="Aula-SMR-v$VERSION.apk"
           APK=android/app/build/outputs/apk/release/app-release.apk
           cp "$APK" "$ASSET"
-          cp "$APK" "Aula-SMR.apk"          # nombre fijo: enlace que no cambia nunca
-          cat > notas.md <<EOF
-          APK **firmado** de Aula SMR $VERSION, compilado desde este repositorio.
+          cp "$APK" "Aula-SMR.apk"          # nombre fijo: un enlace que no cambia nunca
+          cat > notas.md <<'EOF'
+          APK **firmado** de Aula SMR, compilado desde este repositorio por GitHub Actions.
 
-          - Tamaño: ${{ steps.comprobar.outputs.mb }} MB · SHA-256 del archivo: \`${{ steps.comprobar.outputs.sha }}\`
-          - Firmado con \`${{ steps.comprobar.outputs.firma_dn }}\` (SHA-256: \`${{ steps.comprobar.outputs.firma }}\`)
-          - Paquete \`es.aula.smr.hub\` · versión ${{ steps.comprobar.outputs.app }} dentro del APK · ${{ steps.comprobar.outputs.widgets }} widgets empaquetados.
-          - Todo funciona sin conexión: no hay servidor ni cuentas. El asistente responde en local
-            (y usa tu Ollama solo si le pones la dirección en Ajustes → Datos locales).
+          - Versión de la web dentro del APK: VERSION_APP · VERSION_WIDGETS widgets ·
+            VERSION_MEDIA.
+          - Tamaño: VERSION_MB MB · SHA-256 del archivo:
+            `VERSION_SHA`
+          - Firmado con `VERSION_DN`
+            (SHA-256 del certificado: `VERSION_FIRMA`; esquemas de firma: VERSION_ESQUEMAS).
+          - Paquete `es.aula.smr.hub`. Funciona **sin conexión**: no hay servidor ni cuentas.
+            El asistente responde en local y solo usa tu Ollama si le pones la dirección en
+            Ajustes → Datos locales.
 
-          **Para instalar:** descarga el \`.apk\` y ábrelo. Si Android avisa de «apps desconocidas»,
-          permite la instalación para el navegador o el gestor de archivos que use.
-          Si dice **conflicto de paquete**, es porque tienes otro Aula SMR con otra firma:
-          desinstálala antes (exporta antes tu copia JSON desde Ajustes → no se pierde nada).
+          **Para instalar:** descarga el `.apk` y ábrelo. Si Android avisa de «apps
+          desconocidas», permite la instalación para el navegador o el gestor de archivos.
+          Si dice **conflicto de paquete**, tienes otro Aula SMR con otra firma: desinstálala
+          antes (exporta tu copia JSON desde Ajustes y no pierdes nada).
 
-          Compilado desde el commit \`${GITHUB_SHA:0:7}\`.
+          Enlace fijo a la última versión: `/releases/latest/download/Aula-SMR.apk`
           EOF
+          sed -i \
+            -e "s|VERSION_APP|${{ steps.comprobar.outputs.app }}|" \
+            -e "s|VERSION_WIDGETS|${{ steps.comprobar.outputs.widgets }}|" \
+            -e "s|VERSION_MEDIA|media.js: ${{ steps.comprobar.outputs.media }}|" \
+            -e "s|VERSION_MB|${{ steps.comprobar.outputs.mb }}|" \
+            -e "s|VERSION_SHA|${{ steps.comprobar.outputs.sha }}|" \
+            -e "s|VERSION_DN|${{ steps.comprobar.outputs.firma_dn }}|" \
+            -e "s|VERSION_FIRMA|${{ steps.comprobar.outputs.firma }}|" \
+            -e "s|VERSION_ESQUEMAS|${{ steps.comprobar.outputs.esquemas }}|" \
+            -e "s|VERSION_COMMIT|${GITHUB_SHA:0:7}|" \
+            notas.md
+          echo "" >> notas.md
+          echo "Compilado desde el commit \`${GITHUB_SHA:0:7}\`." >> notas.md
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" "Aula-SMR.apk" --clobber
             gh release edit "$TAG" --latest --title "Aula SMR v$VERSION · APK" --notes-file notas.md
