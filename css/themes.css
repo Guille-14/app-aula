@@ -46,7 +46,7 @@
 [data-skin="gameboy"] {
   color-scheme: light;
   --bg: #8bac0f; --bg-2: #9bbc0f; --paper: #9bbc0f; --surface: #cadc9f;
-  --ink: #0f380f; --ink-2: #0f380f; --muted: #306230; --line: #0f380f; --line-2: #306230;
+  --ink: #0f380f; --ink-2: #0f380f; --muted: #1d3c1d; --line: #0f380f; --line-2: #306230;
   --accent: #0f380f; --accent-ink: #9bbc0f; --navy: #0f380f; --navy-2: #306230;
   --shadow: inset 0 0 0 4px #0f380f; --radius: 4px; --pill: 0; --nav-radius: 0;
   --font: ui-monospace, Menlo, Consolas, monospace; --display: ui-monospace, Menlo, monospace;
@@ -65,7 +65,7 @@
 [data-skin="bloques"] {
   color-scheme: dark;
   --bg: #2b2118; --bg-2: #3d2f22; --paper: #3a4a28; --surface: #2f3a22;
-  --ink: #f4e8c8; --ink-2: #d9c89a; --muted: #a3906a; --line: #1a140e; --line-2: #6b8f3a;
+  --ink: #f4e8c8; --ink-2: #d9c89a; --muted: #cbb68e; --line: #1a140e; --line-2: #6b8f3a;
   --accent: #6b8f3a; --accent-ink: #14200a; --navy: #1a140e; --navy-2: #2b2118;
   --shadow: 6px 6px 0 #111; --radius: 0; --pill: 0; --nav-radius: 0;
   --font: ui-sans-serif, system-ui, sans-serif; --display: ui-sans-serif, system-ui, sans-serif;
@@ -80,7 +80,7 @@
 [data-skin="isla"] {
   color-scheme: light;
   --bg: #e8f6e8; --bg-2: #d4efd4; --paper: #fffef6; --surface: #fffef8;
-  --ink: #2d4a3e; --ink-2: #3d5c4e; --muted: #6a8a78; --line: #b7dfc4; --line-2: #f3c96b;
+  --ink: #2d4a3e; --ink-2: #3d5c4e; --muted: #587364; --line: #b7dfc4; --line-2: #f3c96b;
   --accent: #5bb38a; --accent-ink: #083322; --navy: #3d6b5a; --navy-2: #2d4a3e;
   --shadow: 0 10px 0 #cfe8cf; --radius: 28px;
   --font: ui-sans-serif, system-ui, sans-serif; --display: Georgia, serif;
@@ -128,7 +128,7 @@
 [data-skin="kawaii"] {
   color-scheme: light;
   --bg: #fff0f5; --bg-2: #ffe0ec; --paper: #fff; --surface: #fff;
-  --ink: #5a2a40; --ink-2: #7a3a58; --muted: #c07a98; --line: #ffc0d4; --line-2: #ff8ab0;
+  --ink: #5a2a40; --ink-2: #7a3a58; --muted: #945e75; --line: #ffc0d4; --line-2: #ff8ab0;
   --accent: #ff6b9d; --accent-ink: #fff; --navy: #ff8ab0; --navy-2: #ff6b9d;
   --shadow: 0 10px 24px rgba(255,107,157,.18); --radius: 28px;
   --font: ui-sans-serif, system-ui, sans-serif; --display: Georgia, serif;
@@ -160,7 +160,7 @@
 [data-skin="cafe"] {
   color-scheme: light;
   --bg: #f3e7d3; --bg-2: #e6d3b4; --paper: #fff8ec; --surface: #fffaf2;
-  --ink: #3b2414; --ink-2: #5a3820; --muted: #8a6a48; --line: #d8c09a; --line-2: #b08958;
+  --ink: #3b2414; --ink-2: #5a3820; --muted: #7f6242; --line: #d8c09a; --line-2: #b08958;
   --accent: #8b4513; --accent-ink: #fff8ec; --navy: #3b2414; --navy-2: #5a3820;
   --shadow: 0 10px 28px rgba(59,36,20,.1); --radius: 14px;
   --font: Georgia, Palatino, serif; --display: Georgia, serif;
@@ -208,7 +208,7 @@
 [data-skin="nord"] {
   color-scheme: dark;
   --bg: #2e3440; --bg-2: #3b4252; --paper: #3b4252; --surface: #343b49;
-  --ink: #eceff4; --ink-2: #e5e9f0; --muted: #81a1c1; --line: #4c566a; --line-2: #5e81ac;
+  --ink: #eceff4; --ink-2: #e5e9f0; --muted: #97b7d6; --line: #4c566a; --line-2: #5e81ac;
   --accent: #88c0d0; --accent-ink: #2e3440; --navy: #242933; --navy-2: #2e3440;
   --shadow: 0 10px 30px rgba(0,0,0,.25); --radius: 10px;
   --font: ui-sans-serif, system-ui, sans-serif; --display: ui-sans-serif, system-ui, sans-serif;
@@ -222,7 +222,7 @@
 [data-skin="dracula"] {
   color-scheme: dark;
   --bg: #282a36; --bg-2: #21222c; --paper: #343746; --surface: #2d2f3d;
-  --ink: #f8f8f2; --ink-2: #e2e2dc; --muted: #6272a4; --line: #44475a; --line-2: #bd93f9;
+  --ink: #f8f8f2; --ink-2: #e2e2dc; --muted: #8b9fd8; --line: #44475a; --line-2: #bd93f9;
   --accent: #bd93f9; --accent-ink: #1e1f29; --navy: #191a21; --navy-2: #21222c;
   --shadow: 0 10px 30px rgba(0,0,0,.35); --radius: 12px;
   --font: ui-sans-serif, system-ui, sans-serif; --display: ui-sans-serif, system-ui, sans-serif;
@@ -236,7 +236,7 @@
 [data-skin="tokyo"] {
   color-scheme: dark;
   --bg: #1a1b26; --bg-2: #16161e; --paper: #24283b; --surface: #1f2335;
-  --ink: #c0caf5; --ink-2: #a9b1d6; --muted: #565f89; --line: #3b4261; --line-2: #7aa2f7;
+  --ink: #c0caf5; --ink-2: #a9b1d6; --muted: #8b98d6; --line: #3b4261; --line-2: #7aa2f7;
   --accent: #7aa2f7; --accent-ink: #1a1b26; --navy: #16161e; --navy-2: #1a1b26;
   --shadow: 0 12px 32px rgba(0,0,0,.4); --radius: 14px;
   --font: ui-sans-serif, system-ui, sans-serif; --display: ui-sans-serif, system-ui, sans-serif;

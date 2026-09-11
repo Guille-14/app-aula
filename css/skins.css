@@ -103,7 +103,7 @@ body::before {
 [data-skin="minimal"] {
   color-scheme: light;
   --bg: #f6f6f4; --bg-2: #ecece8; --paper: #fff; --surface: #fff;
-  --ink: #111; --ink-2: #333; --muted: #76766f; --line: #e4e4de; --line-2: #ccc;
+  --ink: #111; --ink-2: #333; --muted: #707069; --line: #e4e4de; --line-2: #ccc;
   --accent: #111; --accent-ink: #fff; --navy: #111; --navy-2: #222;
   --sage: #3f6b4c; --gold: #9a7b2f;
   --shadow: none; --shadow-lg: none;
@@ -169,7 +169,7 @@ body::before {
 [data-skin="azul"] {
   color-scheme: light;
   --bg: #eef4fb; --bg-2: #dbe7f6; --paper: #fff; --surface: #fff;
-  --ink: #0f2744; --ink-2: #1e3a5f; --muted: #5b7390; --line: #c9daf0; --line-2: #93c5fd;
+  --ink: #0f2744; --ink-2: #1e3a5f; --muted: #58708c; --line: #c9daf0; --line-2: #93c5fd;
   --accent: #2563eb; --navy: #1e3a8a; --navy-2: #1d4ed8;
   --shadow: 0 8px 24px rgba(37,99,235,.08);
   --radius: 18px; --font: ui-sans-serif, system-ui, sans-serif; --display: Georgia, serif;
@@ -260,7 +260,7 @@ body::before {
 [data-skin="pergamino"] {
   color-scheme: light;
   --bg: #efe8dc; --bg-2: #e7dfd1; --paper: #faf7f1; --surface: #fffdf8;
-  --ink: #1a2332; --ink-2: #3d4758; --muted: #7a7268; --line: #e4d9c8; --line-2: #d4c7b2;
+  --ink: #1a2332; --ink-2: #3d4758; --muted: #6d655d; --line: #e4d9c8; --line-2: #d4c7b2;
   --accent: #c45c26; --navy: #1a2332; --navy-2: #243044;
   --shadow: 0 10px 30px rgba(26,35,50,.08);
   --radius: 16px; --font: "Segoe UI", system-ui, sans-serif;

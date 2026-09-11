@@ -92,6 +92,10 @@ def notify() -> None:
             LISTENERS.remove(q)
 
 
+# Nunca servir por HTTP estático: /data contiene el estado sincronizado y los backups.
+BLOCKED_PREFIXES = ("/data", "/.git", "/__pycache__")
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -101,7 +105,24 @@ class Handler(SimpleHTTPRequestHandler):
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        if urlparse(self.path).path.startswith("/api/"):
+            origin = self.headers.get("Origin") or "*"
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Aula-Pin")
+            self.send_header("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
         super().end_headers()
+
+    def list_directory(self, path):  # noqa: A002 - firma de la librería estándar
+        """Sin listados de directorios: no expongas la estructura del repo."""
+        self.send_error(404, "Not found")
+        return None
+
+    def _blocked(self) -> bool:
+        path = urlparse(self.path).path
+        return any(path == p or path.startswith(p + "/") for p in BLOCKED_PREFIXES)
 
     def _json(self, code: int, obj) -> None:
         raw = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -181,6 +202,9 @@ class Handler(SimpleHTTPRequestHandler):
                 if q in LISTENERS:
                     LISTENERS.remove(q)
             return
+        if self._blocked():
+            self.send_error(404, "Not found")
+            return
         super().do_GET()
 
     def do_PUT(self) -> None:
@@ -207,10 +231,8 @@ class Handler(SimpleHTTPRequestHandler):
         self._json(200, {"ok": True, "updatedAt": saved.get("meta", {}).get("updatedAt")})
 
     def do_OPTIONS(self) -> None:
+        # Las cabeceras CORS de /api/ las añade end_headers().
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Aula-Pin")
-        self.send_header("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
         self.end_headers()
 
 

@@ -59,6 +59,7 @@
   const START_HOUR = 8, END_HOUR = 21, SLOT_H = 48;
   const KEY = "aula.smr.v4";
   const BASE_TITLE = "Aula SMR";
+  const APP_VERSION = "v49";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -115,7 +116,8 @@
   };
   const weekdayMon0 = (date) => (date.getDay() + 6) % 7;
   const subjectById = (id) => state.subjects.find((s) => s.id === id);
-  const subjectColor = (id) => (subjectById(id) || {}).color || "#64748b";
+  const safeColor = (c, fb) => (/^#[0-9a-fA-F]{3,8}$/.test(String(c)) ? String(c) : (fb || "#64748b"));
+  const subjectColor = (id) => safeColor((subjectById(id) || {}).color);
   const subjectName = (id) => (subjectById(id) || {}).name || "Sin módulo";
   const typeLabel = (id) => (EXAM_TYPES.find((t) => t.id === id) || {}).label || id || "";
   const fmtHours = (mins) => {
@@ -466,41 +468,233 @@
     return s;
   }
 
-  function load() {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (!raw) return seedDemo();
-      const p = JSON.parse(raw);
-      const base = defaultState();
-      const settings = { ...base.settings, ...(p.settings || {}) };
-      if (!Array.isArray(settings.customAvatars)) settings.customAvatars = [];
-      if (settings.skin === "pokemon") settings.skin = "hub";
-      if (/^p\d+$/.test(settings.avatarIcon || "")) settings.avatarIcon = "letter";
-      if (/^p\d+$/.test(settings.appIcon || "")) settings.appIcon = "dragon";
-      if (!settings.uiTheme) settings.uiTheme = LIGHT.has(settings.skin) ? "light" : "dark";
-      const subjects = (p.subjects || []).map((s) => {
-        if (s && /^IPE/i.test(s.name || "") && (!s.color || s.color === "#64748b")) return { ...s, color: "#14b8a6" };
-        return s;
-      });
-      const out = {
-        ...base, ...p,
-        settings,
-        subjects, exams: p.exams || [], notes: p.notes || [],
-        events: p.events || [], tasks: p.tasks || [], sessions: p.sessions || [],
-        cards: p.cards || [], inbox: p.inbox || [], attendance: p.attendance || [],
-        progress: { bonusXp: 0, unlocked: {}, daily: "", log: [], flags: {}, freeze: 1, lastFreezeWeek: "", ...(p.progress || {}) },
-        topics: p.topics || [], habits: p.habits || [], glossary: p.glossary || [],
-        trash: p.trash || [], widgets: p.widgets || ["live","exams","tasks","xp"],
-      };
-      if (out.settings.timetableId !== TIMETABLE_ID) applyOfficialTimetable(out);
-      return out;
-    } catch { return seedDemo(); }
+  /* ---------------------------------------------------------------
+     Integridad de datos: nada de lo que guarda el usuario se pierde
+     ni se sobrescribe sin avisar. Todas estas funciones son seguras:
+     ninguna lanza.
+     --------------------------------------------------------------- */
+
+  const BACKUP_KEY = KEY + ".bak";
+  const BAK_AT_KEY = "aula.bakAt";
+  let loadProblem = "";
+  let saveProblem = "";
+  let backupsRaw = "";
+
+  const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  const asArray = (v) => (Array.isArray(v) ? v : []);
+  const asText = (v, fb) => (typeof v === "string" && v.trim() ? v : (fb || ""));
+  const asISO = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "");
+  const asHHMM = (v, fb) => (/^\d{1,2}:\d{2}$/.test(String(v)) ? String(v) : fb);
+  const asColor = (v, fb) => (/^#[0-9a-fA-F]{3,8}$/.test(String(v)) ? String(v) : fb);
+
+  // Convierte lo que venga (import, sync, versión vieja) en un estado usable.
+  function sanitize(p) {
+    const base = defaultState();
+    const src = isObj(p) ? p : {};
+    const out = Object.assign({}, base, src);
+    const settings = Object.assign({}, base.settings, isObj(src.settings) ? src.settings : {});
+    if (!Array.isArray(settings.customAvatars)) settings.customAvatars = [];
+    if (settings.skin === "pokemon") settings.skin = "hub";
+    if (!SKINS.some((s) => s.id === settings.skin)) settings.skin = "hub";
+    if (/^p\d+$/.test(settings.avatarIcon || "")) settings.avatarIcon = "letter";
+    if (/^p\d+$/.test(settings.appIcon || "")) settings.appIcon = "dragon";
+    if (!settings.uiTheme) settings.uiTheme = LIGHT.has(settings.skin) ? "light" : "dark";
+    if (!Number.isFinite(Number(settings.dailyGoal)) || Number(settings.dailyGoal) <= 0) settings.dailyGoal = 90;
+    settings.pomodoroWork = clamp(Number(settings.pomodoroWork) || 25, 1, 180);
+    settings.pomodoroBreak = clamp(Number(settings.pomodoroBreak) || 5, 1, 60);
+    settings.pomodoroLong = clamp(Number(settings.pomodoroLong) || 15, 1, 120);
+    settings.gradeMax = clamp(Number(settings.gradeMax) || 10, 5, 100);
+    settings.examLeadDays = clamp(Number(settings.examLeadDays) || 1, 0, 30);
+    settings.startHour = clamp(Number(settings.startHour) || 8, 0, 23);
+    settings.endHour = clamp(Number(settings.endHour) || 21, 1, 24);
+    out.settings = settings;
+
+    const subjects = asArray(src.subjects).filter(isObj).map((s) => ({
+      id: asText(s.id) || uid(),
+      name: asText(s.name, "Módulo sin nombre"),
+      teacher: asText(s.teacher),
+      room: asText(s.room),
+      credits: Number(s.credits) || 0,
+      color: asColor(s.color, "#64748b"),
+    }));
+    out.subjects = subjects;
+    const hasSub = (id) => subjects.some((s) => s.id === id);
+    const subOf = (id) => (hasSub(id) ? id : (subjects[0] ? subjects[0].id : ""));
+    const subName = (id) => asText((subjects.find((s) => s.id === id) || {}).name);
+
+    const fixCheck = (c) => ({ id: asText(c.id) || uid(), text: asText(c.text, "Ítem"), done: !!c.done });
+
+    out.events = asArray(src.events).filter(isObj).map((e) => ({
+      id: asText(e.id) || uid(), subjectId: subOf(e.subjectId),
+      day: clamp(Number(e.day) || 0, 0, 6),
+      start: asHHMM(e.start, "09:00"), end: asHHMM(e.end, "10:00"),
+      room: asText(e.room), type: asText(e.type, "clase"),
+    }));
+
+    out.exams = asArray(src.exams).filter(isObj).filter((e) => e.title || e.date).map((e) => ({
+      id: asText(e.id) || uid(), subjectId: subOf(e.subjectId),
+      title: asText(e.title, "Examen sin título"),
+      date: asISO(e.date) || todayISO(), time: asHHMM(e.time, "09:00"),
+      type: asText(e.type, "parcial"), location: asText(e.location), notes: asText(e.notes),
+      grade: (e.grade === "" || e.grade == null || !Number.isFinite(Number(e.grade))) ? "" : String(e.grade),
+      weight: clamp(Number(e.weight) || 25, 0, 100),
+      difficulty: clamp(Number(e.difficulty) || 3, 1, 5),
+      hoursNeeded: clamp(Number(e.hoursNeeded) || Number(settings.defaultHours) || 8, 1, 500),
+      status: e.status === "hecho" ? "hecho" : "pendiente",
+      checklist: asArray(e.checklist).filter(isObj).map(fixCheck),
+    }));
+
+    out.tasks = asArray(src.tasks).filter(isObj).filter((x) => x.title).map((x) => ({
+      id: asText(x.id) || uid(), subjectId: hasSub(x.subjectId) ? x.subjectId : (x.subjectId || ""),
+      title: asText(x.title, "Tarea"), due: asISO(x.due),
+      priority: ["alta", "media", "baja"].includes(x.priority) ? x.priority : "media",
+      done: !!x.done, kanban: ["todo", "doing", "done"].includes(x.kanban) ? x.kanban : undefined,
+    }));
+
+    out.notes = asArray(src.notes).filter(isObj).map((n) => ({
+      id: asText(n.id) || uid(), subjectId: hasSub(n.subjectId) ? n.subjectId : (n.subjectId || ""),
+      title: asText(n.title, "Sin título"), content: typeof n.content === "string" ? n.content : "",
+      pinned: !!n.pinned, locked: !!n.locked,
+      attachments: asArray(n.attachments).filter(isObj).map((a) => ({ id: asText(a.id) || uid(), name: asText(a.name, "foto"), kind: asText(a.kind, "img"), data: typeof a.data === "string" ? a.data : "" })),
+      versions: asArray(n.versions).filter(isObj).slice(0, 12).map((v) => ({ t: Number(v.t) || Date.now(), title: asText(v.title), content: typeof v.content === "string" ? v.content : "" })),
+      createdAt: Number(n.createdAt) || Date.now(), updatedAt: Number(n.updatedAt) || Date.now(),
+      deletedAt: n.deletedAt ? Number(n.deletedAt) : undefined,
+    }));
+
+    out.cards = asArray(src.cards).filter(isObj).filter((c) => c.front).map((c) => ({
+      id: asText(c.id) || uid(), subjectId: subOf(c.subjectId),
+      front: asText(c.front, "?"), back: asText(c.back, ""),
+      due: asISO(c.due) || todayISO(),
+      interval: clamp(Number(c.interval) || 0, 0, 3650), reps: clamp(Number(c.reps) || 0, 0, 100000),
+      ease: clamp(Number(c.ease) || 2.5, 1.3, 3.2), lapses: clamp(Number(c.lapses) || 0, 0, 100000),
+    }));
+
+    out.sessions = asArray(src.sessions).filter(isObj).map((s) => ({
+      id: asText(s.id) || uid(), subjectId: subOf(s.subjectId),
+      date: asISO(s.date) || todayISO(),
+      minutes: clamp(Number(s.minutes) || 0, 0, 1440),
+      type: asText(s.type, "pomodoro"),
+    }));
+
+    out.attendance = asArray(src.attendance).filter(isObj)
+      .filter((a) => ["presente", "retraso", "falta"].includes(a.status))
+      .map((a) => ({ id: asText(a.id) || uid(), eventId: asText(a.eventId), date: asISO(a.date) || todayISO(), status: a.status }));
+
+    out.inbox = asArray(src.inbox).filter(isObj).filter((i) => i.text).map((i) => ({ id: asText(i.id) || uid(), text: asText(i.text), createdAt: Number(i.createdAt) || Date.now() }));
+
+    out.habits = asArray(src.habits).filter(isObj).filter((h) => h.title).map((h) => ({
+      id: asText(h.id) || uid(), title: asText(h.title, "Hábito"),
+      minutes: clamp(Number(h.minutes) || 20, 1, 600), time: asHHMM(h.time, "21:30"),
+      doneOn: asArray(h.doneOn).map((d) => asISO(d)).filter(Boolean),
+    }));
+
+    out.glossary = asArray(src.glossary).filter(isObj).filter((g) => g.term).map((g) => ({ id: asText(g.id) || uid(), term: asText(g.term), def: asText(g.def), subjectId: hasSub(g.subjectId) ? g.subjectId : "" }));
+
+    out.trash = asArray(src.trash).filter(isObj).filter((n) => n.title).map((n) => ({
+      id: asText(n.id) || uid(), subjectId: hasSub(n.subjectId) ? n.subjectId : "", title: asText(n.title),
+      content: typeof n.content === "string" ? n.content : "", pinned: !!n.pinned,
+      attachments: asArray(n.attachments).filter(isObj), createdAt: Number(n.createdAt) || Date.now(),
+      updatedAt: Number(n.updatedAt) || Date.now(), deletedAt: Number(n.deletedAt) || Date.now(),
+    }));
+
+    const prog = isObj(src.progress) ? src.progress : {};
+    out.progress = {
+      bonusXp: Number(prog.bonusXp) || 0, unlocked: isObj(prog.unlocked) ? prog.unlocked : {},
+      daily: asISO(prog.daily), log: asArray(prog.log).filter(isObj).slice(0, 40),
+      flags: isObj(prog.flags) ? prog.flags : {}, freeze: clamp(Number(prog.freeze ?? 1), 0, 9),
+      lastFreezeWeek: asText(prog.lastFreezeWeek),
+    };
+    out.widgets = asArray(src.widgets).length ? asArray(src.widgets) : base.widgets;
+    out.topics = asArray(src.topics);
+
+    // Compatibilidad de versiones anteriores
+    if (((out.settings || {}).skin || "") === "pokemon") out.settings.skin = "hub";
+    out.subjects.forEach((s) => {
+      if (/^IPE/i.test(s.name) && (!s.color || s.color === "#64748b")) s.color = "#14b8a6";
+    });
+    return out;
   }
+
+  function load() {
+    let raw = null;
+    try { raw = localStorage.getItem(KEY); } catch { return seedDemo(); }
+    if (!raw) return seedDemo();
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // No se pisa el original: se guarda una copia cruda y se avisa.
+      try { localStorage.setItem(BACKUP_KEY, raw); localStorage.setItem(BAK_AT_KEY, String(Date.now())); } catch {}
+      backupsRaw = raw;
+      loadProblem = "Los datos guardados estaban dañados y no se han podido leer. He conservado una copia del original.";
+      return seedDemo();
+    }
+    const out = sanitize(parsed);
+    // La plantilla oficial ya no machaca el horario del usuario: solo se aplica
+    // cuando no hay ni horario ni marca previa, o si el usuario lo pide.
+    const sinHorario = !asArray(out.events).length;
+    if (sinHorario && !asText(out.settings.timetableId)) applyOfficialTimetable(out);
+    return out;
+  }
+
+  let saveTimer = null;
+  let lastSaveSize = 0;
 
   function save() {
     if (state.settings && state.settings.guest) return;
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+    let json;
+    try { json = JSON.stringify(state); } catch { saveProblem = "Los datos no se pueden preparar para guardar."; return; }
+    lastSaveSize = json.length;
+    // Copia de seguridad rotativa (una, cada 6 h) sin dispararse de tamaño.
+    try {
+      if (json.length < 1_500_000) {
+        const last = Number(localStorage.getItem(BAK_AT_KEY) || 0);
+        if (Date.now() - last > 6 * 3600 * 1000) {
+          const prev = localStorage.getItem(KEY);
+          if (prev && prev.length < 2_500_000) {
+            localStorage.setItem(BACKUP_KEY, prev);
+            localStorage.setItem(BAK_AT_KEY, String(Date.now()));
+          }
+        }
+      }
+    } catch {}
+    try {
+      localStorage.setItem(KEY, json);
+      if (saveProblem) { saveProblem = ""; toast("Ya se vuelve a guardar bien"); }
+    } catch (e) {
+      const quota = /quota|exceed/i.test(String((e && e.name) + (e && e.message)));
+      const antes = saveProblem;
+      saveProblem = quota
+        ? "No hay espacio en este dispositivo. Exporta una copia y borra fotos, apuntes viejos o sesiones."
+        : "No se han podido guardar los datos en este dispositivo.";
+      if (antes !== saveProblem) toast(quota ? "¡Sin espacio para guardar!" : "Error al guardar");
+      return;
+    }
     pushWidgets();
+  }
+
+  // Guardado diferido: pintar no debe escribir en disco en cada pulsación.
+  function scheduleSave(delay) {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { saveTimer = null; save(); }, delay == null ? 400 : delay);
+  }
+  function flushSave() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    save();
+  }
+  function storageBytes() {
+    try { return (localStorage.getItem(KEY) || "").length; } catch { return 0; }
+  }
+  function restoreBackup() {
+    let raw = null;
+    try { raw = localStorage.getItem(BACKUP_KEY); } catch {}
+    if (!raw) { toast("No hay copia de seguridad"); return; }
+    try {
+      state = sanitize(JSON.parse(raw));
+      loadProblem = "";
+      toast("Copia restaurada");
+      render();
+    } catch { toast("La copia tampoco se puede leer"); }
   }
 
   let state = load();
@@ -517,6 +711,19 @@
   let agendaFilter = "all";
   let onStep = 0;
   const undoStack = [];
+  const unlockedNotes = new Set();
+  // PIN local: sirve para que nadie cotillee la nota en el móvil, no es cifrado fuerte.
+  function pinHash(s) {
+    let h = 5381;
+    const str = "aula-smr:" + String(s || "");
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  function checkPin(given) {
+    const saved = state.settings.pin || "";
+    if (!saved) return true;
+    return saved === given || pinHash(saved) === pinHash(given);
+  }
 
   const timer = {
     mode: "work", running: false,
@@ -811,6 +1018,25 @@
     tools: ["Herramientas SMR", "Hub técnico, estudio y sistema"],
   };
 
+  function bannersHTML() {
+    const out = [];
+    if (loadProblem) {
+      out.push(`<div class="save-warn"><span><b>Ojo:</b> ${esc(loadProblem)}</span>
+        <button class="btn btn-sm" data-action="restore-backup">Recuperar copia</button>
+        <button class="btn btn-sm btn-primary" data-action="dismiss-load-problem">Entendido</button></div>`);
+    }
+    if (saveProblem) {
+      out.push(`<div class="save-warn"><span><b>No se puede guardar.</b> ${esc(saveProblem)}</span>
+        <button class="btn btn-sm btn-primary" data-action="export">Exportar copia</button></div>`);
+    }
+    if (state.settings && state.settings.guest) {
+      out.push(`<div class="save-warn" style="background:color-mix(in srgb, #f59e0b 18%, var(--surface));border-color:color-mix(in srgb, #f59e0b 45%, var(--line))">
+        <span><b>Modo invitado.</b> Nada de lo que hagas se guarda al cerrar.</span>
+        <button class="btn btn-sm btn-primary" data-action="guest-off">Guardar y salir</button></div>`);
+    }
+    return out.join("");
+  }
+
   function render() {
     applyTheme();
     const bc = $("#brand-course"); if (bc) bc.textContent = state.settings.courseName || "SMR";
@@ -858,7 +1084,7 @@
       $("#view-sub").textContent = "Paso " + (onStep + 1) + " de 7";
       $("#view").innerHTML = renderOnboard();
       updateTimerChrome();
-      save();
+      scheduleSave();
       return;
     }
     document.body.classList.remove("onboarding");
@@ -875,7 +1101,7 @@
         ? window.AulaTools.view()
         : `<div class="empty"><b>Herramientas</b>Recarga la página.</div>`,
     };
-    $("#view").innerHTML = (map[view] || renderDashboard)();
+    $("#view").innerHTML = bannersHTML() + (map[view] || renderDashboard)();
     if (view === "stats") drawStats();
     if (view === "timer") updateTimerUI();
     if (view === "rendimiento") {
@@ -886,7 +1112,7 @@
       if (el) setTimeout(() => { try { el.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {} }, 50);
     }
     updateTimerChrome();
-    save();
+    scheduleSave();
   }
 
   function greeting() {
@@ -997,7 +1223,7 @@
       { id: "exam5", cat: "evaluacion", ico: "5", name: "Convocatorias", desc: "5 exámenes cerrados.", xp: 50, on: examsDone >= 5 },
       { id: "notable", cat: "evaluacion", ico: "7", name: "Notable", desc: "Saca un 7 o más.", xp: 30, on: notable },
       { id: "excelente", cat: "evaluacion", ico: "9", name: "Sobresaliente", desc: "Un 9 o más en el boletín.", xp: 60, on: excel },
-      { id: "skin", cat: "exploracion", ico: "◐", name: "Cambio de look", desc: "Prueba un tema distinto al inicial.", xp: 10, on: (state.settings.skin || "redes") !== "redes" },
+      { id: "skin", cat: "exploracion", ico: "◐", name: "Cambio de look", desc: "Prueba un tema distinto al inicial.", xp: 10, on: (state.settings.skin || "hub") !== "hub" },
       { id: "export", cat: "exploracion", ico: "⤓", name: "Copia de seguridad", desc: "Exporta el JSON o el calendario.", xp: 15, on: !!state.progress.flags?.exported },
       { id: "plan", cat: "exploracion", ico: "🗺", name: "Plan pasado a tareas", desc: "Usa «pasar 7 días a tareas».", xp: 15, on: !!state.progress.flags?.planned },
       { id: "capture", cat: "exploracion", ico: "↓", name: "Captura rápida", desc: "Mete algo en la bandeja.", xp: 10, on: (state.inbox || []).length > 0 || !!state.progress.flags?.captured },
@@ -1110,7 +1336,7 @@
     return items.sort((a, b) => a.t.localeCompare(b.t));
   }
   function skinCards(list) {
-    return `<div class="skin-grid">${list.map((s) => `<button type="button" class="skin-card ${s.id === (state.settings.skin || "redes") ? "is-on" : ""}" data-action="set-skin" data-id="${s.id}">
+    return `<div class="skin-grid">${list.map((s) => `<button type="button" class="skin-card ${s.id === (state.settings.skin || "hub") ? "is-on" : ""}" data-action="set-skin" data-id="${s.id}">
       <div class="skin-swatch">${s.colors.map((c) => `<i style="background:${c}"></i>`).join("")}</div>
       <b>${esc(s.name)}</b><small>${esc(s.tag)}</small>
     </button>`).join("")}</div>`;
@@ -1331,15 +1557,6 @@
       pills.push({ iso, n: d.getDate(), lbl: DAYS_SHORT[i], today: iso === today, exam: state.exams.some((e) => e.date === iso), hol: isNonTeaching(iso) });
     }
     return `
-      ${!state.settings.onboarded ? `<div class="onboard">
-        <strong>Bienvenido a Aula SMR</strong>
-        <p style="margin:8px 0 12px;color:var(--muted);font-size:13px">La suite de tu ciclo. Configuremos el perfil. Todo se queda en este móvil.</p>
-        <div class="field"><input id="on-name" placeholder="Tu nombre" value="${esc(state.settings.name)}" /></div>
-        <div class="hero-actions">
-          <button class="btn btn-primary" data-action="finish-onboard">Comenzar</button>
-          <button class="btn btn-ghost" data-action="skip-onboard">Ahora no</button>
-        </div>
-      </div>` : ""}
       ${state.settings.demo && state.settings.onboarded ? `<div class="card demo-banner">
         <div><strong>Datos de ejemplo</strong><div class="hint" style="margin:4px 0 0">Horario y exámenes de muestra. Quédatelo o bórralo.</div></div>
         <div class="hero-actions">
@@ -1389,11 +1606,37 @@
           <button class="btn btn-sm btn-primary" data-action="go" data-to="quickreview">Repaso rápido</button>
           <button class="btn btn-sm" data-action="go" data-to="cards">Fichas</button>
           <button class="btn btn-sm" data-action="freeze-use">Comodín (${(state.progress && state.progress.freeze) ?? 1})</button>
+          ${streak() >= 1 ? `<button class="btn btn-sm" data-action="rollover-week">Semana nueva</button>` : ""}
         </div>
       </div>
     `;
   }
 
+  // Huecos entre clases: se ofrece el rato libre para estudiar en vez de dejarlo vacío.
+  function studyGapsHTML(day, list, todayIdx) {
+    if (!list.length) return "";
+    const sorted = [...list].sort((a, b) => minutesOf(a.start) - minutesOf(b.start));
+    const ini = Number(state.settings.startHour || 8) * 60;
+    const fin = Number(state.settings.endHour || 21) * 60;
+    const gaps = [];
+    let cursor = ini;
+    sorted.forEach((e) => {
+      const s = minutesOf(e.start), en = minutesOf(e.end);
+      if (s - cursor >= 45) gaps.push([cursor, s]);
+      cursor = Math.max(cursor, en);
+    });
+    if (fin - cursor >= 45) gaps.push([cursor, fin]);
+    if (!gaps.length) return "";
+    const hhmm = (m) => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
+    return gaps.slice(0, 3).map(([a, b]) => {
+      const mins = b - a;
+      return `<button type="button" class="class-row is-study" data-action="study-block" data-day="${day}" data-min="${mins}" data-start="${hhmm(a)}">
+        <span class="class-stripe" style="--c:var(--accent)"></span>
+        <div class="class-time">${hhmm(a)}<br>${hhmm(b)}</div>
+        <div class="class-body"><b>Hueco libre · ${mins} min</b><small>${todayIdx === day ? "Estudia ahora" : "Rato libre"}</small></div>
+      </button>`;
+    }).join("");
+  }
   function classRowHTML(e, todayIdx) {
     const nowM = nowMinutes();
     const liveNow = todayIdx === e.day && minutesOf(e.start) <= nowM && nowM < minutesOf(e.end);
@@ -1418,7 +1661,11 @@
     if (schDay == null || schDay >= daysN) schDay = Math.min(Math.max(todayIdx, 0), daysN - 1);
     const weekHtml = `
       <div class="sec-head"><h3>Horario regular</h3>
-        <button class="hub-round" data-action="add-event" aria-label="Añadir clase">+</button></div>
+        <span style="display:flex;gap:6px">
+          <button class="btn btn-sm" data-action="csv-import">Importar CSV</button>
+          <button class="hub-round" data-action="add-event" aria-label="Añadir clase">+</button>
+        </span></div>
+      <input type="file" id="csv-file" accept=".csv,.txt" hidden aria-label="Archivo CSV del horario" />
       <p class="hint sch-hint">Semana fija L–${daysN === 6 ? "S" : "V"}. Toca una clase para editarla.</p>
       ${state.settings.showAttendance !== false ? `<p class="att-legend">Hoy: <b>P</b> presente · <b>R</b> retraso · <b>F</b> falta</p>` : ""}
       <div class="week-board">
@@ -1431,7 +1678,7 @@
               <span class="sch-n">${list.length ? list.length + (list.length === 1 ? " clase" : " clases") : "libre"}</span>
             </div>
             <div class="sch-day-list">
-              ${list.length ? list.map((e) => classRowHTML(e, todayIdx)).join("") : `<div class="sch-empty">Sin clases</div>`}
+              ${list.length ? list.map((e) => classRowHTML(e, todayIdx)).join("") + studyGapsHTML(i, list, todayIdx) : `<div class="sch-empty">Sin clases</div>`}
             </div>
           </section>`;
         }).join("")}
@@ -1530,39 +1777,60 @@
     </div>`;
   }
 
-  function md(text) {
+  function md(text, imgs) {
     let t = esc(text || "");
+    if (imgs) {
+      t = t.replace(/!\[([^\]]*)\]\(aula-img:([^)\s]+)\)/g, (m, alt, id) =>
+        (imgs[id] ? `<img class="note-img" src="${imgs[id]}" alt="${alt || "foto"}">` : `<span class="hint">[imagen no disponible]</span>`));
+      // Compatibilidad con fotos antiguas guardadas como data URL dentro del texto
+      t = t.replace(/!\[([^\]]*)\]\((data:image\/[^)\s]+)\)/g, (m, alt, src) =>
+        `<img class="note-img" src="${src}" alt="${alt || "foto"}">`);
+    }
     t = t.replace(/^### (.*)$/gm, "<h4>$1</h4>").replace(/^## (.*)$/gm, "<h3>$1</h3>").replace(/^# (.*)$/gm, "<h2>$1</h2>");
     t = t.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
     t = t.replace(/^\- (.*)$/gm, "<li>$1</li>").replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`);
     return t.replace(/\n/g, "<br>");
   }
 
+  function notePlain(n) {
+    // Texto de la nota sin las marcas de imagen (para la lista, el buscador y el recuento)
+    return String(n.content || "").replace(/!\[[^\]]*\]\((?:aula-img|data:image)[^)]*\)/g, "").trim();
+  }
   function renderNotes() {
     let notes = [...state.notes].sort((a, b) => (b.pinned - a.pinned) || (b.updatedAt - a.updatedAt));
     if (noteFilter !== "all") notes = notes.filter((n) => n.subjectId === noteFilter);
-    if (noteQuery) { const q = noteQuery.toLowerCase(); notes = notes.filter((n) => (n.title + n.content).toLowerCase().includes(q)); }
     if (!noteId && notes[0]) noteId = notes[0].id;
     const current = state.notes.find((n) => n.id === noteId);
+    const lockedNow = current && current.locked && !unlockedNotes.has(current.id);
+    const imgs = {};
+    if (current && current.attachments) current.attachments.forEach((a) => { if (a.data) imgs[a.id] = a.data; });
     return `<div class="notes-layout">
       <div>
         <button class="btn btn-primary" data-action="add-note" style="width:100%;margin-bottom:10px">Nueva nota</button>
-        <input class="note-search" id="note-query" placeholder="Buscar…" value="${esc(noteQuery)}" />
+        <input class="note-search" id="note-query" placeholder="Buscar…" aria-label="Buscar en las notas" value="${esc(noteQuery)}" />
         <div class="filters">
           <button class="chip ${noteFilter === "all" ? "is-on" : ""}" data-action="note-filter" data-id="all">Todas</button>
           ${state.subjects.map((s) => `<button class="chip ${noteFilter === s.id ? "is-on" : ""}" data-action="note-filter" data-id="${s.id}">${esc(s.name)}</button>`).join("")}
         </div>
         <div class="notes-list">
-          ${notes.map((n) => `<button class="note-item ${n.id === noteId ? "is-active" : ""}" data-action="open-note" data-id="${n.id}">
-            <h4>${n.pinned ? "📌 " : ""}${esc(n.title || "Sin título")}</h4>
-            <p>${esc((n.content || "").replace(/\s+/g, " ").slice(0, 80))}</p>
-          </button>`).join("") || `<div class="empty">Sin notas.</div>`}
+          ${notes.map((n) => {
+            const bloqueada = n.locked && !unlockedNotes.has(n.id);
+            return `<button class="note-item ${n.id === noteId ? "is-active" : ""}" data-action="open-note" data-id="${n.id}">
+            <h4>${n.pinned ? "📌 " : ""}${bloqueada ? "🔒 " : ""}${esc(n.title || "Sin título")}</h4>
+            <p>${bloqueada ? "Nota protegida con PIN" : esc(notePlain(n).replace(/\s+/g, " ").slice(0, 80))}</p>
+          </button>`;
+          }).join("") || `<div class="empty">Sin notas.</div>`}
         </div>
       </div>
       <div class="editor">
-        ${current ? `
+        ${lockedNow ? `<div class="lock-screen">
+          <b>🔒 Nota protegida</b>
+          <p class="hint" style="margin:0">Escribe el PIN de Ajustes para verla.</p>
+          <div class="field"><input id="note-pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" /></div>
+          <button class="btn btn-primary" data-action="note-unlock">Desbloquear</button>
+        </div>` : current ? `
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <select data-action="note-subject">${subjectOptions(current.subjectId)}</select>
+            <select data-action="note-subject" aria-label="Módulo de la nota">${subjectOptions(current.subjectId)}</select>
             <button class="btn btn-sm" data-action="toggle-pin">${current.pinned ? "Quitar pin" : "Fijar"}</button>
             <button class="btn btn-sm" data-action="toggle-preview">${notePreview ? "Editar" : "Vista"}</button>
             <button class="btn btn-sm" data-action="note-to-cards">A fichas</button>
@@ -1573,9 +1841,10 @@
             <button class="btn btn-sm" data-action="toggle-focus">Foco</button>
             <button class="btn btn-sm" data-action="delete-note" style="margin-left:auto">Eliminar</button>
           </div>
-          <input class="editor-title" id="note-title" placeholder="Título" value="${esc(current.title)}" />
-          ${notePreview ? `<div class="preview">${md(current.content)}</div>` : `<textarea class="editor-body" id="note-body" placeholder="# título, **negrita**, - pregunta :: respuesta">${esc(current.content)}</textarea>`}
-          <div class="note-meta"><span>${(current.content || "").trim() ? (current.content.trim().split(/\s+/).length + " palabras") : "Vacía"}</span><span>editada ${new Date(current.updatedAt).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>
+          <input class="editor-title" id="note-title" placeholder="Título" aria-label="Título de la nota" value="${esc(current.title)}" />
+          ${notePreview ? `<div class="preview">${md(current.content, imgs)}</div>` : `<textarea class="editor-body" id="note-body" aria-label="Contenido de la nota" placeholder="# título, **negrita**, - pregunta :: respuesta">${esc(current.content)}</textarea>`}
+          ${(current.attachments || []).length ? `<div class="filters" style="margin-top:8px">${current.attachments.map((a) => `<span class="chip">🖼 ${esc(a.name)} <button class="btn btn-sm" data-action="note-photo-del" data-id="${a.id}" aria-label="Quitar ${esc(a.name)}">×</button></span>`).join("")}</div>` : ""}
+          <div class="note-meta"><span>${notePlain(current) ? (notePlain(current).split(/\s+/).length + " palabras") : "Vacía"}${(current.attachments || []).length ? " · " + current.attachments.length + " foto(s)" : ""}</span><span>editada ${new Date(current.updatedAt).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>
         ` : `<div class="empty">Crea una nota.</div>`}
       </div>
     </div>`;
@@ -1590,7 +1859,11 @@
       <div class="filters">
         <button class="chip ${cardFilter === "all" ? "is-on" : ""}" data-action="card-filter" data-id="all">Todas</button>
         ${state.subjects.map((s) => `<button class="chip ${cardFilter === s.id ? "is-on" : ""}" data-action="card-filter" data-id="${s.id}">${esc(s.name)}</button>`).join("")}
-        <button class="btn btn-sm btn-primary" data-action="add-card" style="margin-left:auto">Nueva ficha</button>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button class="btn btn-sm ${state._cardMode !== "type" ? "btn-primary" : ""}" data-action="card-mode" data-mode="flip">Voltear</button>
+          <button class="btn btn-sm ${state._cardMode === "type" ? "btn-primary" : ""}" data-action="card-mode" data-mode="type">Escribir</button>
+          <button class="btn btn-sm" data-action="add-card">Nueva</button>
+        </span>
       </div>
       <div class="grid grid-2">
         <div class="card" style="min-height:340px">
@@ -1634,7 +1907,7 @@
         const late = t.due && t.due < today && !t.done;
         return `<div class="task ${t.done ? "done" : ""}">
           <i class="task-stripe" style="background:${subjectColor(t.subjectId)}"></i>
-          <input type="checkbox" data-action="toggle-task" data-id="${t.id}" ${t.done ? "checked" : ""} />
+          <input type="checkbox" data-action="toggle-task" data-id="${t.id}" aria-label="Marcar como hecha: ${esc(t.title)}" ${t.done ? "checked" : ""} />
           <div style="flex:1;min-width:0" data-action="edit-task" data-id="${t.id}">
             <div class="tt">${esc(t.title)}</div>
             <div class="task-meta">${esc(subjectName(t.subjectId) || "Sin módulo")}</div>
@@ -1691,10 +1964,11 @@
           <div class="ring-center"><div><div class="time" id="timer-display">25:00</div><div class="mode" id="timer-mode-lbl">Listo</div></div></div>
         </div>
         <div class="field" style="width:100%"><label>Módulo</label>
-          <select id="timer-subject">${subjectOptions(timer.subjectId)}</select></div>
+          <select id="timer-subject" aria-label="Módulo del bloque de estudio">${subjectOptions(timer.subjectId)}</select></div>
         <div class="timer-actions">
           <button class="btn btn-primary" data-action="timer-toggle" id="timer-toggle">INICIAR</button>
-          <button class="btn" data-action="timer-reset" style="width:56px;height:56px;border-radius:16px">↺</button>
+          <button class="btn" data-action="timer-reset" style="width:56px;height:56px;border-radius:16px" title="Reiniciar" aria-label="Reiniciar bloque">↺</button>
+          <button class="btn" data-action="timer-skip" title="Dar el bloque por terminado" aria-label="Terminar el bloque ahora">Terminar</button>
         </div>
       </div>
       <div class="card">
@@ -1883,7 +2157,7 @@
         </div>
         <div class="card">
           <h3>Atrasadas</h3>
-          ${late.map((t) => `<div class="task"><input type="checkbox" data-action="toggle-task" data-id="${t.id}" />
+          ${late.map((t) => `<div class="task"><input type="checkbox" data-action="toggle-task" data-id="${t.id}" aria-label="Marcar como hecha: ${esc(t.title)}" />
             <div class="tt">${esc(t.title)}</div></div>`).join("") || `<div class="empty">Al día. Bien.</div>`}
           <button class="btn btn-sm btn-primary" style="margin-top:10px" data-action="plan-to-tasks">Pasar plan a tareas</button>
         </div>
@@ -1925,19 +2199,19 @@
     ];
     const customs = state.settings.customAvatars || [];
     const simpleHtml = isApp ? "" : `<div class="ico-picks ico-simple">${simple.map(([id, lab]) =>
-        `<button type="button" data-action="${setA}" data-id="${id}" class="${ic === id ? "is-on" : ""}">${esc(lab)}</button>`
+        `<button type="button" data-action="${setA}" data-id="${id}" class="${ic === id ? "is-on" : ""}" aria-label="Icono ${esc(id)}" title="${esc(id)}">${esc(lab)}</button>`
       ).join("")}</div>`;
     return `
       ${simpleHtml}
       <div class="ava-grid">
-        <button type="button" data-action="${setA}" data-id="dragon" class="ava-ph ${ic === "dragon" ? "is-on" : ""}"><img src="assets/icon-192.png" alt=""></button>
+        <button type="button" data-action="${setA}" data-id="dragon" class="ava-ph ${ic === "dragon" ? "is-on" : ""}" aria-label="Icono dragón" title="Dragón"><img src="assets/icon-192.png" alt=""></button>
         ${AVATAR_PACK.map((a) =>
-          `<button type="button" data-action="${setA}" data-id="${a.id}" class="ava-ph ${ic === a.id ? "is-on" : ""}"><img src="${a.src}" alt=""></button>`
+          `<button type="button" data-action="${setA}" data-id="${a.id}" class="ava-ph ${ic === a.id ? "is-on" : ""}" aria-label="${esc(a.name || a.id)}" title="${esc(a.name || a.id)}"><img src="${a.src}" alt=""></button>`
         ).join("")}
         ${customs.map((c) =>
-          `<button type="button" data-action="${setA}" data-id="c:${c.id}" class="ava-ph ${ic === "c:" + c.id ? "is-on" : ""}"><img src="${c.data}" alt=""><span class="ava-x" data-action="del-avatar" data-id="${c.id}">×</span></button>`
+          `<button type="button" data-action="${setA}" data-id="c:${c.id}" class="ava-ph ${ic === "c:" + c.id ? "is-on" : ""}" aria-label="Tu foto" title="Tu foto"><img src="${c.data}" alt=""><span class="ava-x" data-action="del-avatar" data-id="${c.id}" role="presentation">×</span></button>`
         ).join("")}
-        <button type="button" class="ava-ph ava-add" data-action="${addA}" title="Añadir foto">+</button>
+        <button type="button" class="ava-ph ava-add" data-action="${addA}" title="Añadir foto" aria-label="Añadir foto">+</button>
       </div>
       <p class="hint" style="margin:6px 0 0">${isApp
         ? (isNativeShell()
@@ -2148,6 +2422,8 @@
   }
   function renderSettings() {
     const st = state.settings;
+    const skins = skinCat === "all" ? SKINS : SKINS.filter((s) => s.cat === skinCat);
+    const kb = (storageBytes() / 1024).toFixed(0);
     return `
       <div class="profile-card">
         <div class="profile-ava">${avatarInner()}</div>
@@ -2159,23 +2435,124 @@
 
       <p class="tools-kicker">Perfil</p>
       <div class="card">
-        <div class="field"><label>Nombre</label><input id="set-name" value="${esc(st.name)}" placeholder="Cómo te llamas"></div>
-        <div class="field"><label>Ciclo</label><input id="set-course" value="${esc(st.courseName)}"></div>
+        <div class="field"><label for="set-name">Nombre</label><input id="set-name" value="${esc(st.name)}" placeholder="Cómo te llamas"></div>
+        <div class="field"><label for="set-course">Ciclo</label><input id="set-course" value="${esc(st.courseName)}"></div>
         <div class="form-row">
-          <div class="field"><label>Centro</label><input id="set-center" value="${esc(st.center || "")}" placeholder="IES…"></div>
-          <div class="field"><label>Grupo</label><input id="set-group" value="${esc(st.group || "")}" placeholder="A / B"></div>
+          <div class="field"><label for="set-center">Centro</label><input id="set-center" value="${esc(st.center || "")}" placeholder="IES…"></div>
+          <div class="field"><label for="set-group">Grupo</label><input id="set-group" value="${esc(st.group || "")}" placeholder="A / B"></div>
         </div>
         <div class="form-row">
-          <div class="field"><label>Inicio</label><input id="set-start" type="date" value="${esc(st.startDate || "")}"></div>
-          <div class="field"><label>Fin</label><input id="set-end" type="date" value="${esc(st.endDate || "")}"></div>
+          <div class="field"><label for="set-start">Inicio del curso</label><input id="set-start" type="date" value="${esc(st.startDate || "")}"></div>
+          <div class="field"><label for="set-end">Fin del curso</label><input id="set-end" type="date" value="${esc(st.endDate || "")}"></div>
         </div>
         <div class="field"><label>Icono de perfil</label>${avatarPicksHTML("avatar")}</div>
+      </div>
+
+      <p class="tools-kicker">Aspecto</p>
+      <div class="card">
+        <div class="field"><label for="set-uisize">Tamaño del texto</label>
+          <select id="set-uisize">
+            <option value="sm" ${st.uiSize === "sm" ? "selected" : ""}>Pequeño</option>
+            <option value="md" ${!st.uiSize || st.uiSize === "md" ? "selected" : ""}>Normal</option>
+            <option value="lg" ${st.uiSize === "lg" ? "selected" : ""}>Grande</option>
+          </select></div>
+        <div class="field"><label for="set-startview">Vista al abrir</label>
+          <select id="set-startview">
+            ${["dashboard", "schedule", "exams", "tasks", "timer", "review", "achievements"].map((v) =>
+              `<option value="${v}" ${st.startView === v ? "selected" : ""}>${esc((titles[v] || [v])[0])}</option>`).join("")}
+          </select></div>
+        <label class="check"><input id="set-compact" type="checkbox" ${st.compact ? "checked" : ""}/> Modo compacto</label>
+        <label class="check"><input id="set-motion" type="checkbox" ${st.reduceMotion ? "checked" : ""}/> Reducir animaciones</label>
+        <label class="check"><input id="set-autoth" type="checkbox" ${st.autoTheme ? "checked" : ""}/> Tema automático (claro de día)</label>
+        <label class="check"><input id="set-showxp" type="checkbox" ${st.showXp !== false ? "checked" : ""}/> Mostrar XP</label>
+        <label class="check"><input id="set-showmedals" type="checkbox" ${st.showMedals !== false ? "checked" : ""}/> Mostrar medallas</label>
+        <label class="check"><input id="set-showweek" type="checkbox" ${st.showWeekStrip !== false ? "checked" : ""}/> Tira de la semana en Inicio</label>
+        <button class="btn ${st.uiTheme === "dark" ? "" : "btn-primary"}" type="button" data-action="toggle-theme" style="width:100%;margin-top:10px">
+          Cambiar a tema ${st.uiTheme === "dark" ? "claro" : "oscuro"}
+        </button>
+      </div>
+
+      <p class="tools-kicker" id="set-skin-zone">Tema visual · ${SKINS.length} estilos</p>
+      <div class="card">
+        <div class="skin-cats">
+          ${SKIN_CATS.map((c) => `<button class="chip ${skinCat === c.id ? "is-on" : ""}" data-action="skin-cat" data-id="${c.id}">${esc(c.name)}</button>`).join("")}
+        </div>
+        ${skinCards(skins)}
+        <p class="hint" style="margin:10px 0 0">El tema se aplica al momento. Puedes combinarlo con claro/oscuro arriba.</p>
+      </div>
+
+      <p class="tools-kicker">Estudio</p>
+      <div class="card">
+        <div class="form-row">
+          <div class="field"><label for="set-goal">Meta diaria (min)</label><input id="set-goal" type="number" min="10" max="600" value="${st.dailyGoal}"></div>
+          <div class="field"><label for="set-weekdays">Días objetivo por semana</label><input id="set-weekdays" type="number" min="1" max="7" value="${st.weekGoalDays || 5}"></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label for="set-work">Pomodoro (min)</label><input id="set-work" type="number" min="1" max="180" value="${st.pomodoroWork}"></div>
+          <div class="field"><label for="set-break">Descanso (min)</label><input id="set-break" type="number" min="1" max="60" value="${st.pomodoroBreak}"></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label for="set-long">Descanso largo (min)</label><input id="set-long" type="number" min="1" max="120" value="${st.pomodoroLong || 15}"></div>
+          <div class="field"><label for="set-cycles">Bloques hasta el largo</label><input id="set-cycles" type="number" min="2" max="10" value="${st.cyclesUntilLong || 4}"></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label for="set-defhours">Horas por examen</label><input id="set-defhours" type="number" min="1" max="100" value="${st.defaultHours || 8}"></div>
+          <div class="field"><label for="set-grademax">Nota máxima</label><input id="set-grademax" type="number" min="5" max="100" value="${st.gradeMax || 10}"></div>
+        </div>
+        <div class="field"><label for="set-prio">Prioridad por defecto</label>
+          <select id="set-prio">
+            <option value="alta" ${st.defaultPrio === "alta" ? "selected" : ""}>Alta</option>
+            <option value="media" ${!st.defaultPrio || st.defaultPrio === "media" ? "selected" : ""}>Media</option>
+            <option value="baja" ${st.defaultPrio === "baja" ? "selected" : ""}>Baja</option>
+          </select></div>
+        <label class="check"><input id="set-sound" type="checkbox" ${st.sound !== false ? "checked" : ""}/> Sonido al terminar el bloque</label>
+        <label class="check"><input id="set-vibrate" type="checkbox" ${st.vibrate !== false ? "checked" : ""}/> Vibración</label>
+        <label class="check"><input id="set-confetti" type="checkbox" ${st.confetti !== false ? "checked" : ""}/> Confeti en logros</label>
+        <label class="check"><input id="set-autonext" type="checkbox" ${st.autoNext ? "checked" : ""}/> Encadenar bloques automáticamente</label>
+        <label class="check"><input id="set-awake" type="checkbox" ${st.keepAwake !== false ? "checked" : ""}/> Mantener la pantalla encendida</label>
+        <label class="check"><input id="set-tbar" type="checkbox" ${st.showTimerBar !== false ? "checked" : ""}/> Barra del temporizador siempre visible</label>
+      </div>
+
+      <p class="tools-kicker">Agenda y horario</p>
+      <div class="card">
+        <div class="form-row">
+          <div class="field"><label for="set-starth">Jornada: inicio</label><input id="set-starth" type="number" min="0" max="23" value="${st.startHour || 8}"></div>
+          <div class="field"><label for="set-endh">Jornada: fin</label><input id="set-endh" type="number" min="1" max="24" value="${st.endHour || 21}"></div>
+        </div>
+        <label class="check"><input id="set-sat" type="checkbox" ${st.includeSaturday ? "checked" : ""}/> Incluir sábado en el horario</label>
+        <label class="check"><input id="set-att" type="checkbox" ${st.showAttendance !== false ? "checked" : ""}/> Pasar lista (presente / retraso / falta)</label>
+        <label class="check"><input id="set-hideok" type="checkbox" ${st.hideCompleted ? "checked" : ""}/> Ocultar tareas hechas</label>
+        <button class="btn" type="button" data-action="restore-timetable" style="width:100%;margin-top:10px">Restaurar el horario oficial 2.º SMR</button>
+        <p class="hint" style="margin:6px 0 0">Esto <b>sustituye</b> tus clases actuales por la plantilla del ciclo. Te pedirá confirmación.</p>
+      </div>
+
+      <p class="tools-kicker">Avisos</p>
+      <div class="card">
+        <p class="hint" style="margin-top:0">Son avisos del navegador: suenan con la app abierta o recién usada. iOS no permite programarlos con la app cerrada.</p>
+        <button class="btn ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify" style="width:100%">
+          ${st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos"}
+        </button>
+        <label class="check"><input id="set-nclass" type="checkbox" ${st.notifyClass !== false ? "checked" : ""}/> Clase (10 min antes)</label>
+        <label class="check"><input id="set-nex" type="checkbox" ${st.notifyExams !== false ? "checked" : ""}/> Exámenes</label>
+        <label class="check"><input id="set-nta" type="checkbox" ${st.notifyTasks !== false ? "checked" : ""}/> Tareas</label>
+        <label class="check"><input id="set-nca" type="checkbox" ${st.notifyCards !== false ? "checked" : ""}/> Fichas de repaso</label>
+        <label class="check"><input id="set-night" type="checkbox" ${st.nightRemind !== false ? "checked" : ""}/> Aviso nocturno para no romper la racha</label>
+        <label class="check"><input id="set-morn" type="checkbox" ${st.morningSummary !== false ? "checked" : ""}/> Resumen por la mañana</label>
+        <div class="form-row" style="margin-top:10px">
+          <div class="field"><label for="set-remindh">Hora del resumen</label><input id="set-remindh" type="number" min="5" max="12" value="${st.remindHour || 8}"></div>
+          <div class="field"><label for="set-lead">Días de antelación (examen)</label><input id="set-lead" type="number" min="0" max="30" value="${st.examLeadDays || 1}"></div>
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label for="set-pin">PIN de notas (opcional)</label>
+          <input id="set-pin" type="password" inputmode="numeric" autocomplete="off" value="${esc(st.pin || "")}" placeholder="Solo en este móvil">
+        </div>
+        <p class="hint" style="margin:6px 0 0">Con PIN puesto, las notas marcadas como protegidas piden el número. Evita miradas, no cifra el archivo.</p>
       </div>
 
       <p class="tools-kicker">Icono de la app</p>
       <div class="card">
         <div class="app-ico-preview">
-          <div class="app-ico-tile"><img src="${esc(avatarSrc(st.appIcon || "dragon") || "assets/icon-192.png")}" alt=""></div>
+          <div class="app-ico-tile"><img src="${esc(avatarSrc(st.appIcon || "dragon") || "assets/icon-192.png")}" alt="Icono actual"></div>
           <div>
             <b>Pantalla de inicio</b>
             <small>Es el dibujo del escritorio, no el de la esquina. En el APK cambia al tocarlo.</small>
@@ -2184,29 +2561,6 @@
         <div class="field"><label>Elige icono</label>${avatarPicksHTML("app")}</div>
         <button class="btn btn-primary" type="button" data-action="apply-desktop-icon" style="width:100%">Aplicar en el escritorio</button>
         <button class="btn" type="button" data-action="app-icon-from-profile" style="width:100%;margin-top:8px">Usar el del perfil</button>
-      </div>
-
-      <p class="tools-kicker">Estudio</p>
-      <div class="card">
-        <div class="field"><label>Meta diaria (min)</label><input id="set-goal" type="number" min="10" max="600" value="${st.dailyGoal}"></div>
-        <div class="form-row">
-          <div class="field"><label>Pomodoro</label><input id="set-work" type="number" min="1" max="180" value="${st.pomodoroWork}"></div>
-          <div class="field"><label>Descanso</label><input id="set-break" type="number" min="1" max="60" value="${st.pomodoroBreak}"></div>
-        </div>
-      </div>
-
-      <p class="tools-kicker">Avisos</p>
-      <div class="card">
-        <p class="hint" style="margin-top:0">Locales, en este móvil. Sirven al instalarla como app: clase, examen, tareas y estudio.</p>
-        <button class="btn ${st.notify ? "btn-primary" : ""}" type="button" data-action="enable-notify" style="width:100%">
-          ${st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos"}
-        </button>
-        <label class="check"><input id="set-nclass" type="checkbox" ${st.notifyClass !== false ? "checked" : ""}/> Clase (10 min antes)</label>
-        <label class="check"><input id="set-nex" type="checkbox" ${st.notifyExams !== false ? "checked" : ""}/> Exámenes</label>
-        <label class="check"><input id="set-nta" type="checkbox" ${st.notifyTasks !== false ? "checked" : ""}/> Tareas</label>
-        <label class="check"><input id="set-nca" type="checkbox" ${st.notifyCards !== false ? "checked" : ""}/> Fichas de repaso</label>
-        <label class="check"><input id="set-night" type="checkbox" ${st.nightRemind !== false ? "checked" : ""}/> Racha por la noche</label>
-        <div class="field" style="margin-top:12px"><label>PIN de notas (opcional)</label><input id="set-pin" type="password" inputmode="numeric" autocomplete="off" value="${esc(st.pin || "")}" placeholder="Solo en este móvil"></div>
       </div>
 
       <p class="tools-kicker">Widgets del escritorio</p>
@@ -2222,22 +2576,33 @@
       <p class="tools-kicker">Instalar como app</p>
       <div class="card">
         ${isStandalone() ? `<p class="hint" style="margin:0">Ya está instalada. Ábrela desde el icono <b>Aula SMR</b> de la pantalla de inicio. Funciona sin internet.</p>` : `<p class="hint" style="margin-top:0">${esc(installHint().detail)}</p>
-        <button class="btn btn-primary" data-action="install-pwa" style="width:100%">${deferredInstall ? "Instalar Aula SMR" : "Cómo instalar"}</button>
-        <p class="hint">Tiene que abrirse en Chrome (Android) o Safari (iPhone), no en un visor embebido.</p>`}
+        <button class="btn btn-primary" data-action="install-pwa" style="width:100%">${deferredInstall ? "Instalar Aula SMR" : "Cómo instalar"}</button>`}
       </div>
 
       <p class="tools-kicker">Datos (este dispositivo)</p>
       <div class="card" style="display:flex;flex-direction:column;gap:8px">
+        <p class="hint" style="margin:0">Ocupa <b>${kb} KB</b>. ${Number(kb) > 2500 ? "⚠️ Vas justo de espacio: exporta y borra fotos." : "Sin problemas de espacio."}</p>
         <button class="btn btn-primary" data-action="export">Exportar copia JSON</button>
         <button class="btn" data-action="import">Importar JSON</button>
-        <button class="btn" data-action="export-ics">Calendario .ics</button>
+        <button class="btn" data-action="export-ics">Calendario .ics (exámenes y entregas)</button>
+        <button class="btn" data-action="export-md">Apuntes a Markdown</button>
+        <button class="btn" data-action="export-anki">Fichas a CSV (Anki)</button>
         <button class="btn" data-action="load-demo">Cargar ejemplo 2.º SMR</button>
-        <button class="btn btn-danger" data-action="wipe">Borrar todo</button>
+        <button class="btn" data-action="restore-backup">Recuperar la copia automática</button>
+        <button class="btn" data-action="wipe-backup-only">Borrar solo las copias automáticas</button>
+        <button class="btn btn-danger" data-action="wipe">Borrar todo (incluidas las copias)</button>
       </div>
 
-      <button class="btn btn-primary" data-action="save-settings" style="width:100%">Guardar</button>
-      <button class="btn" data-action="redo-onboard" style="width:100%;margin-top:8px">Configurar de nuevo</button>
-      <p class="footer-note">Aula SMR · local · sin cuenta · v48</p>
+      <p class="tools-kicker">Avanzado</p>
+      <div class="card">
+        <label class="check"><input id="set-confirm" type="checkbox" ${st.confirmDelete !== false ? "checked" : ""}/> Preguntar antes de borrar</label>
+        <label class="check"><input id="set-avatar" type="checkbox" ${st.avatarOn !== false ? "checked" : ""}/> Foto de perfil en la cabecera</label>
+        <button class="btn" data-action="undo" style="width:100%;margin-top:10px">Deshacer el último borrado</button>
+      </div>
+
+      <button class="btn btn-primary" data-action="save-settings" style="width:100%;margin-top:16px">Guardar ajustes</button>
+      <button class="btn" data-action="redo-onboard" style="width:100%;margin-top:8px">Volver a configurar desde el principio</button>
+      <p class="footer-note">Aula SMR · datos solo en este dispositivo · ${APP_VERSION}</p>
     `;
   }
 
@@ -2394,6 +2759,7 @@
     const n = { id: uid(), subjectId: sid, title: "Nueva nota", content: "", pinned: false, createdAt: Date.now(), updatedAt: Date.now() };
     state.notes.unshift(n); noteId = n.id; notePreview = false; view = "notes"; grantXP(5, "Nueva nota"); checkAchievements(); render();
   }
+  let noteTimer = null;
   function persistNote() {
     const n = state.notes.find((x) => x.id === noteId);
     if (!n) return;
@@ -2401,11 +2767,20 @@
     if ($("#note-body")) n.content = $("#note-body").value;
     n.versions = n.versions || [];
     const last = n.versions[0];
-    if (!last || last.content !== n.content || last.title !== n.title) {
+    const cambio = !last || last.content !== n.content || last.title !== n.title;
+    // Una versión cada 2 minutos como mucho: antes se guardaba una por tecla.
+    if (cambio && (!last || Date.now() - (last.t || 0) > 120000)) {
       n.versions.unshift({ t: Date.now(), title: n.title, content: n.content });
       if (n.versions.length > 12) n.versions.length = 12;
     }
     n.updatedAt = Date.now();
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(save, 600);
+  }
+  function persistNoteNow() {
+    clearTimeout(noteTimer);
+    noteTimer = null;
+    persistNote();
     save();
   }
 
@@ -2418,7 +2793,9 @@
     timer.mode = mode;
     if (reset) {
       timer.running = false; clearInterval(timer.tick);
+      timer.endsAt = 0;
       timer.remaining = modeMinutes(mode) * 60; timer.total = timer.remaining;
+      timerClear();
     }
     updateTimerUI(); updateTimerChrome();
   }
@@ -2434,7 +2811,63 @@
       o.start(); o.stop(ac.currentTime + 0.52);
     } catch {}
   }
-  function completeTimer() {
+  const TIMER_KEY = "aula.timer";
+
+  function timerPersist() {
+    try {
+      localStorage.setItem(TIMER_KEY, JSON.stringify({
+        mode: timer.mode, running: timer.running, remaining: Math.round(timer.remaining),
+        total: timer.total, subjectId: timer.subjectId, cycles: timer.cycles,
+        endsAt: timer.running ? timer.endsAt : 0,
+      }));
+    } catch {}
+  }
+  function timerClear() { try { localStorage.removeItem(TIMER_KEY); } catch {} }
+
+  // Al abrir la app se recupera el bloque en curso; si el tiempo ya pasó, se cierra solo.
+  function timerRestore() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(TIMER_KEY) || "null"); } catch {}
+    if (!saved || typeof saved !== "object") return;
+    timer.mode = ["work", "break", "long"].includes(saved.mode) ? saved.mode : "work";
+    timer.total = Number(saved.total) || modeMinutes(timer.mode) * 60;
+    timer.cycles = Number(saved.cycles) || 0;
+    if (saved.subjectId) timer.subjectId = saved.subjectId;
+    if (saved.running && saved.endsAt) {
+      const left = Math.round((saved.endsAt - Date.now()) / 1000);
+      timer.endsAt = saved.endsAt;
+      timer.remaining = Math.max(0, left);
+      if (left <= 0) {
+        timer.remaining = 0;
+        toast("Tu bloque terminó mientras no estabas");
+        completeTimer();
+        return;
+      }
+      startTimerLoop();
+      const sub = state.subjects.find((s) => s.id === timer.subjectId);
+      toast("Bloque en curso: " + fmtRemain(Math.round(left / 60)) + (sub ? " · " + sub.name : ""));
+    } else {
+      timer.remaining = clamp(Number(saved.remaining) || modeMinutes(timer.mode) * 60, 0, 24 * 3600);
+      if (timer.remaining < timer.total) updateTimerChrome();
+    }
+    updateTimerUI();
+  }
+  function startTimerLoop() {
+    timer.running = true;
+    timer.endsAt = Date.now() + timer.remaining * 1000;
+    clearInterval(timer.tick);
+    timer.tick = setInterval(() => {
+      // Se calcula con la hora del sistema: da igual que el móvil estrangule el intervalo.
+      timer.remaining = Math.max(0, Math.round((timer.endsAt - Date.now()) / 1000));
+      if (timer.remaining <= 0) { timer.remaining = 0; completeTimer(); }
+      else { updateTimerUI(); updateTimerChrome(); }
+    }, 1000);
+    if (state.settings.keepAwake !== false && navigator.wakeLock) {
+      try { navigator.wakeLock.request("screen").then((s) => { wakeLock = s; }).catch(() => {}); } catch {}
+    }
+    timerPersist();
+  }
+  function completeTimer(desdeFuera) {
     timer.running = false; clearInterval(timer.tick); beep();
     try { wakeLock?.release(); } catch {} wakeLock = null;
     if (timer.mode === "work") {
@@ -2444,9 +2877,25 @@
       if (document.hidden) noteOnce("pomo-" + Date.now(), "Bloque terminado", "+" + elapsed + " min. Toca para el descanso.");
       setMode(timer.cycles % state.settings.cyclesUntilLong === 0 ? "long" : "break", true);
     } else { toast("Descanso terminado"); setMode("work", true); }
+    timerPersist();
     if (view === "timer") render(); else updateTimerChrome();
-    if (state.settings.autoNext) setTimeout(() => { if (!timer.running) toggleTimer(); }, 800);
+    if (state.settings.autoNext && !desdeFuera) setTimeout(() => { if (!timer.running) toggleTimer(); }, 800);
   }
+  function toggleTimer() {
+    if (timer.running) {
+      timer.running = false; clearInterval(timer.tick);
+      try { wakeLock?.release(); } catch {} wakeLock = null;
+      timer.remaining = Math.max(0, Math.round(((timer.endsAt || Date.now()) - Date.now()) / 1000));
+      timerPersist();
+      updateTimerUI(); updateTimerChrome(); return;
+    }
+    timer.subjectId = $("#timer-subject")?.value || timer.subjectId;
+    if (timer.remaining <= 0) timer.remaining = modeMinutes(timer.mode) * 60;
+    timer.total = timer.total || timer.remaining;
+    startTimerLoop();
+    updateTimerUI(); updateTimerChrome();
+  }
+
   function updateTimerUI() {
     const disp = $("#timer-display"); if (!disp) return;
     const m = Math.floor(Math.max(0, timer.remaining) / 60);
@@ -2467,7 +2916,8 @@
     const bar = $("#timer-bar");
     const show = state.settings.showTimerBar !== false && (timer.running || (timer.remaining < timer.total && timer.remaining > 0));
     document.body.classList.toggle("timer-on", !!show);
-    if (!show) { bar.hidden = true; if (!timer.running) document.title = BASE_TITLE; return; }
+    if (!show) { if (bar) bar.hidden = true; if (!timer.running) document.title = BASE_TITLE; return; }
+    if (!bar) return;
     bar.hidden = false;
     bar.classList.toggle("break", timer.mode !== "work");
     const m = Math.floor(Math.max(0, timer.remaining) / 60);
@@ -2476,24 +2926,7 @@
     $("#timer-bar-time").textContent = clock;
     $("#timer-bar-lbl").textContent = timer.mode === "work" ? "Estudio" : "Descanso";
     $("#timer-bar-btn").textContent = timer.running ? "Pausa" : "Seguir";
-    document.title = timer.running ? `${clock} · Aula` : BASE_TITLE;
-  }
-  function toggleTimer() {
-    if (timer.running) {
-      timer.running = false; clearInterval(timer.tick);
-      try { wakeLock?.release(); } catch {} wakeLock = null;
-      updateTimerUI(); updateTimerChrome(); return;
-    }
-    timer.subjectId = $("#timer-subject")?.value || timer.subjectId;
-    timer.running = true;
-    if (state.settings.keepAwake !== false && navigator.wakeLock) navigator.wakeLock.request("screen").then((s) => { wakeLock = s; }).catch(() => {});
-    clearInterval(timer.tick);
-    timer.tick = setInterval(() => {
-      timer.remaining -= 1;
-      if (timer.remaining <= 0) { timer.remaining = 0; completeTimer(); }
-      else { updateTimerUI(); updateTimerChrome(); }
-    }, 1000);
-    updateTimerUI(); updateTimerChrome();
+    document.title = timer.running ? `${clock} · ${BASE_TITLE}` : BASE_TITLE;
   }
 
   function pushUndo() {
@@ -2520,23 +2953,68 @@
     if (s) s.hidden = true;
     $("#app")?.classList.remove("more-open");
   }
+  function icsEscape(s) {
+    return String(s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  }
+  function icsFold(line) {
+    // RFC 5545: líneas de más de 75 octetos se pliegan con CRLF + espacio
+    const out = [];
+    let rest = String(line);
+    while (rest.length > 73) { out.push(rest.slice(0, 73)); rest = " " + rest.slice(73); }
+    out.push(rest);
+    return out.join("\r\n");
+  }
+  function icsStamp(d) {
+    return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+  }
+  // Formato local (sin Z) y coherente con un DTSTART en hora local.
+  function icsLocalStamp(d) {
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  }
   function exportICS() {
-    const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Aula SMR//ES"];
+    const now = new Date();
+    const lines = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+      "PRODID:-//Aula SMR//ES", `X-WR-CALNAME:${icsEscape(state.settings.courseName || "Aula SMR")}`,
+    ];
+    const addEvent = (uidVal, dateISO, startHHMM, mins, summary, desc, subj) => {
+      const start = `${dateISO.replace(/-/g, "")}T${(startHHMM || "09:00").replace(":", "")}00`;
+      const end = new Date(new Date(`${dateISO}T${startHHMM || "09:00"}:00`).getTime() + mins * 60000);
+      lines.push("BEGIN:VEVENT",
+        `UID:${uidVal}@aula-smr`,
+        `DTSTAMP:${icsStamp(now)}`,
+        `DTSTART:${start}`,
+        `DTEND:${icsLocalStamp(end)}`,
+        `SUMMARY:${icsEscape(summary)}`);
+      if (desc) lines.push(`DESCRIPTION:${icsEscape(desc)}`);
+      if (subj) lines.push(`CATEGORIES:${icsEscape(subj)}`);
+      lines.push("BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY", `DESCRIPTION:${icsEscape(summary)}`, "END:VALARM", "END:VEVENT");
+    };
     state.exams.forEach((e) => {
-      const day = (e.date || "").replace(/-/g, "");
-      if (!day) return;
-      const hm = (e.time || "09:00").replace(":", "") + "00";
-      lines.push("BEGIN:VEVENT", `DTSTART:${day}T${hm}`, `SUMMARY:${(e.title || "").replace(/,/g, "\\,")}`, "END:VEVENT");
+      if (!e.date) return;
+      addEvent(e.id, e.date, e.time || "09:00", 60, e.title, e.notes || e.location || "", subjectName(e.subjectId));
+    });
+    state.tasks.filter((x) => !x.done && x.due).forEach((x) => {
+      // Un evento de día completo necesita DTEND: el día siguiente.
+      const diaSig = new Date(x.due + "T12:00:00");
+      diaSig.setDate(diaSig.getDate() + 1);
+      lines.push("BEGIN:VEVENT", `UID:${x.id}@aula-smr`, `DTSTAMP:${icsStamp(now)}`,
+        `DTSTART;VALUE=DATE:${x.due.replace(/-/g, "")}`,
+        `DTEND;VALUE=DATE:${localISO(diaSig).replace(/-/g, "")}`,
+        `SUMMARY:${icsEscape("Entrega: " + x.title)}`,
+        `CATEGORIES:${icsEscape(subjectName(x.subjectId))}`,
+        "END:VEVENT");
     });
     lines.push("END:VCALENDAR");
+    const body = lines.map(icsFold).join("\r\n") + "\r\n";
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([lines.join("\r\n")], { type: "text/calendar" }));
+    a.href = URL.createObjectURL(new Blob([body], { type: "text/calendar;charset=utf-8" }));
     a.download = "aula-smr.ics"; a.click();
-    toast("Calendario exportado");
+    toast("Calendario exportado (" + (state.exams.length + state.tasks.filter((x) => !x.done && x.due).length) + " eventos)");
     ensureProgress(); state.progress.flags = { ...(state.progress.flags || {}), exported: true }; checkAchievements(); save();
   }
   function noteToCards() {
-    persistNote();
+    persistNoteNow();
     const n = state.notes.find((x) => x.id === noteId);
     if (!n) return;
     let added = 0;
@@ -2567,27 +3045,46 @@
 
   function collectCmd(q) {
     q = (q || "").trim().toLowerCase();
-    const actions = [
-      { kind: "Acción", title: "Captura rápida", run: openCapture },
-      { kind: "Acción", title: "Nuevo examen", run: () => addExam() },
-      { kind: "Acción", title: "Nueva nota", run: addNote },
-      { kind: "Acción", title: "Nueva tarea", run: () => addTask() },
-      { kind: "Acción", title: "Ir a temporizador", run: () => go("timer") },
-      { kind: "Acción", title: "Ver logros", run: () => go("achievements") },
-      { kind: "Acción", title: "Agenda", run: () => go("agenda") },
-      { kind: "Acción", title: "Asistente", run: () => go("chatbot") },
-      { kind: "Acción", title: "Tablero kanban", run: () => go("kanban") },
-      { kind: "Acción", title: "Simulador de nota", run: () => go("simulator") },
-      { kind: "Acción", title: "Repaso rápido", run: () => go("quickreview") },
-      { kind: "Acción", title: "Hábitos", run: () => go("habits") },
-      { kind: "Acción", title: "Cambiar tema claro/oscuro", run: () => { state.settings.uiTheme = state.settings.uiTheme === "light" ? "dark" : "light"; applyTheme(); save(); toast(state.settings.uiTheme === "light" ? "Tema claro" : "Tema oscuro"); } },
-      { kind: "Acción", title: "Instalar app", run: installPwa },
-      { kind: "Acción", title: "Herramientas SMR", run: () => go("tools") },
-    ];
-    const hits = actions.filter((a) => !q || a.title.toLowerCase().includes(q));
-    state.notes.forEach((n) => { if (!q || (n.title + n.content).toLowerCase().includes(q)) hits.push({ kind: "Nota", title: n.title, run: () => { noteId = n.id; go("notes"); } }); });
-    state.exams.forEach((e) => { if (!q || e.title.toLowerCase().includes(q)) hits.push({ kind: "Examen", title: e.title, run: () => addExam(e) }); });
-    return hits.slice(0, 12);
+    const hit = (s) => !q || String(s || "").toLowerCase().includes(q);
+    const out = [];
+    const acc = (title, run) => { if (hit(title)) out.push({ kind: "Ir", title, run }); };
+    acc("Captura rápida", openCapture);
+    acc("Nuevo examen", () => addExam());
+    acc("Nueva nota", addNote);
+    acc("Nueva tarea", () => addTask());
+    acc("Nueva ficha", () => addCard());
+    acc("Nueva clase en el horario", () => addEvent());
+    acc("Registrar estudio a mano", logSession);
+    acc("Temporizador", () => go("timer"));
+    acc("Tablero kanban", () => go("kanban"));
+    acc("Calendario y horario", () => go("schedule"));
+    acc("Calificaciones", () => go("rendimiento"));
+    acc("Estadísticas", () => go("stats"));
+    acc("Logros", () => go("achievements"));
+    acc("Repaso rápido", () => go("quickreview"));
+    acc("Modo examen", () => go("examode"));
+    acc("Herramientas SMR", () => go("tools"));
+    acc("Ajustes", () => go("settings"));
+    acc("Deshacer el último cambio", undo);
+    acc("Cambiar a tema claro/oscuro", () => { state.settings.uiTheme = state.settings.uiTheme === "light" ? "dark" : "light"; applyTheme(); save(); toast(state.settings.uiTheme === "light" ? "Tema claro" : "Tema oscuro"); });
+    acc("Iniciar bloque de estudio", () => { go("timer"); toggleTimer(); });
+
+    if (q) {
+      state.notes.forEach((n) => {
+        const visible = !(n.locked && !unlockedNotes.has(n.id));
+        if (hit(n.title) || (visible && hit(notePlain(n)))) out.push({ kind: "Nota", title: n.title || "Sin título", run: () => { noteId = n.id; go("notes"); } });
+      });
+      state.exams.forEach((e) => { if (hit(e.title)) out.push({ kind: "Examen", title: e.title, run: () => { examFilter = e.subjectId || "all"; go("exams"); } }); });
+      state.tasks.forEach((x) => { if (hit(x.title)) out.push({ kind: "Tarea", title: x.title, run: () => go("tasks") }); });
+      state.subjects.forEach((s) => { if (hit(s.name)) out.push({ kind: "Módulo", title: s.name, run: () => { subjectFocus = s.id; go("subjects"); } }); });
+      state.cards.forEach((c) => { if (hit(c.front)) out.push({ kind: "Ficha", title: c.front, run: () => { cardFilter = c.subjectId || "all"; cardQueue = [c]; go("cards"); } }); });
+      state.glossary.forEach((g) => { if (hit(g.term)) out.push({ kind: "Glosario", title: g.term, run: () => go("glossary") }); });
+      if (window.AulaStudio && typeof window.AulaStudio.toolCatalog === "function") {
+        try { window.AulaStudio.toolCatalog().forEach((x) => { if (hit(x.title)) out.push({ kind: "Herramienta", title: x.title, run: x.run }); }); } catch {}
+      }
+    }
+    const prio = { Ir: 0, Módulo: 1, Examen: 1, Tarea: 2, Nota: 2, Ficha: 3, Glosario: 3, Herramienta: 2 };
+    return out.slice(0, 14).sort((a, b) => (prio[a.kind] || 9) - (prio[b.kind] || 9));
   }
   function renderCmd() {
     $("#cmdk-list").innerHTML = cmdItems.map((it, i) =>
@@ -2598,7 +3095,7 @@
   function closeCmd() { cmdOpen = false; $("#cmdk").hidden = true; }
 
   function go(v) {
-    persistNote();
+    persistNoteNow();
     view = v;
     $("#sidebar")?.classList.remove("open");
     $("#overlay").classList.remove("menu-on");
@@ -2620,7 +3117,16 @@
         <div class="field"><label>Minutos</label><input name="minutes" type="number" min="1" value="30" /></div>
         <div class="field"><label>Fecha</label><input name="date" type="date" value="${todayISO()}" /></div>
       </div>
-    `, { onSubmit(data) { state.sessions.push({ id: uid(), subjectId: data.subjectId, date: data.date, minutes: Number(data.minutes) || 0, type: "manual" }); checkAchievements(); closeModal(); render(); } });
+    `, {
+      onSubmit(data) {
+        const mins = clamp(Math.round(Number(data.minutes) || 0), 1, 600);
+        const hoy = todayISO();
+        const fecha = asISO(data.date) || hoy;
+        if (fecha > hoy) { toast("No puedes registrar estudio en el futuro"); return; }
+        state.sessions.push({ id: uid(), subjectId: data.subjectId, date: fecha, minutes: mins, type: "manual" });
+        checkAchievements(); closeModal(); render();
+      },
+    });
   }
   function cycleSkin() {
     const i = SKINS.findIndex((s) => s.id === (state.settings.skin || "redes"));
@@ -2658,12 +3164,24 @@
   }
   function doWipe() {
     pushUndo();
+    // Todo lo que ha escrito la app en este dispositivo, no solo la clave principal.
+    try {
+      const kill = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith("aula.") || k === KEY || k === BACKUP_KEY)) kill.push(k);
+      }
+      kill.forEach((k) => localStorage.removeItem(k));
+    } catch {}
+    if ("caches" in window) {
+      try { caches.keys().then((keys) => keys.filter((k) => !k.startsWith("aula-app-icon")).forEach((k) => caches.delete(k))); } catch {}
+    }
     state = defaultState();
     state.settings.demo = false;
     noteId = null;
     view = "dashboard";
     render();
-    toast("Datos borrados");
+    toast("Todo borrado, también las copias");
   }
   function exportJSON() {
     const a = document.createElement("a");
@@ -2672,18 +3190,26 @@
     ensureProgress(); state.progress.flags = { ...(state.progress.flags || {}), exported: true }; checkAchievements(); save();
   }
   function importJSON() {
-    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json";
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json,.json";
     inp.onchange = () => {
       const f = inp.files[0]; if (!f) return;
+      if (f.size > 12_000_000) { toast("Ese archivo es demasiado grande"); return; }
       const r = new FileReader();
       r.onload = () => {
-        try {
-          const p = JSON.parse(r.result);
-          state = { ...defaultState(), ...p, settings: { ...defaultState().settings, ...(p.settings || {}) } };
-          if (!Array.isArray(state.settings.customAvatars)) state.settings.customAvatars = [];
-          if (state.settings.skin === "pokemon") state.settings.skin = "hub";
-          save(); toast("Importado"); render();
-        } catch { toast("JSON no válido"); }
+        let parsed = null;
+        try { parsed = JSON.parse(r.result); } catch { toast("El archivo no es un JSON válido"); return; }
+        if (!parsed || typeof parsed !== "object") { toast("El archivo no tiene datos de Aula SMR"); return; }
+        const resumen = `Trae ${(parsed.subjects || []).length} módulos, ${(parsed.exams || []).length} exámenes, ${(parsed.notes || []).length} notas y ${(parsed.tasks || []).length} tareas.`;
+        ask("Importar copia", `${resumen} Se sustituyen los datos actuales. Si te arrepientes, usa Deshacer.`, () => {
+          pushUndo();
+          const nuevo = sanitize(parsed);
+          // Los datos del archivo manda, pero el tema y los avisos del móvil se respetan
+          nuevo.settings.uiTheme = state.settings.uiTheme || nuevo.settings.uiTheme;
+          state = nuevo;
+          noteId = state.notes[0] ? state.notes[0].id : null;
+          loadProblem = "";
+          save(); toast("Copia importada"); render();
+        });
       };
       r.readAsText(f);
     };
@@ -2742,7 +3268,7 @@
     }
     if ($("#set-startview")) st.startView = $("#set-startview").value;
     if ($("#set-uisize")) st.uiSize = $("#set-uisize").value;
-    if ($("#set-compact")) st.compact = $("#set-compact").value === "1";
+    const cmp = on("#set-compact"); if (cmp !== undefined) st.compact = cmp;
     const m = on("#set-motion"); if (m !== undefined) st.reduceMotion = m;
     const x = on("#set-showxp"); if (x !== undefined) st.showXp = x;
     const md = on("#set-showmedals"); if (md !== undefined) st.showMedals = md;
@@ -2799,6 +3325,55 @@
     }
     const action = btn.dataset.action, id = btn.dataset.id;
     if (action === "close-modal") closeModal();
+    if (action === "skin-cat") { skinCat = id; render(); }
+    if (action === "study-block") {
+      const mins = clamp(Number(btn.dataset.min) || 45, 10, 180);
+      const hoy = Number(btn.dataset.day) === weekdayMon0(new Date());
+      openModal("Hueco libre · " + mins + " min", `
+        <div class="field"><label>Módulo</label><select id="sb-subject">${subjectOptions("")}</select></div>
+        <div class="field"><label>Minutos</label><input id="sb-min" type="number" min="10" max="180" value="${mins}"></div>
+        <p class="hint">${hoy ? "Puedes poner el temporizador ahora mismo o apuntarlo como tarea." : "Este día no es hoy: se apunta como tarea."}</p>`,
+        {
+          confirm: hoy ? "Empezar a estudiar" : "Apuntar tarea",
+          onSubmit(data) {
+            const m = clamp(Number(data["sb-min"] || $("#sb-min")?.value) || mins, 10, 180);
+            const sid = data["sb-subject"] || $("#sb-subject")?.value || "";
+            if (hoy) {
+              timer.subjectId = sid;
+              timer.mode = "work"; timer.total = m * 60; timer.remaining = m * 60; timer.running = false; timer.endsAt = 0;
+              closeModal(); go("timer"); toggleTimer();
+              toast("Bloque de " + m + " min");
+            } else {
+              state.tasks.push({ id: uid(), subjectId: sid, title: `Estudiar ${m} min`, due: todayISO(), priority: "media", done: false });
+              closeModal(); save(); render(); toast("Tarea apuntada");
+            }
+          },
+        });
+    }
+    if (action === "restore-backup") restoreBackup();
+    if (action === "dismiss-load-problem") { loadProblem = ""; render(); }
+    if (action === "restore-timetable") {
+      ask("Restaurar horario oficial", "Se sustituyen tus clases actuales por la plantilla de 2.º SMR. Tus exámenes, notas y tareas no se tocan.", () => {
+        pushUndo();
+        applyOfficialTimetable(state);
+        save(); toast("Horario oficial restaurado"); render();
+      });
+      return;
+    }
+    if (action === "note-unlock") {
+      const v = ($("#note-pin-input") || {}).value || "";
+      if (checkPin(v)) { unlockedNotes.add(noteId); toast("Nota desbloqueada"); }
+      else toast("PIN incorrecto");
+      render();
+    }
+    if (action === "note-photo-del") {
+      const n = state.notes.find((x) => x.id === noteId);
+      if (n) {
+        n.attachments = (n.attachments || []).filter((a) => a.id !== id);
+        n.content = String(n.content || "").replace(new RegExp("!\\[[^\\]]*\\]\\(aula-img:" + id + "\\)\\n?", "g"), "");
+        save(); render();
+      }
+    }
     if (action === "quick-add") quickAdd();
     if (action === "open-cmd") openCmd();
     if (action === "cmd-run") { const it = cmdItems[Number(btn.dataset.i)]; closeCmd(); it?.run(); }
@@ -2879,10 +3454,10 @@
     if (action === "delete-subject") ask("Eliminar módulo", "Los datos quedan sueltos.", () => { pushUndo(); state.subjects = state.subjects.filter((x) => x.id !== id); closeModal(); render(); });
     if (action === "pick-color") { const val = $("#color-val"); if (val) val.value = btn.dataset.color; $$(".color-picks button").forEach((b) => b.classList.toggle("is-on", b === btn)); }
     if (action === "add-note") addNote();
-    if (action === "open-note") { persistNote(); noteId = id; notePreview = false; view = "notes"; render(); closeCmd(); }
-    if (action === "note-filter") { persistNote(); noteFilter = id; render(); }
+    if (action === "open-note") { persistNoteNow(); noteId = id; notePreview = false; view = "notes"; render(); closeCmd(); }
+    if (action === "note-filter") { persistNoteNow(); noteFilter = id; render(); }
     if (action === "toggle-pin") { const n = state.notes.find((x) => x.id === noteId); if (n) { n.pinned = !n.pinned; render(); } }
-    if (action === "toggle-preview") { persistNote(); notePreview = !notePreview; render(); }
+    if (action === "toggle-preview") { persistNoteNow(); notePreview = !notePreview; render(); }
     if (action === "delete-note") ask("Eliminar nota", "Va a la papelera.", () => { pushUndo(); const gone = state.notes.find((x) => x.id === noteId); if (gone) { gone.deletedAt = Date.now(); state.trash = state.trash || []; state.trash.unshift(gone); } state.notes = state.notes.filter((x) => x.id !== noteId); noteId = state.notes[0]?.id || null; render(); });
     if (action === "add-task") addTask();
     if (action === "edit-task") addTask(state.tasks.find((x) => x.id === id));
@@ -2907,13 +3482,26 @@
     if (action === "import") importJSON();
     if (action === "load-demo") { state = seedDemo(); toast("Ejemplo SMR"); render(); }
     if (action === "wipe") {
-      const copy = window.confirm("Vas a borrar TODOS los datos de Aula SMR (exámenes, notas, horario…).\n\n¿Descargar una copia JSON ahora?");
-      if (copy) exportJSON();
-      const ok = window.confirm(copy
-        ? "Si se ha descargado la copia, confirma el borrado."
-        : "NO hay copia. ¿Borrar todo de todas formas? No se puede deshacer.");
-      if (!ok) { toast("Cancelado"); return; }
-      doWipe();
+      const kb = (storageBytes() / 1024).toFixed(0);
+      openModal("Borrar todos los datos", `
+        <p>Se borran de este dispositivo <b>todo</b>: módulos, horario, exámenes, notas, fichas, sesiones y las copias automáticas. Ocupan <b>${kb} KB</b>.</p>
+        <p class="hint">Esto no se puede deshacer desde aquí. Si quieres una copia, descárgala antes.</p>`,
+        {
+          confirm: "Borrar todo",
+          danger: true,
+          onSubmit() { closeModal(); doWipe(); },
+        });
+    }
+    if (action === "wipe-backup-only") {
+      openModal("Borrar solo las copias", `<p>Se borran las copias automáticas y las instantáneas. Tus datos actuales se quedan como están.</p>`, {
+        confirm: "Borrar copias", danger: true,
+        onSubmit() {
+          try {
+            ["aula.snaps", "aula.lastBackup", KEY + ".bak", BAK_AT_KEY].forEach((k) => localStorage.removeItem(k));
+          } catch {}
+          closeModal(); toast("Copias borradas");
+        },
+      });
     }
     if (action === "clear-demo") { state = defaultState(); state.settings.demo = false; noteId = null; view = "subjects"; toast("Empieza por Módulos"); render(); }
     if (action === "keep-demo") { state.settings.demo = false; toast("Tus datos"); render(); }
@@ -3030,6 +3618,34 @@
       const item = ex?.checklist?.find((c) => c.id === id);
       if (item) { item.done = !item.done; save(); render(); }
     }
+    if (action === "skin-cat") { skinCat = id; render(); }
+    if (action === "restore-backup") restoreBackup();
+    if (action === "dismiss-load-problem") { loadProblem = ""; render(); }
+    if (action === "restore-timetable") {
+      openModal("Restaurar el horario oficial", `<p>Se <b>sustituyen</b> tus clases actuales por la plantilla de 2.º SMR (${OFFICIAL_MODS.length} módulos).</p>
+        <p class="hint">Exámenes, notas, tareas y sesiones no se tocan. Puedes deshacerlo justo después.</p>`,
+        { confirm: "Restaurar horario", onSubmit() {
+            pushUndo();
+            state.events = [];
+            applyOfficialTimetable(state);
+            checkAchievements(); save(); closeModal(); render();
+            toast("Horario oficial restaurado");
+          } });
+    }
+    if (action === "note-unlock") {
+      const v = ($("#note-pin-input") || {}).value || "";
+      if (checkPin(v)) { unlockedNotes.add(noteId); toast("Nota desbloqueada"); }
+      else toast("PIN incorrecto");
+      render();
+    }
+    if (action === "note-photo-del") {
+      const n = state.notes.find((x) => x.id === noteId);
+      if (n) {
+        n.attachments = (n.attachments || []).filter((a) => a.id !== id);
+        n.content = String(n.content || "").replace(new RegExp("!\\[[^\\]]*\\]\\(aula-img:" + id + "\\)\\n?", "g"), "");
+        save(); render();
+      }
+    }
     if (action === "export-ics") exportICS();
     if (action === "note-to-cards") noteToCards();
     if (action === "toggle-focus") document.body.classList.toggle("focus-mode");
@@ -3113,53 +3729,133 @@
   });
 
 
+  // Sinónimos por módulo: el intérprete de frases deja de adivinar por palabras sueltas.
+  const SUBJECT_HINTS = [
+    ["seg", ["seguridad", "amenazas", "malware", "ransomware", "cortafuegos", "firewall", "antivirus", "phishing", "hardening", "copias de seguridad", "cifrado"]],
+    ["ipe", ["empleabilidad", "itinerario", "curriculum", "contrato", "nomina", "entrevista", "prevencion", "laboral"]],
+    ["sor", ["sistemas operativos", "sistema operativo", "active directory", "directorio activo", "gpo", "usuarios", "grupos", "ntfs", "windows server", "ubuntu", "debian", "systemd", "dominio", "virtualizacion", "maquina virtual"]],
+    ["ser", ["servicios en red", "dhcp", "dns", "apache", "nginx", "ftp", "correo", "smtp", "imap", "pop3", "ssh", "certificado", "servidor web", "redes", "subnetting", "vlan", "enrutamiento", "cableado"]],
+    ["web", ["aplicaciones web", "html", "css", "javascript", "php", "formulario", "formularios", "maquetar", "frontend", "wordpress", "pagina web"]],
+    ["pro", ["proyecto", "intermodular", "memoria", "defensa"]],
+    ["dig", ["digitalizacion", "transformacion digital"]],
+    ["sos", ["sostenibilidad", "medio ambiente", "economia circular", "ods"]],
+    ["opt", ["optativo", "optativa"]],
+    ["tut", ["tutoria", "tutoría"]],
+  ];
+  function subjectKeyOf(name) {
+    const n = String(name || "").toLowerCase();
+    // Solo alias distintivos: evita que "ad" o "cv" casen con cualquier palabra.
+    const hit = OFFICIAL_MODS.find((m) => [m.key, ...(m.aliases || [])].some((a) => a.length > 3 && n.includes(a)));
+    return hit ? hit.key : "";
+  }
+  // Pistas fuertes (sinónimos del módulo) + palabras del propio nombre (peso menor).
+  function subjectSynonyms() {
+    return state.subjects.map((s) => {
+      const n = s.name.toLowerCase();
+      const key = subjectKeyOf(n);
+      const hints = ((SUBJECT_HINTS.find(([k]) => k === key) || [null, []])[1] || []);
+      return { id: s.id, hints, words: n.split(/\s+/).filter((w) => w.length > 3) };
+    });
+  }
+  // Devuelve el módulo que mejor encaja o null (nunca inventa uno al azar).
+  function matchSubject(lower) {
+    let best = null;
+    subjectSynonyms().forEach((s) => {
+      let score = 0;
+      s.hints.forEach((w) => { if (w.length > 2 && lower.includes(w)) score += w.includes(" ") ? 5 : 3; });
+      s.words.forEach((w) => { if (lower.includes(w)) score += 1; });
+      if (score > 0 && (!best || score > best.score)) best = { id: s.id, score };
+    });
+    return best ? best.id : null;
+  }
   function parseWhen(lower) {
     const d = new Date();
     const dayMap = { lunes: 1, martes: 2, miércoles: 3, miercoles: 3, jueves: 4, viernes: 5, sábado: 6, sabado: 6, domingo: 0 };
+    let guess = false;
     if (lower.includes("pasado mañana")) d.setDate(d.getDate() + 2);
     else if (lower.includes("mañana")) d.setDate(d.getDate() + 1);
-    else {
+    else if (/hoy/.test(lower)) { /* hoy */ }
+    else if (/\b(\d{1,2})\s*(?:\/|-)\s*(\d{1,2})\b/.test(lower)) {
+      const m = lower.match(/\b(\d{1,2})\s*(?:\/|-)\s*(\d{1,2})\b/);
+      const y = new Date().getFullYear();
+      const cand = new Date(y, Number(m[2]) - 1, Number(m[1]));
+      if (cand.getTime() < Date.now() - 86400000) cand.setFullYear(y + 1);
+      d.setFullYear(cand.getFullYear(), cand.getMonth(), cand.getDate());
+    } else {
       let hit = null;
       Object.keys(dayMap).forEach((k) => { if (lower.includes(k)) hit = dayMap[k]; });
       if (hit != null) d.setDate(d.getDate() + ((hit + 7 - d.getDay()) % 7 || 7));
-      else d.setDate(d.getDate() + 3);
+      else { guess = true; d.setDate(d.getDate() + 3); }   // se avisa en la vista previa
     }
-    return localISO(d);
+    return { date: localISO(d), guessed: guess };
   }
-  function matchSubject(lower) {
-    for (const sub of state.subjects) {
-      const words = sub.name.toLowerCase().split(/\s+/);
-      if (words.some((w) => w.length > 3 && lower.includes(w))) return sub;
-      if (lower.includes(sub.name.toLowerCase())) return sub;
-    }
-    return state.subjects[0] || null;
+  function nlpParse(raw) {
+    const lower = raw.toLowerCase();
+    const isExam = /examen|prueba|control|parcial|entrega|trabajo/.test(lower);
+    const isNote = /^apunte|^nota|resumen/.test(lower);
+    const when = parseWhen(lower);
+    const time = (lower.match(/\b(\d{1,2})[:.](\d{2})\b/) || []);
+    return {
+      kind: isNote ? "note" : isExam ? "exam" : "task",
+      title: raw.charAt(0).toUpperCase() + raw.slice(1),
+      date: when.date,
+      guessed: when.guessed,
+      time: time.length ? pad(Number(time[1])) + ":" + time[2] : "09:00",
+      subjectId: matchSubject(lower) || "",
+      type: /entrega|trabajo/.test(lower) ? "entrega" : "parcial",
+    };
   }
+  // Antes de guardar nada se ve lo que se ha entendido y se puede corregir.
   function processNLP(text) {
     const raw = (text || "").trim();
     if (!raw) { toast("Nada que interpretar"); return; }
-    const lower = raw.toLowerCase();
-    const isExam = /examen|prueba|control|parcial|entrega/.test(lower);
-    const sub = matchSubject(lower);
-    const date = parseWhen(lower);
-    const title = raw.charAt(0).toUpperCase() + raw.slice(1);
-    if (isExam) {
-      if (!needSubjects()) return;
-      state.exams.push({
-        id: uid(), subjectId: sub?.id || "", title, date, time: "09:00",
-        type: /entrega/.test(lower) ? "entrega" : "parcial", location: "", notes: "Por voz",
-        grade: "", weight: 25, difficulty: 3, hoursNeeded: 8, status: "pendiente", checklist: [],
-      });
-      toast("Examen · " + (sub?.name || title));
-    } else {
-      state.tasks.push({
-        id: uid(), title, subjectId: sub?.id || "", due: date,
-        priority: state.settings.defaultPrio || "media", done: false,
-      });
-      toast("Tarea · " + (sub?.name || title));
-    }
-    checkAchievements(); save(); render();
+    if (!needSubjects()) return;
+    const d = nlpParse(raw);
+    const kindLbl = d.kind === "exam" ? "Examen" : d.kind === "note" ? "Nota" : "Tarea";
+    openModal("¿Es esto?", `
+      <p class="hint" style="margin-top:0">He interpretado tu frase. Cambia lo que haga falta antes de guardar.</p>
+      <div class="field"><label>Tipo</label>
+        <select name="kind">
+          <option value="task" ${d.kind === "task" ? "selected" : ""}>Tarea</option>
+          <option value="exam" ${d.kind === "exam" ? "selected" : ""}>Examen / entrega</option>
+          <option value="note" ${d.kind === "note" ? "selected" : ""}>Nota</option>
+        </select></div>
+      <div class="field"><label>Título</label><input name="title" required value="${esc(d.title)}" /></div>
+      <div class="form-row">
+        <div class="field"><label>Módulo ${d.subjectId ? "" : "(elige)"}</label><select name="subjectId">${subjectOptions(d.subjectId)}</select></div>
+        <div class="field"><label>Fecha ${d.guessed ? "(¡la he supuesto!)" : ""}</label><input name="date" type="date" value="${d.date}" /></div>
+      </div>
+      <div class="field"><label>Hora</label><input name="time" type="time" value="${d.time}" /></div>
+    `, {
+      confirm: "Guardar " + kindLbl.toLowerCase(),
+      onSubmit(data) {
+        const row = { subjectId: data.subjectId, title: String(data.title || d.title).trim(), date: asISO(data.date) || todayISO() };
+        if (data.kind === "exam") {
+          state.exams.push({ id: uid(), subjectId: row.subjectId, title: row.title, date: row.date, time: asHHMM(data.time, "09:00"),
+            type: d.type, location: "", notes: "Captura rápida", grade: "", weight: 25, difficulty: 3,
+            hoursNeeded: Number(state.settings.defaultHours) || 8, status: "pendiente", checklist: [] });
+          toast("Examen guardado");
+        } else if (data.kind === "note") {
+          const n = { id: uid(), subjectId: row.subjectId, title: row.title.slice(0, 60), content: raw, pinned: false, createdAt: Date.now(), updatedAt: Date.now() };
+          state.notes.unshift(n); noteId = n.id;
+          toast("Nota guardada");
+        } else {
+          state.tasks.push({ id: uid(), subjectId: row.subjectId, title: row.title, due: row.date, priority: state.settings.defaultPrio || "media", done: false });
+          toast("Tarea guardada");
+        }
+        checkAchievements(); closeModal();
+        if (data.kind === "note") go("notes"); else { view = data.kind === "exam" ? "exams" : "tasks"; render(); }
+      },
+    });
   }
   let voiceRec = null, voiceOn = false;
+  function voiceSupported() { return !!(window.SpeechRecognition || window.webkitSpeechRecognition); }
+  function updateVoiceUI() {
+    const b = $("#capture-voice");
+    if (b) { b.classList.toggle("on", voiceOn); b.textContent = voiceOn ? "🎙 Escuchando…" : "🎤 Dictar"; }
+    const fab = $("#fab");
+    if (fab) fab.classList.toggle("listening", voiceOn);
+  }
   function toggleVoice() {
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
     const pill = $("#ai-status-pill");
@@ -3167,19 +3863,19 @@
     const stop = () => {
       voiceOn = false;
       try { voiceRec && voiceRec.stop(); } catch {}
-      fab?.classList.remove("voice-active");
+      updateVoiceUI();
       pill?.classList.remove("on");
     };
     if (voiceOn) { stop(); return; }
     voiceOn = true;
-    fab?.classList.add("voice-active");
+    updateVoiceUI();
     pill?.classList.add("on");
     const stt = $("#ai-status-text");
     if (stt) stt.textContent = "Di: «Examen de redes el viernes»";
     if (!Speech) {
       openCapture();
       stop();
-      toast("Escribe la captura: el micrófono no está disponible aquí");
+      toast(voiceSupported() ? "Permite el micrófono" : "Aquí no hay dictado: escribe la frase");
       return;
     }
     if (!voiceRec) {
@@ -3191,6 +3887,7 @@
       voiceRec.onend = () => { if (voiceOn) stop(); };
     }
     try { voiceRec.start(); } catch { stop(); openCapture(); }
+    if (voiceOn) toast("Habla: se parará solo al terminar la frase");
   }
   function weekBarsHTML() {
     const wr = weekRange();
@@ -3280,11 +3977,11 @@
         <h3 style="margin:0 0 8px;font-size:14px;font-weight:800">Simulador del final</h3>
         <p class="hint" style="margin:0 0 12px">Qué nota te pide el examen final según lo que llevas.</p>
         <div class="form-row">
-          <div class="field"><label>Nota actual</label><input type="number" step="0.1" id="sim-current" value="${gpa == null ? "6.5" : gpa.toFixed(1)}" data-action="sim-live"></div>
-          <div class="field"><label>Peso final (%)</label><input type="number" id="sim-weight" value="40" data-action="sim-live"></div>
+          <div class="field"><label for="sim-current">Nota actual</label><input type="number" step="0.1" id="sim-current" value="${gpa == null ? "6.5" : gpa.toFixed(1)}" data-action="sim-live"></div>
+          <div class="field"><label for="sim-weight">Peso final (%)</label><input type="number" id="sim-weight" value="40" data-action="sim-live"></div>
         </div>
-        <div class="field"><label>Quiero sacar un…</label>
-          <input type="range" id="sim-target" min="5" max="${max}" step="0.1" value="8" data-action="sim-live">
+        <div class="field"><label for="sim-target">Quiero sacar un…</label>
+          <input type="range" id="sim-target" min="5" max="${max}" step="0.1" value="8" data-action="sim-live" aria-describedby="sim-target-display">
           <div style="text-align:center;font-family:var(--mono);font-weight:800" id="sim-target-display">8.0</div>
         </div>
         <div class="sim-out"><span>Necesitas un:</span><b id="sim-result">—</b></div>
@@ -3309,6 +4006,11 @@
     subjectName, subjectColor, subjectById, minutesOf, weekdayMon0, DAYS, DAYS_SHORT, MONTHS,
     pad, clamp, localISO, weekRange, streak, studiedFor, nextExam, nextClass, $, $$,
     openModal, closeModal, ask, weightedGPA, grantXP, checkAchievements, needSubjects,
+    pushUndo, undo, sanitize, save, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
+    unlockNote(id) { unlockedNotes.delete(id); },
+    lockNote(id) { unlockedNotes.add(id); },
+    get loadProblem() { return loadProblem; },
+    get saveProblem() { return saveProblem; },
     subjectOptions, md, dueCards, attStats, typeLabel, EXAM_TYPES, addExam, addTask, addNote, addCard,
     persistNote, buzz, confetti, levelInfo,
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
@@ -3318,13 +4020,29 @@
   if (hash && (titles[hash] || { agenda: 1, chatbot: 1, kanban: 1, timeline: 1, simulator: 1, habits: 1, glossary: 1, trash: 1, examode: 1, quickreview: 1, admin: 1, guide: 1, achievements: 1, rendimiento: 1, tools: 1 }[hash])) view = hash;
   applyTheme();
   setMode("work", true);
+  // Modo examen que sobrevive a recargas
+  const _lockUntil = Number((state.progress && state.progress.flags && state.progress.flags.examLockUntil) || 0);
+  if (_lockUntil > Date.now()) {
+    document.body.classList.add("focus-mode", "exam-lock");
+    setTimeout(() => document.body.classList.remove("exam-lock"), _lockUntil - Date.now());
+  } else if (_lockUntil) {
+    state.progress.flags.examLockUntil = 0;
+  }
+  // Modo de entrada (ratón/teclado o táctil) para ajustar tamaños
+  const marcarEntrada = () => document.documentElement.classList.toggle("is-touch", window.matchMedia("(pointer: coarse)").matches);
+  marcarEntrada();
+  window.addEventListener("pointerdown", marcarEntrada, { once: true });
+  timerRestore();
   dailyCheckIn();
   checkAchievements();
   render();
   applyAppIcon();
+  // Guardado y estado: nada se pierde si la app pasa a segundo plano o se cierra.
+  window.addEventListener("pagehide", flushSave);
+  window.addEventListener("beforeunload", flushSave);
   window.addEventListener("hashchange", () => {
     const v = (location.hash || "").replace("#", "");
-    if (v && v !== view) { persistNote(); closeMore(); view = v; render(); }
+    if (v && v !== view) { persistNoteNow(); closeMore(); view = v; render(); }
   });
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").then(() => applyAppIcon()).catch(() => {});
@@ -3355,13 +4073,30 @@
       if (!info) clock.textContent = "—";
       else clock.textContent = info.live ? "AHORA" : fmtRemain(info.remain);
     }
+    // Si el móvil ha dormido la pestaña, el cronómetro se pone al día aquí
+    if (timer.running && timer.endsAt) {
+      timer.remaining = Math.max(0, Math.round((timer.endsAt - Date.now()) / 1000));
+      if (timer.remaining <= 0) completeTimer();
+    }
     updateTimerChrome();
     tickNotify();
     tickLiveUI();
     pushWidgets();
   }, 15000);
   setTimeout(() => tickNotify(), 2500);
-  document.addEventListener("visibilitychange", () => { tickNotify(); if (!document.hidden) pushWidgets(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { flushSave(); return; }
+    tickNotify();
+    pushWidgets();
+    // Al volver del segundo plano: recalcular el temporizador y recuperar el wake lock.
+    if (timer.running && timer.endsAt) {
+      timer.remaining = Math.max(0, Math.round((timer.endsAt - Date.now()) / 1000));
+      if (timer.remaining <= 0) completeTimer(); else { updateTimerUI(); updateTimerChrome(); }
+    }
+    if (timer.running && state.settings.keepAwake !== false && navigator.wakeLock && !wakeLock) {
+      try { navigator.wakeLock.request("screen").then((s) => { wakeLock = s; }).catch(() => {}); } catch {}
+    }
+  });
   setTimeout(() => pushWidgets(), 800);
 })();
 

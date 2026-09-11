@@ -60,3 +60,76 @@
 .toast { backdrop-filter: blur(8px); }
 
 .hash-ready .view { scroll-margin-top: 80px; }
+
+/* ============================================================
+   Accesibilidad y piezas nuevas (añadido en la auditoría v49)
+   ============================================================ */
+
+/* Salto al contenido (teclado) */
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 99;
+  background: var(--invert); color: var(--invert-ink);
+  padding: 10px 14px; border-radius: 0 0 12px 0; font-weight: 800;
+}
+.skip-link:focus { left: 0; }
+
+/* Foco visible también con teclado y TV */
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 75%, #fff);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+button:focus-visible, a:focus-visible, [data-action]:focus-visible { outline-offset: 1px; }
+.btn:focus-visible, .chip:focus-visible, .hub-round:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 75%, #fff); }
+
+/* Área táctil mínima 44px (WCAG 2.5.8) en controles pequeños */
+.icon-btn, .hub-round, .icon-del, .att button, .att-p, .att-r, .att-f,
+.note-item, .cal-day, .week-pill, .mod-chip, .ava-ph, .cmdk-item {
+  touch-action: manipulation;
+}
+.icon-del { min-width: 40px; min-height: 40px; }
+.att button { min-height: 34px; min-width: 44px; }
+.hub-round { min-width: 42px; min-height: 42px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+
+/* Aviso persistente de "no se puede guardar" */
+.save-warn {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 12px; padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, #ef4444 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, #ef4444 45%, var(--line));
+  color: var(--ink); font-size: 13px; font-weight: 600;
+}
+.save-warn b { font-weight: 900; }
+.save-warn .btn { margin-left: auto; }
+
+/* Nota bloqueada con PIN */
+.lock-screen {
+  display: grid; gap: 10px; place-items: start; padding: 22px 16px; text-align: center;
+  background: var(--paper); border: 1px dashed var(--line-2); border-radius: var(--radius);
+}
+.lock-screen b { font-size: 15px; }
+.lock-screen .field { width: 100%; max-width: 240px; margin: 0 auto; }
+
+/* Elección de skin por categorías */
+.skin-cats { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; }
+.skin-cats .chip { white-space: nowrap; }
+.skin-grid { grid-template-columns: 1fr 1fr; }
+.skin-card { position: relative; }
+.skin-card.is-on::after { content: "✓"; position: absolute; right: 8px; top: 6px; font-weight: 900; color: var(--ink); }
+
+/* Regla de estudio en el horario */
+.class-row.is-study .class-stripe { background: repeating-linear-gradient(45deg, var(--c) 0 4px, transparent 4px 8px); }
+
+/* Botón de micrófono (dictado) */
+.voice-mini {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line-2); background: var(--surface);
+  border-radius: 999px; padding: 8px 12px; font-weight: 800; font-size: 13px;
+}
+.voice-mini.on { background: color-mix(in srgb, #ef4444 22%, var(--surface)); border-color: #ef4444; }

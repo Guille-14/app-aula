@@ -878,6 +878,14 @@
   window.AulaTools = {
     view() { return st()._tool ? panel() : home(); },
     click,
+    // Catálogo plano para el buscador global (Ctrl/Cmd + K)
+    catalog() {
+      const out = [];
+      (CATS || []).forEach(([cat, cards]) => {
+        (cards || []).forEach(([id, color, ico, title, sub]) => out.push({ id, title, sub, cat }));
+      });
+      return out;
+    },
   };
   const bootHash = (location.hash || "").replace("#", "");
   if (bootHash && window.Aula && typeof window.Aula.render === "function") {

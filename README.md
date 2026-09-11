@@ -5,9 +5,9 @@ Diseño tipo **SMR Hub**. **100 % local**: sin cuenta y sin nube. Los datos se q
 
 ## Android — APK
 
-El archivo **`Aula-SMR-v48.apk`** está en esta carpeta. Pásalo al móvil e instálalo (hay que permitir *orígenes desconocidos*).
+El APK se compila aparte (esta carpeta es la web). Si tienes la versión antigua `Aula-SMR-v48.apk`, desinstálala antes de instalar una nueva para evitar el conflicto de paquete. En el móvil también funciona instalándola como PWA desde Chrome: menú → *Instalar aplicación*.
 
-Id: `es.aula.smr.hub` (v48). Si Android dice **conflicto de paquete**, desinstala antes cualquier Aula SMR o PWA antigua. Widgets: Ajustes → Widgets del escritorio.
+Id: `es.aula.smr.hub`. Si Android dice **conflicto de paquete**, desinstala antes cualquier Aula SMR o PWA antigua. Widgets: Ajustes → Widgets del escritorio.
 
 ## Instalar como PWA (sin APK)
 
@@ -25,5 +25,7 @@ En el móvil, misma Wi‑Fi: `http://IP-DEL-PC:8080`.
 ## Datos
 
 - **Exportar JSON** / **Importar** en Ajustes.
-- **Borrar todo** pide confirmación nativa (y ofrece copia).
+- **Borrar todo** pide confirmación dentro de la app y borra también las copias automáticas (hay un botón aparte para borrar solo las copias).
+- Copia automática: cada 6 h se guarda una copia del estado anterior (`aula.smr.v4.bak`) y se puede recuperar desde Ajustes.
+- Las fotos de las notas se reducen antes de guardarse para no llenar el almacén del móvil.
 - `server.py` es opcional (sync en casa). Ollama solo si pones la URL en Servidor (Más).

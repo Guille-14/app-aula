@@ -190,22 +190,22 @@
       { id: "done", name: "Entregado" },
     ];
     const tasks = st().tasks.map((t) => {
-      const due = t.due ? daysUntil(t.due) : 99;
-      const auto = t.done ? "done" : due < 0 ? "todo" : due <= 2 ? "doing" : (t.kanban || (t.done ? "done" : "todo"));
-      return { ...t, col: t.done ? "done" : (t.kanban || auto), due };
+      const left = t.due ? daysUntil(t.due) : null;          // días que quedan (no la fecha)
+      const auto = t.done ? "done" : left != null && left < 0 ? "todo" : left != null && left <= 2 ? "doing" : "todo";
+      return { ...t, left, col: t.done ? "done" : (t.kanban || auto) };
     });
     const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d); })();
     const lateY = st().tasks.filter((t) => !t.done && t.due && t.due <= yesterday);
     return `${lateY.length ? `<div class="card urg-0" style="margin-bottom:12px"><strong>Pendientes de ayer</strong>${lateY.map((t) => `<div class="task"><div class="tt">${esc(t.title)}</div><span>${fmtDate(t.due)}</span></div>`).join("")}</div>` : ""}
       <div class="kanban">
         ${cols.map((c) => `<div class="kan-col"><h3>${c.name}</h3>
-          ${tasks.filter((t) => t.col === c.id).sort((a, b) => (a.due || 99) - (b.due || 99)).map((t) => `<div class="kan-card">
+          ${tasks.filter((t) => t.col === c.id).sort((a, b) => (a.left == null ? 99 : a.left) - (b.left == null ? 99 : b.left)).map((t) => `<div class="kan-card">
             <b>${esc(t.title)}</b>
-            <small>${esc(subjectName(t.subjectId))} · ${t.due ? fmtDate(t.due) : "sin fecha"} ${t.due !== undefined && t.due < 0 ? "· atrasada" : ""}</small>
+            <small>${esc(subjectName(t.subjectId))} · ${t.due ? fmtDate(t.due) : "sin fecha"}${t.left != null && t.left < 0 ? " · atrasada" : t.left === 0 ? " · hoy" : ""}</small>
             <div class="kan-move">
               ${cols.map((x) => `<button class="btn btn-sm ${x.id === t.col ? "btn-primary" : ""}" data-action="kan-move" data-id="${t.id}" data-col="${x.id}">${x.name}</button>`).join("")}
             </div>
-            <input type="date" value="${t.due || ""}" data-action="kan-date" data-id="${t.id}" />
+            <input type="date" value="${t.due || ""}" data-action="kan-date" data-id="${t.id}" aria-label="Fecha de entrega de ${esc(t.title)}" title="Fecha de entrega" />
           </div>`).join("") || `<div class="empty">Vacío</div>`}
         </div>`).join("")}
       </div>`;
@@ -305,7 +305,7 @@
       ${list.map((h) => {
         const done = (h.doneOn || []).includes(today);
         return `<div class="task ${done ? "done" : ""}">
-          <input type="checkbox" data-action="habit-tog" data-id="${h.id}" ${done ? "checked" : ""} />
+          <input type="checkbox" data-action="habit-tog" data-id="${h.id}" aria-label="Hecho hoy: ${esc(h.title)}" ${done ? "checked" : ""} />
           <div class="tt">${esc(h.title)}</div>
           <span>${h.minutes || 20} min · ${h.time || "21:30"}</span>
           <button class="btn btn-sm" data-action="habit-del" data-id="${h.id}">×</button>
@@ -339,7 +339,10 @@
     return `<div class="card">
       <h3>Modo examen</h3>
       <p>Solo lectura, temporizador y sin captura. Ideal en el aula.</p>
-      <button class="btn btn-primary" data-action="examode-on">Activar 90 min</button>
+      <div class="hero-actions">
+        <button class="btn btn-primary" data-action="examode-on">Activar 90 min</button>
+        <button class="btn" data-action="examode-off">Desactivar</button>
+      </div>
       <div class="preview" style="margin-top:12px">${notes.map((n) => `<h3>${esc(n.title)}</h3>${md(n.content || "")}`).join("") || "No hay apuntes."}</div>
     </div>`;
   }
@@ -384,8 +387,8 @@
     <div class="card">
       <h3>Ollama (local, 24/7)</h3>
       <p class="hint">Modelo ligero en el servidor, no en la GPU del PC de estudio. Vacío = solo asistente local sin red.</p>
-      <div class="field"><label>URL Ollama</label><input id="set-ollama" value="${esc(st().settings.ollamaUrl || "")}" placeholder="http://192.168.1.10:11434" /></div>
-      <div class="field"><label>Modelo</label><input id="set-omodel" value="${esc(st().settings.ollamaModel || "llama3.2")}" /></div>
+      <div class="field"><label for="set-ollama">URL Ollama</label><input id="set-ollama" value="${esc(st().settings.ollamaUrl || "")}" placeholder="http://192.168.1.10:11434" /></div>
+      <div class="field"><label for="set-omodel">Modelo</label><input id="set-omodel" value="${esc(st().settings.ollamaModel || "llama3.2")}" /></div>
       <button class="btn" data-action="ollama-save">Guardar Ollama</button>
     </div>
     <div class="card">
@@ -401,7 +404,7 @@
     return `<div class="card">
       <h3>Importar guía docente</h3>
       <p class="hint">Sube PDF o TXT. Extraemos fechas, % de evaluación y normas con reglas locales (sin enviar el archivo a nadie). Tú apruebas antes de guardar. Varias guías: revisa que no se dupliquen fechas.</p>
-      <input type="file" id="guide-file" accept=".pdf,.txt,.md" />
+      <label for="guide-file" class="sr-only">Archivo de la guía docente</label><input type="file" id="guide-file" accept=".pdf,.txt,.md" aria-label="Archivo de la guía docente" />
       <button class="btn btn-primary" data-action="guide-parse">Analizar</button>
       ${draft ? `<div style="margin-top:14px">
         <h3>Fechas detectadas</h3>
@@ -509,9 +512,17 @@
     }
     if (action === "trash-kill") { st().trash = (st().trash || []).filter((x) => x.id !== id); save(); render(); }
     if (action === "examode-on") {
+      const hasta = Date.now() + 90 * 60 * 1000;
+      st().progress.flags = Object.assign({}, st().progress.flags, { examLockUntil: hasta });
       document.body.classList.add("focus-mode", "exam-lock");
-      toast("Modo examen 90 min");
-      setTimeout(() => document.body.classList.remove("exam-lock"), 90 * 60 * 1000);
+      save();
+      toast("Modo examen 90 min (sobrevive al recargar)");
+    }
+    if (action === "examode-off") {
+      st().progress.flags = Object.assign({}, st().progress.flags, { examLockUntil: 0 });
+      document.body.classList.remove("exam-lock");
+      save(); render();
+      toast("Modo examen desactivado");
     }
     if (action === "sheet-print") window.print();
     if (action === "guide-parse") {
@@ -580,11 +591,23 @@
       }
       if (action === "sync-pull") {
         fetch(base + "/api/state", { headers }).then((r) => r.json()).then((j) => {
-          if (j.state && Object.keys(j.state).length) {
-            Object.assign(st(), j.state);
-            save(); render(); toast("Estado bajado");
-          } else toast("Servidor vacío");
-        }).catch(() => toast("Error al bajar"));
+          if (!j.state || !Object.keys(j.state).length) { toast("El servidor está vacío"); return; }
+          const remoto = j.state;
+          const resumen = `Servidor: ${(remoto.subjects || []).length} módulos, ${(remoto.exams || []).length} exámenes, ${(remoto.notes || []).length} notas.
+Local: ${st().subjects.length} módulos, ${st().exams.length} exámenes, ${st().notes.length} notas.`;
+          openModal("Bajar estado del servidor", `<p>${esc(resumen)}</p><p class="hint">Se sustituyen los datos de este móvil. Al cerrar este aviso se guarda una copia local por si acaso.</p>`, {
+            confirm: "Bajar y sustituir",
+            onSubmit() {
+              if (Aula.pushUndo) Aula.pushUndo();
+              try {
+                const copia = "aula.sync.prev";
+                localStorage.setItem(copia, JSON.stringify(st()));
+              } catch {}
+              Object.assign(st(), remoto);
+              closeModal(); save(); render(); toast("Estado bajado (puedes deshacer)");
+            },
+          });
+        }).catch(() => toast("No se puede conectar con el servidor"));
       }
       if (action === "sync-push") {
         fetch(base + "/api/state", { method: "PUT", headers, body: JSON.stringify(st()) })
@@ -592,28 +615,50 @@
       }
     }
     if (action === "snap-now") {
-      const snaps = JSON.parse(localStorage.getItem("aula.snaps") || "[]");
-      const id = uid();
+      let snaps = [];
+      try { snaps = JSON.parse(localStorage.getItem("aula.snaps") || "[]"); } catch { snaps = []; }
       const dump = JSON.stringify(st());
+      if (dump.length > 900_000) { toast("Los datos ocupan demasiado para una instantánea"); return; }
+      const id = uid();
       snaps.unshift({ id, t: Date.now(), n: st().notes.length + st().exams.length + st().tasks.length, data: dump });
-      if (snaps.length > 5) snaps.length = 5;
-      localStorage.setItem("aula.snaps", JSON.stringify(snaps));
-      localStorage.setItem("aula.lastBackup", new Date().toLocaleString("es-ES"));
-      toast("Punto guardado"); render();
+      // Antes se guardaban 5 copias completas: con fotos eso llenaba el almacén.
+      if (snaps.length > 3) snaps.length = 3;
+      try {
+        localStorage.setItem("aula.snaps", JSON.stringify(snaps));
+        localStorage.setItem("aula.lastBackup", new Date().toLocaleString("es-ES"));
+        toast("Punto guardado");
+      } catch { toast("No hay espacio para más copias"); }
+      render();
     }
     if (action === "snap-load") {
       const snaps = JSON.parse(localStorage.getItem("aula.snaps") || "[]");
       const s = snaps.find((x) => x.id === id);
-      if (!s) return;
-      try {
-        const data = JSON.parse(s.data);
-        Object.keys(st()).forEach((k) => delete st()[k]);
-        Object.assign(st(), data);
-        save(); render(); toast("Restaurado");
-      } catch { toast("Snapshot roto"); }
+      if (!s) { toast("Esa copia ya no está"); return; }
+      let data = null;
+      try { data = JSON.parse(s.data); } catch { toast("Copia rota"); return; }
+      openModal("Restaurar copia", `<p>Se sustituyen los datos actuales por la copia del <b>${new Date(s.t).toLocaleString("es-ES")}</b> (${s.n} elementos).</p>
+        <p class="hint">Tus datos de ahora se guardan como copia de seguridad antes de restaurar.</p>`, {
+        confirm: "Restaurar", danger: true,
+        onSubmit() {
+          if (Aula.pushUndo) Aula.pushUndo();
+          const nuevo = Aula.sanitize ? Aula.sanitize(data) : data;
+          Object.keys(st()).forEach((k) => delete st()[k]);
+          Object.assign(st(), nuevo);
+          closeModal(); save(); render(); toast("Copia restaurada (puedes deshacer)");
+        },
+      });
     }
-    if (action === "guest-on") { st().settings.guest = true; toast("Invitado: no se guarda"); render(); }
-    if (action === "guest-off") { st().settings.guest = false; save(); toast("Otra vez persistente"); render(); }
+    if (action === "guest-on") {
+      openModal("Modo invitado", `<p>Sirve para dejar el móvil a alguien sin que toque tus datos: <b>nada de lo que se haga se guarda</b> y al recargar vuelve todo como estaba.</p>
+        <p class="hint">Si sales de invitado, los cambios de esa sesión se guardan.</p>`, {
+        confirm: "Entrar como invitado",
+        onSubmit() { st().settings.guest = true; closeModal(); toast("Invitado: no se guarda nada"); render(); },
+      });
+    }
+    if (action === "guest-off") {
+      st().settings.guest = false;
+      save(); toast("Saliendo de invitado"); render();
+    }
     if (action === "note-tpl") {
       /* noteId exposed on Aula */
     }
@@ -655,30 +700,32 @@
     }
     if (action === "note-photo") {
       const inp = document.createElement("input");
-      inp.type = "file"; inp.accept = "image/*"; inp.capture = "environment";
-      inp.onchange = () => {
+      inp.type = "file"; inp.accept = "image/*";
+      inp.onchange = async () => {
         const f = inp.files[0]; if (!f) return;
-        if (f.size > 1_800_000) { toast("Foto demasiado grande (máx ~1.5 MB)"); return; }
-        const r = new FileReader();
-        r.onload = () => {
-          const n = st().notes.find((x) => x.id === Aula.noteId) || st().notes[0];
-          if (!n) return;
-          n.attachments = n.attachments || [];
-          n.attachments.push({ id: uid(), name: f.name, data: r.result, kind: "img" });
-          n.content += `\n\n![foto](${r.result.slice(0, 32)}…)\n`;
-          n.content += `\n<!--img:${n.attachments.length - 1}-->\n`;
-          toast("Foto adjuntada (local). Escribe debajo el texto OCR a mano o pégalo.");
-          save(); render();
-        };
-        r.readAsDataURL(f);
+        const n = st().notes.find((x) => x.id === (Aula.noteId || st().notes[0]?.id));
+        if (!n) { toast("Abre una nota primero"); return; }
+        toast("Preparando la foto…");
+        const data = await shrinkImage(f, 1280, 0.72).catch(() => null);
+        if (!data) { toast("No se ha podido leer la imagen"); return; }
+        if (data.length > 1_400_000) { toast("La foto sigue siendo muy grande"); return; }
+        n.attachments = n.attachments || [];
+        const att = { id: uid(), name: f.name || "foto.jpg", kind: "img", data };
+        n.attachments.push(att);
+        n.content = (n.content || "").replace(/\s*$/, "") + `\n\n![${att.name}](aula-img:${att.id})\n`;
+        save(); render(); toast("Foto añadida a la nota");
       };
       inp.click();
     }
     if (action === "note-lock") {
       const pin = st().settings.pin;
-      if (!pin) { toast("Pon un PIN en Ajustes"); return; }
+      if (!pin) { toast("Antes pon un PIN en Ajustes"); return; }
       const n = st().notes.find((x) => x.id === Aula.noteId) || st().notes[0];
-      if (n) { n.locked = !n.locked; toast(n.locked ? "Nota protegida" : "Nota libre"); save(); render(); }
+      if (!n) return;
+      n.locked = !n.locked;
+      if (!n.locked && Aula.unlockNote) Aula.unlockNote(n.id);
+      toast(n.locked ? "Nota protegida con PIN" : "Nota sin protección");
+      save(); render();
     }
     if (action === "note-hist") {
       const n = st().notes.find((x) => x.id === Aula.noteId) || st().notes[0];
@@ -723,16 +770,27 @@
       const r = new FileReader();
       r.onload = () => {
         let n = 0;
-        String(r.result).split(/\r?\n/).forEach((line) => {
-          const p = line.split(/[,;]/).map((x) => x.trim());
-          if (p.length < 4) return;
-          const day = DAYS().findIndex((d) => d.toLowerCase().startsWith(p[0].toLowerCase().slice(0, 3)));
-          const sub = st().subjects.find((s) => s.name.toLowerCase().includes(p[1].toLowerCase()));
-          if (day < 0 || !sub) return;
-          st().events.push({ id: uid(), subjectId: sub.id, day, start: p[2], end: p[3], room: p[4] || "", type: "clase" });
+        const fallos = [];
+        String(r.result).replace(/^\uFEFF/, "").split(/\r?\n/).forEach((line, i) => {
+          const p = line.split(/\t|[,;]/).map((x) => x.trim().replace(/^"|"$/g, ""));
+          if (!p.length || !p[0] || /^d[ií]a$/i.test(p[0])) return;   // cabecera o línea vacía
+          if (p.length < 4) { fallos.push("línea " + (i + 1)); return; }
+          const day = DAYS().findIndex((d) => d.toLowerCase().slice(0, 3) === p[0].toLowerCase().slice(0, 3));
+          const sub = st().subjects.find((s) => s.name.toLowerCase().includes(p[1].toLowerCase()))
+            || st().subjects.find((s) => p[1].toLowerCase().includes(s.name.toLowerCase().split(" ")[0]));
+          const hhmm = (v) => (/^\d{1,2}:\d{2}$/.test(v) ? v : "");
+          if (day < 0) { fallos.push("día raro en la línea " + (i + 1)); return; }
+          if (!sub) { fallos.push("módulo desconocido '" + p[1] + "' (línea " + (i + 1) + ")"); return; }
+          st().events.push({ id: uid(), subjectId: sub.id, day, start: hhmm(p[2]) || "09:00", end: hhmm(p[3]) || "10:00", room: p[4] || "", type: "clase" });
           n++;
         });
-        save(); render(); toast(n ? n + " clases importadas" : "Nada reconocido. Formato: Día,Módulo,Inicio,Fin,Aula");
+        save(); render();
+        if (n) toast(n + " clases importadas");
+        else {
+          openModal("No se ha importado nada", `<p>Formato esperado, una línea por clase:</p><pre>Día,Módulo,Inicio,Fin,Aula</pre>
+            <p class="hint">Los módulos deben coincidir con los nombres de tus módulos. Ejemplo: <b>Lunes,Servicios en red,08:00,10:00,A12</b></p>
+            <div class="hint">${esc(fallos.slice(0, 5).join(" · ")) || "No he encontrado ninguna línea con datos."}</div>`, { confirm: "Entendido", onSubmit: closeModal });
+        }
       };
       r.readAsText(e.target.files[0]);
     }
@@ -745,5 +803,17 @@
   window.AulaStudio = {
     agenda, timeline, kanban, chatbot, simulator, habits, glossary, trash,
     examode, quickreview, admin, guide, click, todayStudyHint, busyWeeks,
+    // Herramientas que también viven en la sección de utilidades (buscador global)
+    toolCatalog() {
+      const out = [];
+      if (!window.AulaTools || typeof window.AulaTools.catalog !== "function") return out;
+      try {
+        window.AulaTools.catalog().forEach((x) => out.push({
+          title: x.title,
+          run: () => { st()._tool = x.id; Aula.go("tools"); if (window.AulaTools.click) window.AulaTools.click("tool-open", { dataset: { id: x.id } }); },
+        }));
+      } catch {}
+      return out;
+    },
   };
 })();
