@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es" class="dark" data-theme="dark" data-skin="hub">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description" content="Aula SMR — exámenes, horario, notas y estudio del ciclo. Todo en el móvil, sin nube." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Aula SMR" />
+  <title>Aula SMR</title>
+  <link rel="manifest" href="manifest.webmanifest" id="app-manifest" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" id="app-apple-icon" />
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png" id="app-favicon-192" />
+  <link rel="icon" type="image/png" sizes="512x512" href="assets/icon-512.png" id="app-favicon-512" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/skins.css" />
+  <link rel="stylesheet" href="css/themes.css" />
+  <link rel="stylesheet" href="css/plus.css" />
+  <link rel="stylesheet" href="css/polish.css" />
+  <link rel="stylesheet" href="css/hub.css" />
+  <link rel="stylesheet" href="css/look.css" />
+</head>
+<body class="hub-body">
+  <span id="brand-course" class="sr-only">SMR</span>
+  <span id="exam-count" class="sr-only"></span>
+  <span id="card-count" class="sr-only"></span>
+  <span id="task-count" class="sr-only"></span>
+  <span id="inbox-count" class="sr-only"></span>
+  <span id="fab-label" class="sr-only">Nuevo</span>
+  <button id="menu-btn" class="sr-only" aria-hidden="true"></button>
+  <aside id="sidebar" class="sr-only" hidden></aside>
+  <nav id="nav" class="sr-only" hidden></nav>
+  <div id="sync-pill" class="sr-only"><span class="sync-dot" id="sync-dot"></span><span id="sync-lbl">Solo este dispositivo</span></div>
+
+  <main class="phone" id="app">
+    <div id="timer-bar" class="timer-bar" hidden>
+      <span class="dot" id="timer-bar-dot"></span>
+      <strong id="timer-bar-time">25:00</strong>
+      <span id="timer-bar-lbl">Estudio</span>
+      <button class="btn btn-sm" data-action="go" data-to="timer">Abrir</button>
+      <button class="btn btn-sm btn-primary" data-action="timer-toggle" id="timer-bar-btn">Pausa</button>
+    </div>
+
+    <header class="hub-header">
+      <div class="hub-title-block">
+        <h1 id="view-title">Inicio</h1>
+        <p id="view-sub">Resumen de tu curso</p>
+      </div>
+      <div class="hub-actions">
+        <button class="hub-round" data-action="open-cmd" title="Buscar" aria-label="Buscar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+        </button>
+        <button class="hub-round" data-action="toggle-theme" title="Tema" aria-label="Cambiar tema" id="theme-btn">
+          <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 14.5A8.5 8.5 0 1 1 9.5 3 7 7 0 0 0 21 14.5Z"/></svg>
+        </button>
+        <button class="hub-round hub-avatar" data-action="go" data-to="settings" id="header-avatar" aria-label="Ajustes">A</button>
+      </div>
+    </header>
+
+    <div id="view" class="hub-scroll no-scrollbar"></div>
+
+    <button id="fab" class="sr-only" hidden type="button" data-action="quick-add" tabindex="-1">Nuevo</button>
+
+    <nav class="hub-nav" id="bottom-nav">
+      <button data-view="dashboard" class="is-active" aria-label="Inicio">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 4 9.5V21h6v-6h4v6h6V9.5L12 3Z"/></svg>
+        <span class="nav-lbl">Inicio</span>
+      </button>
+      <button data-view="schedule" aria-label="Horario">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+        <span class="nav-lbl">Horario</span>
+      </button>
+      <button type="button" data-action="open-more" aria-label="Más" id="nav-more">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 7h14M5 12h14M5 17h10"/></svg>
+        <span class="nav-lbl">Más</span>
+      </button>
+      <button data-view="exams" class="nav-badge" aria-label="Exámenes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+        <span class="nav-dot" id="nav-task-badge" hidden></span>
+        <i class="dot-count" id="bn-exam" hidden></i>
+        <span class="nav-lbl">Exámenes</span>
+      </button>
+      <button data-view="rendimiento" aria-label="Calificaciones">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M12 16V8M16 16v-3"/></svg>
+        <span class="nav-lbl">Notas</span>
+      </button>
+    </nav>
+
+    <div id="more-sheet" class="sheet" hidden>
+      <div class="sheet-card no-scrollbar">
+        <div class="sheet-handle"></div>
+        <h3>Más</h3>
+        <div class="sheet-sec">Taller</div>
+        <div class="sheet-grid sheet-wide">
+          <button data-view="tools">
+            <span class="sheet-ico" style="color:#3b82f6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 12h6"/></svg></span>
+            <span class="sheet-txt">Herramientas SMR <small>Subnet, CHMOD, puertos…</small></span>
+          </button>
+        </div>
+        <div class="sheet-sec">Estudiar</div>
+        <div class="sheet-grid">
+          <button data-view="timer">
+            <span class="sheet-ico" style="color:#f59e0b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 3h6"/></svg></span>
+            <span class="sheet-txt">Temporizador <small>Pomodoro</small></span>
+          </button>
+          <button data-view="cards">
+            <span class="sheet-ico" style="color:#a78bfa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="12" height="16" rx="2"/><path d="M16 7h4v14H8"/></svg></span>
+            <span class="sheet-txt">Fichas <small>Repetición</small></span>
+          </button>
+          <button data-view="quickreview">
+            <span class="sheet-ico" style="color:#22c55e"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M12 16V8M16 16v-3"/></svg></span>
+            <span class="sheet-txt">Repaso rápido <small>Antes del examen</small></span>
+          </button>
+          <button data-view="chatbot">
+            <span class="sheet-ico" style="color:#38bdf8"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 6h14v10H8l-3 3V6Z"/></svg></span>
+            <span class="sheet-txt">Asistente <small>Tus apuntes</small></span>
+          </button>
+          <button data-view="examode">
+            <span class="sheet-ico" style="color:#f43f5e"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
+            <span class="sheet-txt">Modo examen <small>Sin distracciones</small></span>
+          </button>
+          <button data-view="habits">
+            <span class="sheet-ico" style="color:#34d399"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 12l4 4 8-8"/><circle cx="12" cy="12" r="9"/></svg></span>
+            <span class="sheet-txt">Hábitos <small>Repaso diario</small></span>
+          </button>
+        </div>
+        <div class="sheet-sec">Organizar</div>
+        <div class="sheet-grid">
+          <button data-view="notes">
+            <span class="sheet-ico" style="color:#eab308"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h8l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M15 3v5h5M9 13h6M9 17h4"/></svg></span>
+            <span class="sheet-txt">Apuntes <small>Markdown</small></span>
+          </button>
+          <button data-view="exams">
+            <span class="sheet-ico" style="color:#ef4444"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg></span>
+            <span class="sheet-txt">Exámenes <small>Fechas y notas</small></span>
+          </button>
+          <button data-view="kanban">
+            <span class="sheet-ico" style="color:#fb7185"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="11" y="4" width="4" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg></span>
+            <span class="sheet-txt">Tablero <small>Entregas</small></span>
+          </button>
+          <button data-view="agenda">
+            <span class="sheet-ico" style="color:#60a5fa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
+            <span class="sheet-txt">Agenda <small>Día / sem / mes</small></span>
+          </button>
+          <button data-view="inbox">
+            <span class="sheet-ico" style="color:#94a3b8"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 13h4l2 3h4l2-3h4v6H4v-6Z"/><path d="M4 13 6.5 5h11L20 13"/></svg></span>
+            <span class="sheet-txt">Bandeja <small>Sin clasificar</small></span>
+          </button>
+          <button data-view="plan">
+            <span class="sheet-ico" style="color:#14b8a6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="17" r="3"/></svg></span>
+            <span class="sheet-txt">Plan <small>Hasta la fecha</small></span>
+          </button>
+          <button data-view="guide">
+            <span class="sheet-ico" style="color:#c084fc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M8 13h8M8 17h5"/></svg></span>
+            <span class="sheet-txt">Guía docente <small>Importar PDF</small></span>
+          </button>
+          <button data-view="glossary">
+            <span class="sheet-ico" style="color:#2dd4bf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3M8 11h6M11 8v6"/></svg></span>
+            <span class="sheet-txt">Glosario <small>Términos</small></span>
+          </button>
+        </div>
+        <div class="sheet-sec">Curso</div>
+        <div class="sheet-grid">
+          <button data-view="subjects">
+            <span class="sheet-ico" style="color:#818cf8"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="13" width="7" height="7" rx="1.5"/><rect x="14" y="13" width="7" height="7" rx="1.5"/></svg></span>
+            <span class="sheet-txt">Módulos <small>Los 7 de 2.º</small></span>
+          </button>
+          <button data-view="timeline">
+            <span class="sheet-ico" style="color:#f97316"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="18" r="2" fill="currentColor"/></svg></span>
+            <span class="sheet-txt">Cuatrimestre <small>Línea de fechas</small></span>
+          </button>
+          <button data-view="rendimiento">
+            <span class="sheet-ico" style="color:#10b981"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 3v9h9"/></svg></span>
+            <span class="sheet-txt">Calificaciones <small>Radar, media y simulador</small></span>
+          </button>
+          <button data-view="achievements">
+            <span class="sheet-ico" style="color:#f59e0b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 4h8v3a4 4 0 0 1-8 0V4Z"/><path d="M8 5H5v2a3 3 0 0 0 3 3M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 11v3M9 20h6M10 17h4"/></svg></span>
+            <span class="sheet-txt">Logros <small>XP y medallas</small></span>
+          </button>
+        </div>
+        <div class="sheet-sec">Sistema</div>
+        <div class="sheet-grid">
+          <button data-view="settings">
+            <span class="sheet-ico" style="color:#a3a3a3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+            <span class="sheet-txt">Ajustes <small>Perfil y avisos</small></span>
+          </button>
+          <button data-view="admin">
+            <span class="sheet-ico" style="color:#64748b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M7 14h10"/></svg></span>
+            <span class="sheet-txt">Servidor <small>Sync opcional</small></span>
+          </button>
+          <button data-view="trash">
+            <span class="sheet-ico" style="color:#ef4444"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12"/></svg></span>
+            <span class="sheet-txt">Papelera <small>Recuperar</small></span>
+          </button>
+        </div>
+        <button class="btn more-capture" data-action="open-capture">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><path d="M12 5v14M5 12h14"/></svg>
+          Captura rápida
+        </button>
+      </div>
+    </div>
+
+    <div id="capture" class="cmdk" hidden>
+      <div class="cmdk-box capture-box">
+        <textarea id="capture-text" rows="4" placeholder="Di o escribe: «Examen de redes el viernes»"></textarea>
+        <div class="capture-actions">
+          <button class="btn btn-primary" data-action="capture-inbox">Bandeja</button>
+          <button class="btn" data-action="capture-task">Tarea</button>
+          <button class="btn" data-action="capture-note">Nota</button>
+          <button class="btn" data-action="nlp-text">Interpretar</button>
+          <button class="btn btn-ghost" data-action="close-capture">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="cmdk" class="cmdk" hidden>
+      <div class="cmdk-box">
+        <input id="cmdk-input" placeholder="Buscar notas, exámenes, acciones…" autocomplete="off" />
+        <div id="cmdk-list"></div>
+        <div class="cmdk-hint">↑↓ navegar · Enter abrir · Esc cerrar</div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary focus-fab" data-action="toggle-focus">Salir de foco</button>
+    <div id="modal-root"></div>
+    <div id="toast-root" class="toasts"></div>
+    <div id="overlay" class="overlay" hidden></div>
+    <div id="sheet-root"></div>
+  </main>
+
+  <script src="js/app.js"></script>
+  <script src="js/studio.js"></script>
+  <script src="js/tools.js"></script>
+</body>
+</html>

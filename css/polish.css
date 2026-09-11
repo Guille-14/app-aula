@@ -1,0 +1,62 @@
+/* Capa final: más clara, más rápida, más “app” */
+
+.nav-label {
+  font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: rgba(255,255,255,.38); padding: 14px 12px 4px;
+}
+.sheet-sec {
+  font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); margin: 14px 2px 8px;
+}
+.sheet-grid { grid-template-columns: 1fr 1fr; }
+.sheet-card { max-height: min(86vh, 720px); overflow: auto; padding-bottom: 28px; }
+.sheet-card h3 { margin: 4px 0 8px; }
+
+.study-rec {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--surface)), var(--surface));
+}
+.study-rec .k { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.study-rec p { margin: 6px 0 10px; font-size: 15.5px; line-height: 1.4; }
+
+.quiet-alert {
+  margin-top: 12px; padding: 10px 12px; border-radius: 12px;
+  background: color-mix(in srgb, #f59e0b 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, #f59e0b 35%, var(--line));
+  font-size: 13.5px;
+}
+
+.avatar-mini {
+  width: 48px; height: 48px; border-radius: 16px;
+  display: grid; place-items: center;
+  background: var(--accent); color: var(--accent-ink, #fff);
+  font-weight: 800; font-size: 18px;
+}
+
+.view { animation: rise .28s ease; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.sidebar { overflow: auto; }
+#overlay.menu-on { display: block; z-index: 18; }
+
+@media (max-width: 860px) {
+  .greeting h2 { font-size: 24px; letter-spacing: -.03em; }
+  .live-card { margin-top: 12px; }
+  .stat { padding: 12px 14px; }
+}
+
+.empty {
+  padding: 28px 16px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+
+.cmdk-box { border: 1px solid var(--line); }
+.toast { backdrop-filter: blur(8px); }
+
+.hash-ready .view { scroll-margin-top: 80px; }
