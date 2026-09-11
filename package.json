@@ -8,7 +8,8 @@
     "static": "python3 -m http.server 8080 --bind 0.0.0.0",
     "preview": "python3 -m http.server 8099",
     "minificar": "node tools/minificar.mjs www",
-    "apk": "bash apk-overlay/build.sh"
+    "apk": "bash apk-overlay/build.sh",
+    "test:min": "node tools/probar-minificado.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^6.2.2",

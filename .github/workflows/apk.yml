@@ -64,6 +64,18 @@ jobs:
           done
           exit 1
 
+      - name: Pruebas sobre el código minificado (lo que va dentro del APK)
+        run: |
+          # Minificar cambia el código (p. ej. terser convierte APP_VERSION = "v63" en
+          # APP_VERSION:"v63"), y eso ya tumbó una entrega. Aquí se prueban las mismas
+          # comprobaciones sobre la web minificada antes de empaquetarla.
+          set -o pipefail
+          if npm run test:min 2>&1 | tee test-min.log; then exit 0; fi
+          grep -E "^ *[-✗]|fallos" test-min.log | head -10 | while IFS= read -r l; do
+            echo "::error title=Prueba sobre el minificado::$(printf '%s' "$l" | cut -c1-200)"
+          done
+          exit 1
+
       - name: Compilar el APK
         run: |
           set -o pipefail

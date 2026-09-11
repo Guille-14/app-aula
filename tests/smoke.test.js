@@ -13,11 +13,32 @@ const fs = require("fs");
 const path = require("path");
 const { JSDOM, VirtualConsole } = require("jsdom");
 
-const ROOT = path.join(__dirname, "..");
+// AULA_ROOT permite pasar toda la batería sobre OTRA copia de la app: es lo que usa
+// `npm run test:min` para probar el código minificado que va dentro del APK.
+const ROOT = process.env.AULA_ROOT ? path.resolve(process.env.AULA_ROOT) : path.join(__dirname, "..");
 const HTML = fs
   .readFileSync(path.join(ROOT, "index.html"), "utf8")
   .replace(/<script src="[^"]+"><\/script>/g, "");
 
+// Compara texto sin depender del formato: fuera comentarios, espacios, saltos de línea y el
+// «;» de antes de la llave. Así la misma comprobación sirve para el CSS escrito a mano y para
+// el minificado que va dentro del APK (que es lo que de verdad se publica).
+const compacto = (t) => String(t).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, "").replace(/;\}/g, "}");
+const casa = (patron, texto) => new RegExp(compacto(patron)).test(compacto(texto));
+// ¿Hay alguna regla que dé esta propiedad a este selector? Vale para el CSS escrito a mano y
+// para el minificado: el minificador reparte los grupos de selectores como le conviene.
+const tienePropiedad = (selector, propiedad, texto) => {
+  const limpio = (t) => String(t).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").replace(/\s*([>+~,])\s*/g, "$1").replace(/;\s*}/g, "}");
+  const plano = limpio(texto);
+  const clave = limpio(selector);
+  const prop = limpio(propiedad);
+  let i = -1;
+  while ((i = plano.indexOf(clave, i + 1)) >= 0) {
+    const fin = plano.indexOf("}", i);
+    if (plano.slice(i, fin < 0 ? plano.length : fin).replace(/\s+/g, "").includes(prop.replace(/\s+/g, ""))) return true;
+  }
+  return false;
+};
 const oks = [];
 const fails = [];
 const check = (cond, msg) => (cond ? oks : fails).push(msg);
@@ -785,7 +806,7 @@ async function testAuditoria() {
     check(notas.every((n) => /^\d+\.[0-9]$/.test(n)), "módulos: la nota se enseña con un decimal (" + notas.slice(0, 3).join(", ") + ")");
     check(!!r.querySelector(".subject-card.is-new"), "módulos: hay tarjeta para añadir uno nuevo");
     const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
-    check(/\.subject-grid \{ display: flex;/.test(ui), "módulos: la rejilla es de una columna (los nombres largos respiran)");
+    check(casa(".subject-grid { display: flex;", ui), "módulos: la rejilla es de una columna (los nombres largos respiran)");
   }
 
   // --- v60: píldoras de contexto y botón de guardar a mano en Ajustes ---
@@ -800,7 +821,7 @@ async function testAuditoria() {
     check(!!r.querySelector(".set-actions .btn-primary"), "ajustes: guardar sigue a mano aunque bajes por la pantalla");
     const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
     check(/--acc-blue:/.test(ui) && (ui.match(/--acc-blue:/g) || []).length >= 2, "interfaz: la paleta de acentos está en claro y en oscuro");
-    check(/\.tool-ico \{[^}]*var\(--c/.test(ui), "herramientas: el icono se tiñe con su propio color");
+    check(casa(".tool-ico {[^}]*var\\(--c", ui), "herramientas: el icono se tiñe con su propio color");
   }
 
   // --- v61: exámenes con pestaña propia en la barra de abajo ---
@@ -879,7 +900,7 @@ async function testAuditoria() {
     act(env, "toggle-focus", {});
     check(r.body.classList.contains("focus-mode"), "foco: el botón de la vista Estudio entra en foco");
     const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
-    check(/\.focus-exit \{ display: none; \}/.test(ui) && /body\.focus-mode \.focus-exit \{ display: grid; \}/.test(ui), "foco: la salida solo aparece dentro del modo foco");
+    check(casa(".focus-exit { display: none; }", ui) && casa("body.focus-mode .focus-exit { display: grid; }", ui), "foco: la salida solo aparece dentro del modo foco");
     check(!/body\.focus-mode \.hub-header, body\.focus-mode \.hub-nav/.test(ui), "foco: la cabecera sigue visible para poder salir");
     act(env, "toggle-focus", {});
     check(!r.body.classList.contains("focus-mode"), "foco: se sale con el mismo botón");
@@ -909,8 +930,8 @@ async function testAuditoria() {
   // --- v61: el calendario no se puede cortar (casilla acotada) ---
   {
     const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
-    check(/button\.cal-day \{[^}]*width: min\(100%, 46px\)/.test(ui), "calendario: cada día se acota a 46 px como mucho");
-    check(/grid-template-columns: repeat\(7, minmax\(0, 1fr\)\)/.test(ui), "calendario: las columnas no pueden desbordar la tarjeta");
+    check(casa("button.cal-day {[^}]*width: min\\(100%, 46px\\)", ui), "calendario: cada día se acota a 46 px como mucho");
+    check(casa("grid-template-columns: repeat\\(7, minmax\\(0, 1fr\\)\\)", ui), "calendario: las columnas no pueden desbordar la tarjeta");
     check(!/\.cal-title small \{[^}]*text-overflow/.test(ui), "calendario: el subtítulo ya no se corta con puntos suspensivos");
 
     const env = boot();
@@ -1011,22 +1032,30 @@ async function testAuditoria() {
   {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
     const app = fs.readFileSync(path.join(ROOT, "js", "app.js"), "utf8");
-    const m = app.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+    const m = app.match(/APP_VERSION\s*[:=]\s*"([^"]+)"/);   // minificado: APP_VERSION:"v63"
     check(!!m, "versión: js/app.js declara APP_VERSION");
     check(!!m && m[1].split(".")[0] === "v" + pkg.split(".")[0], "versión: APP_VERSION coincide con package.json (" + (m ? m[1] : "?") + " · paquete " + pkg + ")");
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     const c = sw.match(/CACHE\s*=\s*"([^"]+)"/);
     check(!!c && c[1].includes(pkg.split(".")[0]), "versión: la caché del service worker lleva el número de la versión (" + (c ? c[1] : "?") + ")");
     const comp = fs.readFileSync(path.join(ROOT, "apk-overlay", "comprobar-apk.py"), "utf8");
-    check(comp.includes(String.raw`v[\d.]`), "versión: el comprobador del APK acepta versiones con puntos (v62.1)");
+    check(/v\(\[\\d\.\]\+\)/.test(comp), "versión: el comprobador del APK acepta versiones con puntos (v63.0.1)");
+    const patron = (comp.match(/re\.search\(r'([^']*APP_VERSION[^']*)'/) || [])[1] || "";
+    let valeMinificado = false;
+    try {
+      const re = new RegExp(patron);
+      valeMinificado = re.test('APP_VERSION = "v63"') && re.test('APP_VERSION:"v63"');
+    } catch { valeMinificado = false; }
+    check(valeMinificado, "versión: el comprobador del APK entiende la web minificada (el «=» se convierte en «:») [" + patron + "]");
   }
 
   // --- v62: los diálogos no heredan la caja centrada de la hoja antigua ---
   {
     const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    const regla = ui.slice(ui.indexOf(".modal {"), ui.indexOf(".modal-card {"));
-    check(/transform: none/.test(regla), "modal: se resetea el translate(-50%,-50%) de styles.css (la hoja salía media caja fuera)");
-    check(/width: auto/.test(regla) && /max-height: none/.test(regla), "modal: se resetean el ancho y el alto máximos de la hoja antigua");
+    const uiPlano = compacto(ui);
+    const regla = uiPlano.slice(uiPlano.indexOf(".modal{"), uiPlano.indexOf(".modal-card{"));
+    check(/transform:none/.test(regla), "modal: se resetea el translate(-50%,-50%) de styles.css (la hoja salía media caja fuera)");
+    check(/width:auto/.test(regla) && /max-height:none/.test(regla), "modal: se resetean el ancho y el alto máximos de la hoja antigua");
 
     const env = boot();
     ready(env.A);
@@ -1182,10 +1211,10 @@ async function testAuditoria() {
   {
     const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
     check(!/grid-template-columns: (1fr|repeat\(\d+, 1fr\))/.test(ui), "anchura: ninguna rejilla usa 1fr a pelo (todas con minmax(0, 1fr))");
-    check(/\.filters \{[^}]*flex-wrap: wrap/.test(ui), "anchura: los filtros de módulos envuelven en varias líneas");
-    check(/\.chips-row \.chip, \.filters \.chip[^{]*\{[^}]*overflow-wrap: anywhere/.test(ui), "anchura: un chip largo (módulo, fecha, aviso) se parte dentro de su píldora");
-    check(/\.row > div, \.row b, \.row small \{[^}]*min-width: 0/.test(ui), "anchura: el texto de una fila puede encogerse (no empuja las cifras)");
-    check(/@media \(max-width: 460px\)[\s\S]{0,200}\.stack-phone/.test(ui), "anchura: las tarjetas de texto se apilan en pantallas estrechas");
+    check(casa(".filters {[^}]*flex-wrap: wrap", ui), "anchura: los filtros de módulos envuelven en varias líneas");
+    check(casa(".chips-row .chip, .filters .chip[^{]*{[^}]*overflow-wrap: anywhere", ui), "anchura: un chip largo (módulo, fecha, aviso) se parte dentro de su píldora");
+    check([".row > div", ".row b", ".row small"].every((sel) => tienePropiedad(sel, "min-width: 0", ui)), "anchura: el texto de una fila puede encogerse (no empuja las cifras)");
+    check(/@media\(max-width:460px\)(.|\n){0,200}\.stack-phone/.test(compacto(ui)), "anchura: las tarjetas de texto se apilan en pantallas estrechas");
 
     const env = boot();
     ready(env.A);
