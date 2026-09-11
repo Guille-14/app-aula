@@ -4,6 +4,7 @@
 **Alcance:** todo el repositorio (`index.html`, `js/app.js`, `js/studio.js`, `js/tools.js`, `sw.js`, `server.py`, 7 hojas CSS, `manifest.webmanifest`, `apk-overlay/`, README).
 **Commit auditado:** `e820a3a` (rama `arena/01a0902e-app-aula`, creada desde `main`).
 **Ronda v58:** commits `6c70d71` y `de1c2a1` (auditoría línea a línea + arreglos, 182 pruebas ✓).
+**Ronda v59:** rediseño de interfaz (una sola hoja `css/ui.css`, calendario escolar nuevo, 198 pruebas ✓).
 **Tamaño analizado:** 9.225 líneas / 454 KB (189 KB de `app.js`, 148 KB de CSS).
 
 ## Cómo se ha auditado (para que te fíes de los hallazgos)
@@ -680,6 +681,35 @@ Y **9 funciones muertas** en `app.js`: `maybeNotify`, `greeting`, `medals`, `hea
 | Reglas `:focus` en CSS | 3 |
 | `try/catch` vacíos en app.js + studio.js | 15 |
 | Skins con contraste `--muted` < 4.5:1 | 9 (3 de ellas < 3:1) |
+
+## Ronda v59 · Rediseño de interfaz (estética Trade Republic)
+
+**Objetivo del usuario:** «mejores mucho más la interfaz, hay muchas cosas que se ven como el culo… que sea intuitiva y súper guapa, con la estética de Trade Republic, manteniendo la misma esencia» + rehacer el calendario escolar del Horario.
+
+### Qué se hizo
+
+1. **Una sola hoja de interfaz.** `css/ui.css` (≈1.650 líneas, 35 secciones) sustituye a `hub.css`, `look.css`, `plus.css` y `polish.css`, que se **borran** (2.426 líneas retiradas). Se carga la última, tras `styles.css`, `skins.css` y `themes.css`, así que manda ella sin pelearse con las pieles.
+2. **Capa de tokens en tres niveles**, para no romper las 14 pieles ni los 20 temas:
+   - `:root` → medidas, formas y derivados que **ningún** tema define (`--surface-2`, `--chip`, `--muted-2`, `--radius-sm/lg/xs`, `--nav-h`, `--pad`), calculados a partir de los tokens del tema (`color-mix`) para que cada piel conserve su carácter.
+   - `html[data-skin="hub"]` / sin skin → identidad de la casa (radio 22 px, tipografía del sistema).
+   - `html[data-theme="dark"|"light"]` → paleta, con la misma prioridad que tenía `hub.css` en la v58, así que **ninguna piel cambia de comportamiento** respecto a lo que ya había.
+3. **Cromo nuevo en todas las vistas:** cabecera compacta, tarjetas de radio grande, botones con acción principal en blanco sobre negro, chips, campos de 16 px (sin zoom al enfocar en Android), barra inferior de 5 con etiqueta y pastilla de activo, panel «Más», modales tipo hoja, avisos y buscador (⌘K).
+4. **Calendario escolar reescrito** (pestaña *Calendario* del Horario): cabecera con mes y subtítulo del curso, resumen del mes (días de clase / festivos / vacaciones), aviso de vacaciones cuando el mes las toca, rejilla de semanas completas con colores por tipo de día, punto para festivo/vacaciones, leyenda, lista de los días sin clase y tarjeta con las fechas del curso 2026-27.
+5. **Ajustes que la hoja vieja daba por hechos:** «Tamaño del texto» (`data-ui-size`), modo compacto (`data-compact`), bloqueo de examen (`body.exam-lock` oculta la captura) y el aviso de invitado, que ahora es un chip real en la cabecera (`#guest-chip`).
+6. **Capas de apilado ordenadas** (el fallo clásico de este tipo de rediseños): barra inferior 80, panel «Más» 45, superposiciones 100, modales 110, buscador 120, avisos 140. La barra queda por encima del panel «Más» y el panel reserva el hueco de la barra, como en la v58.
+7. **Sin CSS muerto propio:** de las 232 clases que usan el HTML y los cuatro JS, todas menos 6 tienen regla. Las 6 restantes están verificadas como inofensivas (`dark`/`light` en `documentElement`, `is-loading` —ya con estilo de carga—, `is-touch` —ya con reglas táctiles—, `more-open` y `work`, que se usan como estado).
+
+### Comprobaciones
+
+- `npm test` → **198 comprobaciones ✓** (15 nuevas de esta ronda: rejilla de semanas completas, resumen, leyenda, marcadores, salto de día a su semana, hoja única enlazada la última, hojas retiradas, llaves cuadradas de `ui.css`, chip de invitado).
+- Contraste WCAG de la paleta nueva: texto 19,0:1 · secundario 5,8:1 · verde 9,5 · rojo 6,3 · ámbar 10,4 · azul 6,9 (todo AA o mejor).
+- Llaves de `ui.css` cuadradas (610/610) y `node --check` limpio en `js/app.js` y `tests/smoke.test.js`.
+
+### Lo que no se pudo verificar (honestidad)
+
+No hay navegador headless disponible en este entorno (`playwright`, `chromium` y Electron están bloqueados), así que **no hay capturas**: la revisión visual se ha hecho leyendo el HTML que genera cada vista en jsdom y comprobando que cada clase pintada tiene su regla. Los 20 temas y las 14 pieles se han revisado por código, no a ojo.
+
+---
 
 ## Anexo B · Cómo reproducir los hallazgos críticos
 

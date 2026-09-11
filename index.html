@@ -45,11 +45,8 @@
   <link rel="stylesheet" href="css/styles.css" />
   <link rel="stylesheet" href="css/skins.css" />
   <link rel="stylesheet" href="css/themes.css" />
-  <link rel="stylesheet" href="css/plus.css" />
-  <link rel="stylesheet" href="css/hub.css" />
-  <link rel="stylesheet" href="css/look.css" />
-  <!-- polish.css va la última: es la capa de remates (accesibilidad y arreglos) -->
-  <link rel="stylesheet" href="css/polish.css" />
+  <!-- ui.css va la última: es la interfaz de verdad (tokens, componentes y vistas) -->
+  <link rel="stylesheet" href="css/ui.css" />
 </head>
 <body class="hub-body">
   <noscript><p style="padding:16px;font-family:sans-serif">Aula SMR necesita JavaScript activado.</p></noscript>
@@ -71,6 +68,7 @@
       <div class="hub-title-block">
         <h1 id="view-title">Inicio</h1>
         <p id="view-sub">Resumen de tu curso</p>
+        <span class="guest-chip" id="guest-chip" hidden>Invitado</span>
       </div>
       <div class="hub-actions">
         <button class="hub-round" data-action="open-cmd" title="Buscar" aria-label="Buscar">

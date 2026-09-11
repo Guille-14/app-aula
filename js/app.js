@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v58";
+  const APP_VERSION = "v59";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -826,6 +826,8 @@
     document.body.classList.toggle("hide-att", st.showAttendance === false);
     if (st.guest) document.body.classList.add("guest-mode");
     else document.body.classList.remove("guest-mode");
+    const chip = $("#guest-chip");
+    if (chip) chip.hidden = !st.guest;
     temaHoraAplicado = new Date().getHours();
   }
   // El tema automático cambia de día a noche sin recargar la app (se mira cada pocos segundos).
@@ -1097,7 +1099,7 @@
         <button class="btn btn-sm btn-primary" data-action="export">Exportar copia</button></div>`);
     }
     if (state.settings && state.settings.guest) {
-      out.push(`<div class="save-warn" style="background:color-mix(in srgb, #f59e0b 18%, var(--surface));border-color:color-mix(in srgb, #f59e0b 45%, var(--line))">
+      out.push(`<div class="save-warn is-guest">
         <span><b>Modo invitado.</b> Nada de lo que hagas se guarda al cerrar.</span>
         <button class="btn btn-sm btn-primary" data-action="guest-off">Guardar y salir</button></div>`);
     }
@@ -1567,15 +1569,13 @@
     let courseHtml = "";
     if (startD != null && startD > 0) {
       courseHtml = `<div class="course-soon">
-        <span class="k">Empieza el curso</span>
-        <b>${startD}</b>
-        <span>día${startD === 1 ? "" : "s"} · ${fmtDate(state.settings.startDate)}</span>
+        <div><div class="v">${startD}</div><span class="k">${startD === 1 ? "día para empezar" : "días para empezar"}</span></div>
+        <div><div class="v">${fmtDate(state.settings.startDate)}</div><span class="k">primer día de clase</span></div>
       </div>`;
     } else if (endD != null && endD > 0) {
       courseHtml = `<div class="course-soon">
-        <span class="k">Quedan de curso</span>
-        <b>${endD}</b>
-        <span>día${endD === 1 ? "" : "s"} · hasta ${fmtDate(state.settings.endDate)}</span>
+        <div><div class="v">${endD}</div><span class="k">${endD === 1 ? "día de curso" : "días de curso"}</span></div>
+        <div><div class="v">${fmtDate(state.settings.endDate)}</div><span class="k">último día de clase</span></div>
       </div>`;
     }
     const todayClasses = dia.kind === "lectivo" ? eventsOnDate(today) : [];
@@ -1597,10 +1597,10 @@
     const sinClaseHtml = `<div>
         <div class="sec-head"><h3>Días sin clase</h3><button data-action="sch-view" data-mode="month" class="linkish">Calendario</button></div>
         ${sinClase.length
-          ? `<div class="soon-list">${sinClase.map((x) => `<div class="soon-row" style="cursor:default">
+          ? `<div class="soon-list">${sinClase.map((x) => `<div class="soon-row">
               <span class="d">${daysUntil(x.iso)} d</span>
               <span class="n">${esc(x.info.label)}</span>
-              <span class="r" style="margin-left:auto;color:var(--muted);font-size:12px">${esc(fmtDate(x.iso))}</span>
+              <span class="r">${esc(fmtDate(x.iso))}</span>
             </div>`).join("")}</div>`
           : `<p class="hint">No quedan festivos ni vacaciones por delante.</p>`}
       </div>`;
@@ -1612,7 +1612,7 @@
     }
     return `
       ${state.settings.demo && state.settings.onboarded ? `<div class="card demo-banner">
-        <div><strong>Datos de ejemplo</strong><div class="hint" style="margin:4px 0 0">Horario de muestra del centro. Quédatelo o bórralo.</div></div>
+        <div><strong>Datos de ejemplo</strong><div class="hint">Horario de muestra del centro. Quédatelo o bórralo.</div></div>
         <div class="hero-actions">
           <button class="btn btn-primary" data-action="keep-demo">Quedármelo</button>
           <button class="btn" data-action="clear-demo">Empezar de cero</button>
@@ -1621,7 +1621,7 @@
       ${courseHtml}
       ${(startD != null && startD > 0) ? "" : liveHtml}
       ${todayList}
-      ${state.settings.onboarded && typeof Notification !== "undefined" && Notification.permission !== "granted" ? `<div class="idle-note" style="display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left">
+      ${state.settings.onboarded && typeof Notification !== "undefined" && Notification.permission !== "granted" ? `<div class="idle-note note-action">
         <span>Activa avisos: clase y fichas de repaso.</span>
         <button class="btn btn-sm btn-primary" data-action="enable-notify">Activar</button>
       </div>` : ""}
@@ -1820,6 +1820,9 @@
     `;
   }
 
+  /* Calendario escolar del centro (pestaña «Calendario» del Horario).
+     Mes a mes del curso 2026-27: días de clase, festivos, vacaciones y fin de semana.
+     Se puede tocar cualquier día para ver qué hay y saltar a su semana. */
   function renderCalendar() {
     const primero = new Date(COURSE.start + "T12:00:00");
     const ultimo = new Date(COURSE.end + "T12:00:00");
@@ -1837,46 +1840,74 @@
     const daysIn = new Date(y, m + 1, 0).getDate();
     const cells = [];
     const sinClase = [];
+    let lectivos = 0, festivosMes = 0, vacasMes = 0;
     for (let i = 0; i < startPad; i++) cells.push({ out: true });
     for (let d = 1; d <= daysIn; d++) {
       const iso = `${y}-${pad(m + 1)}-${pad(d)}`;
       const info = dayInfo(iso);
-      if (info.kind === "festivo" || info.kind === "vacaciones") sinClase.push({ iso, info });
+      if (info.kind === "lectivo") lectivos++;
+      if (info.kind === "festivo") { festivosMes++; sinClase.push({ iso, info }); }
+      if (info.kind === "vacaciones") { vacasMes++; sinClase.push({ iso, info }); }
       cells.push({ out: false, n: d, iso, info, hoy: iso === todayISO() });
     }
     while (cells.length % 7) cells.push({ out: true });
     const claseDia = (k) => k === "festivo" ? "is-hol" : k === "vacaciones" ? "is-vac" : k === "lectivo" ? "is-lectivo" : k === "finde" ? "is-finde" : "is-fuera";
     const celdas = cells.map((c) => c.out
-      ? `<div class="cal-day out"></div>`
-      : `<div class="cal-day ${claseDia(c.info.kind)} ${c.hoy ? "today" : ""}" data-action="cal-day" data-date="${c.iso}" title="${esc(c.info.label || "Clase")}">
-          <div class="n">${c.n}</div>
-          ${c.info.kind === "lectivo" ? "" : `<div class="cal-hol">${esc(c.info.short)}</div>`}
-        </div>`).join("");
+      ? `<div class="cal-day out" aria-hidden="true"></div>`
+      : `<button type="button" class="cal-day ${claseDia(c.info.kind)} ${c.hoy ? "today" : ""}" data-action="cal-day" data-date="${c.iso}"
+          aria-label="${esc(fmtDateLong(c.iso) + " · " + (c.info.kind === "lectivo" ? "día de clase" : c.info.label || "sin clase"))}">
+          <span class="n">${c.n}</span>
+          ${c.info.kind === "festivo" || c.info.kind === "vacaciones" ? `<span class="mk"></span>` : ""}
+        </button>`).join("");
+    // Si el mes toca unas vacaciones, se avisa arriba con el nombre y las fechas
+    const mesIni = new Date(y, m, 1);
+    const mesFin = new Date(y, m + 1, 0, 23, 59);
+    const vacaMes = VACATIONS.find((v) => {
+      const desde = new Date(v.from + "T12:00:00"), hasta = new Date(v.to + "T12:00:00");
+      return desde <= mesFin && hasta >= mesIni;
+    });
+    const proximo = diasSinClase(1)[0];
     return `<div class="card cal-escuela">
-      <div class="cal-nav">
-        <button class="icon-btn" data-action="cal-prev" aria-label="Mes anterior" ${enElPrimero ? "disabled" : ""}>‹</button>
-        <h2>${MONTHS[m]} ${y}</h2>
-        <button class="icon-btn" data-action="cal-next" aria-label="Mes siguiente" ${enElUltimo ? "disabled" : ""}>›</button>
+      <div class="cal-head">
+        <button class="cal-arrow" data-action="cal-prev" aria-label="Mes anterior" ${enElPrimero ? "disabled" : ""}>‹</button>
+        <div class="cal-title">
+          <b>${MONTHS[m]}</b>
+          <small>${y} · curso del ${fmtDate(COURSE.start)} al ${fmtDate(COURSE.end)}</small>
+        </div>
+        <button class="cal-arrow" data-action="cal-next" aria-label="Mes siguiente" ${enElUltimo ? "disabled" : ""}>›</button>
       </div>
-      <div class="cal">${DAYS_SHORT.map((d) => `<div class="dow">${d}</div>`).join("")}${celdas}</div>
-      <p class="cal-key"><span class="k k-lectivo"></span> Clase · <span class="k k-hol"></span> Festivo · <span class="k k-vac"></span> Vacaciones · <span class="k k-fuera"></span> Sin curso</p>
+      <div class="cal-sum">
+        <div><b>${lectivos}</b><small>días de clase</small></div>
+        <div><b>${festivosMes}</b><small>${festivosMes === 1 ? "festivo" : "festivos"}</small></div>
+        <div><b>${vacasMes}</b><small>días de vacaciones</small></div>
+      </div>
+      ${vacaMes ? `<p class="cal-vaca"><span class="dot"></span>${esc(vacaMes.name)} · del ${esc(fmtDate(vacaMes.from))} al ${esc(fmtDate(vacaMes.to))}</p>` : ""}
+      <div class="cal-weekdays">${DAYS_SHORT.map((d) => `<span class="dow">${d}</span>`).join("")}</div>
+      <div class="cal">${celdas}</div>
+      <p class="cal-key">
+        <span class="k k-lectivo"></span> Clase
+        <span class="k k-hol"></span> Festivo
+        <span class="k k-vac"></span> Vacaciones
+        <span class="k k-fuera"></span> Sin curso
+      </p>
     </div>
     <div class="card">
-      <div class="sec-head"><h3>Este mes no hay clase</h3></div>
+      <div class="sec-head"><h3>Este mes no hay clase</h3>${sinClase.length ? `<span class="badge">${sinClase.length} ${sinClase.length === 1 ? "día" : "días"}</span>` : ""}</div>
       ${sinClase.length
-        ? `<div class="cal-list">${sinClase.map((x) => `<div class="row">
-            <span class="dot" style="background:${x.info.kind === "vacaciones" ? "#f59e0b" : "#ef4444"}"></span>
-            <div style="flex:1"><b>${esc(fmtDateLong(x.iso))}</b><small class="hint">${esc(x.info.label)}</small></div>
-          </div>`).join("")}</div>`
-        : `<p class="hint">Festivo o vacaciones que caigan en día de clase: este mes ninguno.</p>`}
+        ? `<div class="cal-list">${sinClase.map((x) => `<button type="button" class="cal-item" data-action="cal-day" data-date="${x.iso}">
+            <span class="cal-item-d">${esc(fmtDate(x.iso))}</span>
+            <span class="cal-item-t"><b>${esc(x.info.label)}</b><small>${esc(x.info.kind === "vacaciones" ? "Vacaciones" : "Festivo")}</small></span>
+            <span class="cal-item-x" aria-hidden="true">›</span>
+          </button>`).join("")}</div>`
+        : `<p class="hint">Este mes no hay ningún festivo ni vacaciones: todo son días de clase.</p>`}
     </div>
     <div class="card">
-      <div class="sec-head"><h3>Curso 2026-27</h3></div>
-      <div class="cal-list">
-        <div class="row"><span class="dot" style="background:#22c55e"></span><div style="flex:1"><b>Empieza el ${esc(fmtDateLong(COURSE.start))}</b><small class="hint">Primer día de clase</small></div></div>
-        <div class="row"><span class="dot" style="background:#38bdf8"></span><div style="flex:1"><b>Acaba el ${esc(fmtDateLong(COURSE.end))}</b><small class="hint">Último día de clase</small></div></div>
-        ${VACATIONS.map((v) => `<div class="row"><span class="dot" style="background:#f59e0b"></span><div style="flex:1"><b>${esc(v.name)}</b><small class="hint">Del ${esc(fmtDateLong(v.from))} al ${esc(fmtDateLong(v.to))}</small></div></div>`).join("")}
-        ${COURSE.local.map((d) => `<div class="row"><span class="dot" style="background:#ef4444"></span><div style="flex:1"><b>${esc(HOLIDAYS[d] || "Festivo local")}</b><small class="hint">${esc(fmtDateLong(d))}</small></div></div>`).join("")}
+      <div class="sec-head"><h3>Curso 2026-27</h3>${proximo ? `<span class="hint">lo próximo: ${esc(fmtDate(proximo.iso))}</span>` : ""}</div>
+      <div class="info-list">
+        <div class="info-row"><b>Empieza</b><span>${esc(fmtDateLong(COURSE.start))}</span></div>
+        <div class="info-row"><b>Acaba</b><span>${esc(fmtDateLong(COURSE.end))}</span></div>
+        ${VACATIONS.map((v) => `<div class="info-row"><b>${esc(v.name)}</b><span>${esc(fmtDate(v.from))} → ${esc(fmtDate(v.to))}</span></div>`).join("")}
+        ${COURSE.local.map((d) => `<div class="info-row"><b>${esc(HOLIDAYS[d] || "Festivo local")}</b><span>${esc(fmtDateLong(d))}</span></div>`).join("")}
       </div>
     </div>`;
   }

@@ -724,9 +724,53 @@ async function testAuditoria() {
     act(env, "sch-view", { mode: "month" });
     let guard = 0;
     while (!env.doc.querySelector('[data-action="cal-prev"]').disabled && guard++ < 24) act(env, "cal-prev");
-    const titulo = env.doc.querySelector(".cal-nav h2").textContent;
+    const titulo = env.doc.querySelector(".cal-title b").textContent + " " + env.doc.querySelector(".cal-title small").textContent;
     check(/septiembre 2026/i.test(titulo), "calendario: el mes no se escapa antes del curso (" + titulo.trim() + ")");
     check(env.doc.querySelector('[data-action="cal-prev"]').disabled, "calendario: el botón de mes anterior se desactiva en el primer mes");
+  }
+
+  // --- v59: el calendario es una rejilla de verdad, con resumen y leyenda ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.go("schedule");
+    act(env, "sch-view", { mode: "month" });
+    const r = env.doc;
+    const celdas = [...r.querySelectorAll(".cal .cal-day")];
+    check(celdas.length > 0 && celdas.length % 7 === 0, "calendario: la rejilla son semanas completas (" + celdas.length + " casillas)");
+    check(r.querySelectorAll(".cal-weekdays .dow").length === 7, "calendario: los siete días de la semana arriba");
+    check(r.querySelectorAll(".cal-sum > div").length === 3, "calendario: resumen con días de clase, festivos y vacaciones");
+    check(r.querySelectorAll(".cal-key .k").length === 4, "calendario: leyenda de colores");
+    check(celdas.some((c) => c.hasAttribute("data-date") && c.getAttribute("aria-label")), "calendario: cada día se puede pulsar y se anuncia");
+    const conMarcador = celdas.filter((c) => c.querySelector(".mk")).length;
+    check(conMarcador >= 1, "calendario: los festivos llevan su punto (" + conMarcador + ")");
+    act(env, "cal-day", { date: "2026-09-14" });
+    const aviso = [...r.querySelectorAll(".toast")].map((t) => t.textContent).join(" ");
+    check(/Semana del/.test(aviso), "calendario: pulsar un día lleva a su semana (" + aviso.trim() + ")");
+    check(!!r.querySelector('[data-action="sch-view"][data-mode="week"].is-on'), "calendario: al elegir un día se vuelve a la vista de semana");
+    check(env.errors.length === 0, "calendario: sin errores de consola (" + env.errors.slice(0, 1).join("") + ")");
+  }
+
+  // --- v59: una sola hoja de interfaz y el aviso de invitado en la cabecera ---
+  {
+    const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+    const hojas = [...html.matchAll(/href="css\/([\w.-]+)"/g)].map((m) => m[1]);
+    check(hojas[hojas.length - 1] === "ui.css", "interfaz: la hoja nueva se carga la última (" + hojas.join(" → ") + ")");
+    check(!hojas.some((h) => /hub|look|plus|polish/.test(h)), "interfaz: hub/look/plus/polish ya no se enlazan");
+    check(hojas.every((h) => fs.existsSync(path.join(ROOT, "css", h))), "interfaz: todas las hojas enlazadas existen");
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+    check((ui.match(/{/g) || []).length === (ui.match(/}/g) || []).length, "interfaz: ui.css tiene las llaves cuadradas");
+    check(/\.hub-nav\b/.test(ui) && /\.hub-scroll\b/.test(ui) && /\.card\b/.test(ui), "interfaz: ui.css cubre el cromo de la app");
+
+    const env = boot();
+    ready(env.A);
+    env.A.state.settings.guest = true;
+    env.A.render();
+    const chip = env.doc.getElementById("guest-chip");
+    check(!!chip && !chip.hidden, "invitado: la cabecera avisa de que el modo invitado está activo");
+    env.A.state.settings.guest = false;
+    env.A.render();
+    check(!!chip && chip.hidden, "invitado: el aviso desaparece al salir del modo invitado");
   }
 
   // --- Una vista que falla no deja la app en blanco ---
