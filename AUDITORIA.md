@@ -90,12 +90,16 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 
 - **Accesibilidad:** zoom permitido, `color-scheme`, foco visible, `aria-live` en los avisos,
   salto al contenido, `prefers-reduced-motion`, 11 temas con contraste AA corregido,
-  **0 botones y 0 campos sin nombre accesible** en las 28 vistas.
+  **0 botones y 0 campos sin nombre accesible** en las 28 vistas, `aria-current` en la navegación,
+  foco atrapado dentro de los diálogos y devuelto al cerrar, y menos toques accidentales
+  (quitar una falta o una tarea pide confirmación).
 - **Lo que estaba programado y no se podía usar:** rejilla de 33 temas con categorías,
   saltar bloque, modo escritura de fichas, importar CSV de horario, exportar Markdown/Anki/ICS,
   dictado, deshacer, huecos libres del horario convertidos en bloques de estudio,
   buscador global sobre notas/exámenes/tareas/módulos/fichas/glosario y las 37 herramientas,
   radar por módulo y mapa de calor de 28 días.
+- **Datos a futuro:** `state.schemaVersion` para poder migrar sin parches sueltos, y botón de
+  deshacer visible (antes solo existía con Ctrl+Z).
 - **Pruebas:** `npm test` ejecuta 44 comprobaciones con jsdom (arranque de las 28 vistas,
   datos corruptos, cuota, borrado, importación, temporizador, frases, PIN, `.ics`, etiquetas)
   y hay CI en `.github/workflows/tests.yml`. También `.gitignore` y `package.json`.

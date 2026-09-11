@@ -58,6 +58,7 @@
   const LIGHT = new Set(["minimal", "azul", "lima", "coral", "pergamino", "gameboy", "isla", "kawaii", "cafe", "win95", "azulgrana"]);
   const START_HOUR = 8, END_HOUR = 21, SLOT_H = 48;
   const KEY = "aula.smr.v4";
+  const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
   const APP_VERSION = "v49";
   const AVATAR_PACK = [
@@ -606,6 +607,7 @@
       lastFreezeWeek: asText(prog.lastFreezeWeek),
     };
     out.widgets = asArray(src.widgets).length ? asArray(src.widgets) : base.widgets;
+    out.schemaVersion = SCHEMA_VERSION;   // migraciones futuras: v4 -> v5 se hacen aquí
     out.topics = asArray(src.topics);
 
     // Compatibilidad de versiones anteriores
@@ -773,8 +775,16 @@
     setTimeout(() => el.remove(), 2600);
   }
 
-  function closeModal() { $("#modal-root").innerHTML = ""; $("#overlay").hidden = true; }
+  let focoPrevio = null;
+  function closeModal() {
+    $("#modal-root").innerHTML = "";
+    $("#overlay").hidden = true;
+    // El foco vuelve a donde estaba: sin esto, el teclado se queda perdido
+    if (focoPrevio && document.contains(focoPrevio)) { try { focoPrevio.focus(); } catch {} }
+    focoPrevio = null;
+  }
   function openModal(title, bodyHTML, { confirm = "Guardar", onSubmit, danger = false } = {}) {
+    if (!focoPrevio) focoPrevio = document.activeElement;
     $("#overlay").hidden = false;
     $("#modal-root").innerHTML = `
       <div class="modal" role="dialog" aria-modal="true">
@@ -793,7 +803,7 @@
       $$("input[type=checkbox]", form).forEach((c) => { data[c.name] = c.checked; });
       if (onSubmit) onSubmit(data);
     });
-    setTimeout(() => form.querySelector("input,select,textarea")?.focus(), 20);
+    setTimeout(() => form.querySelector("input,select,textarea,button")?.focus(), 20);
   }
   function ask(title, msg, onYes) {
     openModal(title, `<p>${esc(msg)}</p>`, { confirm: "Sí", danger: true, onSubmit() { closeModal(); onYes(); } });
@@ -979,10 +989,20 @@
   function setAttendance(eventId, date, status) {
     state.attendance = state.attendance || [];
     const i = state.attendance.findIndex((a) => a.eventId === eventId && a.date === date);
-    if (i >= 0) {
-      if (state.attendance[i].status === status) state.attendance.splice(i, 1);
-      else state.attendance[i].status = status;
-    } else state.attendance.push({ id: uid(), eventId, date, status });
+    if (i >= 0 && state.attendance[i].status === status) {
+      // Volver a tocar el mismo estado equivale a "quitar la marca": se pregunta
+      const nombre = status === "presente" ? "presente" : status === "retraso" ? "con retraso" : "con falta";
+      openModal("Quitar la marca", `<p>Vas a quitar la marca de <b>${esc(nombre)}</b> de esta clase. No pasa nada, se puede volver a poner.</p>`, {
+        confirm: "Quitar marca", danger: true,
+        onSubmit() {
+          state.attendance.splice(i, 1);
+          closeModal(); save(); render(); toast("Marca quitada");
+        },
+      });
+      return;
+    }
+    if (i >= 0) state.attendance[i].status = status;
+    else state.attendance.push({ id: uid(), eventId, date, status });
     if (status === "presente") grantXP(3, "Asistencia");
     checkAchievements(); render();
   }
@@ -1058,7 +1078,16 @@
     const av = $("#header-avatar");
     if (av) av.innerHTML = avatarInner();
     $$(".nav-item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === view));
-    $$("#bottom-nav button").forEach((b) => b.classList.toggle("is-active", b.dataset.view === view));
+    $$("#bottom-nav button").forEach((b) => {
+      const on = b.dataset.view === view;
+      b.classList.toggle("is-active", on);
+      if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    });
+    const sheet = $("#more-sheet");
+    if (sheet) $$("[data-view]", sheet).forEach((b) => {
+      const on = b.dataset.view === view;
+      if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    });
     const pending = state.tasks.filter((x) => !x.done).length;
     const dueN = dueCards().length;
     const badge = $("#nav-task-badge");
@@ -1353,9 +1382,13 @@
   }
   function renderOnboard() {
     const st = state.settings;
+    // El asistente se puede terminar en cualquier momento: nadie debería pelear con 7 pantallas
     const foot = (back, nextLbl) => `<div class="on-nav">
       ${back ? `<button class="btn" data-action="on-back">Atrás</button>` : `<span></span>`}
-      <button class="btn btn-primary" data-action="on-next">${nextLbl || "Siguiente"}</button>
+      <span style="display:flex;gap:6px">
+        ${onStep > 0 && onStep < 6 ? `<button class="btn" data-action="skip-onboard">Saltar</button>` : ""}
+        <button class="btn btn-primary" data-action="on-next">${nextLbl || "Siguiente"}</button>
+      </span>
     </div>`;
     if (onStep === 0) return `<div class="onboard-full">
       ${onDots(0)}
@@ -3714,7 +3747,20 @@
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); captureToInbox(); }
   });
 
+  // Tab dentro de un modal no debe irse a la página de detrás
   document.addEventListener("keydown", (e) => {
+    if (e.key === "Tab") {
+      const caja = document.querySelector("#modal-root .modal");
+      if (caja) {
+        const focos = [...caja.querySelectorAll("button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])")]
+          .filter((el) => !el.disabled && el.offsetParent !== null);
+        if (focos.length) {
+          const primero = focos[0], ultimo = focos[focos.length - 1];
+          if (e.shiftKey && document.activeElement === primero) { e.preventDefault(); ultimo.focus(); }
+          else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primero.focus(); }
+        }
+      }
+    }
     if (e.key === "Escape") { closeModal(); closeCmd(); closeCapture(); closeMore(); document.body.classList.remove("focus-mode"); return; }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
       const tag = (e.target.tagName || "").toLowerCase();
