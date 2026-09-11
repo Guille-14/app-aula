@@ -75,62 +75,21 @@ jobs:
       - name: Comprobar el APK (firma, versión y widgets)
         id: comprobar
         run: |
-          set -e
+          set -o pipefail
           APK=android/app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
           BT="$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)"
-          "$BT/apksigner" verify --print-certs "$APK" | tee firma.txt
-
-          python3 - "$APK" <<'PY'
-          import hashlib, os, re, sys, zipfile
-          apk = sys.argv[1]
-
-          # --- lo que dice la firma ---
-          firma = open("firma.txt", encoding="utf-8", errors="ignore").read()
-          def tras(etiqueta, texto):
-              m = re.search(re.escape(etiqueta) + r"[:\s]*([^\n]+)", texto)
-              return m.group(1).strip() if m else ""
-          dn = tras("certificate DN", firma)
-          digest = ""
-          for linea in firma.splitlines():
-              if "certificate SHA-256 digest" in linea:
-                  cola = linea.split(":")[-1].strip()
-                  if re.fullmatch(r"[0-9a-fA-F]{64}", cola):
-                      digest = cola.lower()
-                      break
-          esquemas = ",".join(re.findall(r"Verified using (v\d) scheme[^:]*: true", firma))
-
-          # --- lo que va dentro del APK ---
-          z = zipfile.ZipFile(apk)
-          nombres = z.namelist()
-          app = z.read("assets/public/js/app.js").decode("utf-8", "ignore")
-          ver = (re.search(r'APP_VERSION\s*=\s*"(v\d+)"', app) or [None, "?"])[1]
-          widgets = z.read("AndroidManifest.xml").count(b"APPWIDGET_UPDATE")
-          media = "assets/public/js/media.js" in nombres
-
-          sha = hashlib.sha256(open(apk, "rb").read()).hexdigest()
-          mb = "%.1f" % (os.path.getsize(apk) / 1048576)
-
-          filas = {
-              "sha": sha, "mb": mb, "firma": digest, "firma_dn": dn,
-              "esquemas": esquemas, "app": ver, "widgets": widgets, "media": "sí" if media else "NO",
-          }
-          with open(".datos-apk", "w", encoding="utf-8") as f:
-              for k, v in filas.items():
-                  f.write("%s=%s\n" % (k, v))
-          print("--- resumen del APK ---")
-          for k, v in filas.items():
-              print("  %-10s %s" % (k, v))
-
-          assert re.fullmatch(r"[0-9a-f]{64}", digest or ""), "no he podido leer el certificado"
-          assert ver != "?", "no encuentro la versión de la app dentro del APK"
-          assert widgets >= 24, "faltan widgets en el APK (%s)" % widgets
-          assert media, "falta js/media.js dentro del APK"
-          PY
-
-          while IFS= read -r linea; do
-            echo "${linea%%=*}=${linea#*=}" >> "$GITHUB_OUTPUT"
-          done < .datos-apk
+          "$BT/apksigner" verify --print-certs "$APK" > firma.txt || true
+          if python3 apk-overlay/comprobar-apk.py "$APK" firma.txt 2>&1 | tee comprobacion.txt; then
+            while IFS= read -r linea; do
+              case "$linea" in *=*) echo "${linea%%=*}${linea#${linea%%=*}}" >> "$GITHUB_OUTPUT";; esac
+            done < .datos-apk
+          else
+            grep -E "FALLO|Traceback|Error" comprobacion.txt | head -10 | while IFS= read -r l; do
+              echo "::error title=Comprobación del APK::$(printf '%s' "$l" | cut -c1-200)"
+            done
+            exit 1
+          fi
 
       - name: Guardar el APK como artefacto (por si la release falla)
         uses: actions/upload-artifact@v7
