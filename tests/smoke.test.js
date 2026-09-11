@@ -87,7 +87,7 @@ const confirmModal = (env) => {
 };
 const ready = (A) => { A.state.settings.onboarded = true; A.state.settings.demo = false; };
 
-const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "timer", "stats", "plan", "subjects", "settings", "inbox", "review", "achievements", "agenda", "timeline", "kanban", "chatbot", "simulator", "habits", "glossary", "trash", "examode", "quickreview", "admin", "guide", "rendimiento", "tools"];
+const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "timer", "stats", "plan", "subjects", "settings", "inbox", "review", "achievements", "agenda", "kanban", "chatbot", "simulator", "habits", "glossary", "trash", "examode", "quickreview", "admin", "guide", "rendimiento", "tools"];
 
 // ------------------------------------------------------- 1. arranque y vistas
 {
@@ -105,7 +105,7 @@ const VIEWS = ["dashboard", "schedule", "exams", "notes", "cards", "tasks", "tim
       fails.push(`vista ${v} lanza: ${e.message}`);
     }
   }
-  check(env.errors.length === 0, "sin errores de consola al recorrer las 28 vistas (" + env.errors.slice(0, 2).join(" | ") + ")");
+  check(env.errors.length === 0, "sin errores de consola al recorrer las 27 vistas (" + env.errors.slice(0, 2).join(" | ") + ")");
 }
 
 // ------------------------------------------- 2. datos rotos: nada se pierde
@@ -491,7 +491,7 @@ async function testSinRed() {
   check(enBarra.length >= 4, "navegación: la barra de abajo tiene sus vistas fijas (" + enBarra.join(", ") + ")");
   check(enHoja.length >= 10, "navegación: la hoja «Más» sigue teniendo el resto (" + enHoja.length + " vistas)");
   check(repetidas.length === 0, "navegación: nada de la barra de abajo se repite en «Más»" + (repetidas.length ? " (repetido: " + repetidas.join(", ") + ")" : ""));
-  const conocidas = VIEWS.concat(["admin", "examode", "quickreview", "inbox", "review", "achievements", "agenda", "timeline", "kanban", "chatbot", "simulator", "habits", "glossary", "trash", "guide", "rendimiento", "tools"]);
+  const conocidas = VIEWS.concat(["admin", "examode", "quickreview", "inbox", "review", "achievements", "agenda", "kanban", "chatbot", "simulator", "habits", "glossary", "trash", "guide", "rendimiento", "tools"]);
   const raras = enBarra.concat(enHoja).filter((v) => !conocidas.includes(v));
   check(raras.length === 0, "navegación: todos los botones llevan a una vista que existe" + (raras.length ? " (raro: " + raras.join(", ") + ")" : ""));
 }

@@ -165,30 +165,6 @@
     ${body}`;
   }
 
-  function timeline() {
-    const start = st().settings.startDate || todayISO();
-    const end = st().settings.endDate || "2027-06-19";
-    const a = new Date(start + "T00:00:00").getTime();
-    const b = new Date(end + "T00:00:00").getTime();
-    const span = Math.max(b - a, 86400000);
-    const items = st().exams.slice().sort((x, y) => x.date.localeCompare(y.date));
-    return `<div class="card"><p class="hint">Línea del curso ${fmtDate(start)} → ${fmtDate(end)}. Cada barra es un módulo.</p></div>
-      ${st().subjects.map((s) => {
-        const evs = items.filter((e) => e.subjectId === s.id);
-        return `<div class="gantt-row">
-          <div class="gantt-lab">${esc(s.name)}</div>
-          <div class="gantt-track">
-            ${evs.map((e) => {
-              const t = new Date(e.date + "T00:00:00").getTime();
-              const left = clamp(((t - a) / span) * 100, 0, 96);
-              return `<button class="gantt-dot" style="left:${left}%;background:${Aula.safeColor(s.color)}" title="${esc(e.title)}" data-action="edit-exam" data-id="${e.id}">${esc(e.title).slice(0, 18)}</button>`;
-            }).join("")}
-          </div>
-        </div>`;
-      }).join("") || `<div class="empty">Añade módulos y fechas.</div>`}
-      <p class="hint">FCT / proyecto: crea un examen de tipo Entrega con título «FCT» o «Proyecto».</p>`;
-  }
-
   function kanban() {
     const cols = [
       { id: "todo", name: "Pendiente" },
@@ -855,7 +831,7 @@
   });
 
   window.AulaStudio = {
-    agenda, timeline, kanban, chatbot, simulator, habits, glossary, trash,
+    agenda, kanban, chatbot, simulator, habits, glossary, trash,
     examode, quickreview, admin, guide, click, todayStudyHint, busyWeeks,
     // Herramientas que también viven en la sección de utilidades (buscador global)
     toolCatalog() {

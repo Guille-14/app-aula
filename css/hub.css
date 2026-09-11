@@ -660,10 +660,6 @@ input[type=range] { accent-color: var(--invert); width: 100%; }
 .kanban { display: flex; flex-direction: column; gap: 12px; }
 .kan-col { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 12px; }
 .kan-card { background: var(--bg-2); border-radius: 12px; padding: 10px; margin-top: 8px; }
-.gantt-row { display: grid; grid-template-columns: 88px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
-.gantt-lab { font-size: 11px; font-weight: 800; color: var(--muted); }
-.gantt-track { position: relative; height: 28px; background: var(--bg-2); border-radius: 8px; }
-.gantt-dot { position: absolute; top: 4px; font-size: 10px; color: #fff; border: 0; border-radius: 6px; padding: 4px 6px; max-width: 40%; overflow: hidden; }
 
 .chat-log { max-height: 40vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
 .chat-msg { padding: 10px 12px; border-radius: 14px; background: var(--bg-2); font-size: 13px; }

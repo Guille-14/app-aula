@@ -12,7 +12,6 @@
   border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700;
 }
 .medal.off { opacity: .38; }
-.timeline { display: flex; flex-direction: column; gap: 0; }
 .tl-item {
   display: grid; grid-template-columns: 64px 14px 1fr; gap: 10px;
   align-items: stretch;

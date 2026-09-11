@@ -60,7 +60,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v52";
+  const APP_VERSION = "v53";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -1112,7 +1112,6 @@
     review: ["Repaso", "Cómo va la semana"],
     achievements: ["Logros", "XP, niveles y medallas"],
     agenda: ["Agenda", "Día, semana y mes"],
-    timeline: ["Cuatrimestre", "Fechas clave tipo Gantt"],
     kanban: ["Tablero", "Pendiente / en curso / hecho"],
     chatbot: ["Asistente", "Tus apuntes y tu calendario"],
     simulator: ["Simulador", "Qué necesitas en el final"],
@@ -1213,7 +1212,7 @@
       dashboard: renderDashboard, schedule: renderSchedule, exams: renderExams, notes: renderNotes,
       cards: renderCards, tasks: renderTasks, timer: renderTimer, stats: renderStats, plan: renderPlan,
       subjects: renderSubjects, subject: renderSubject, settings: renderSettings, inbox: renderInbox, review: renderReview, achievements: renderAchievements,
-      agenda: () => S("agenda"), timeline: () => S("timeline"), kanban: () => S("kanban"), chatbot: () => S("chatbot"),
+      agenda: () => S("agenda"), kanban: () => S("kanban"), chatbot: () => S("chatbot"),
       simulator: () => S("simulator"), habits: () => S("habits"), glossary: () => S("glossary"), trash: () => S("trash"),
       examode: () => S("examode"), quickreview: () => S("quickreview"), admin: () => S("admin"), guide: () => S("guide"),
       rendimiento: renderRendimiento,
@@ -3305,6 +3304,8 @@
   function closeCmd() { cmdOpen = false; $("#cmdk").hidden = true; }
 
   function go(v) {
+    // Vistas retiradas (o un marcador viejo acabado en #timeline): a Inicio, nunca en blanco
+    if (!(titles[v] || EXTRA_VIEWS[v])) v = "dashboard";
     persistNoteNow();
     const anterior = view;
     view = v;
@@ -4386,7 +4387,7 @@
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },
   };
-  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, kanban: 1, timeline: 1, simulator: 1, habits: 1, glossary: 1, trash: 1, examode: 1, quickreview: 1, admin: 1, guide: 1, achievements: 1, rendimiento: 1, tools: 1 };
+  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, kanban: 1, simulator: 1, habits: 1, glossary: 1, trash: 1, examode: 1, quickreview: 1, admin: 1, guide: 1, achievements: 1, rendimiento: 1, tools: 1 };
   const esVista = (v) => !!(v && (titles[v] || EXTRA_VIEWS[v]));
   const hash = (location.hash || "").replace("#", "");
   if (esVista(hash)) view = hash;

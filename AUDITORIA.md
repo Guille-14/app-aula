@@ -10,7 +10,7 @@
 No es una lectura por encima. He hecho esto:
 
 1. **Lectura completa** de los 3 archivos JS, las 7 hojas CSS, el Service Worker, el servidor y el overlay Android.
-2. **Arranque real de la app** en un DOM headless (jsdom) con el HTML y los tres scripts: 28 vistas renderizadas, ~40 interacciones simuladas (formularios, modales, timer, filtros, importación…).
+2. **Arranque real de la app** en un DOM headless (jsdom) con el HTML y los tres scripts: 27 vistas renderizadas, ~40 interacciones simuladas (formularios, modales, timer, filtros, importación…).
 3. **Barrido estático** cruzado: acciones `data-action` manejadas vs. botones realmente pintados, clases CSS usadas vs. definidas, skins del JS vs. CSS, ajustes leídos vs. campos existentes, funciones nunca llamadas.
 4. **Pruebas de estrés**: estado corrupto, estado con tipos inválidos, cuota de `localStorage` agotada, examen sin fecha, minutos negativos, cálculo de contraste WCAG de las 33 skins.
 5. **Servidor en marcha** (`python3 server.py --pin 1234`) y peticiones con `curl` para comprobar autenticación y CORS.
@@ -48,7 +48,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 **Commits:** `f3410d9` (datos y accesibilidad), `2aabe57` (interfaz y pruebas),
 `7d2d814` (herramientas y red), `ee04323` (accesibilidad y detalles), `5654dd6`
 (fotos en IndexedDB, repetición espaciada real y excepciones de horario), `718e69d`
-(receta del APK), `v51` (la app deja de tener servidor) y `v52` (navegación sin duplicados).
+(receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados) y `v53` (fuera la vista Cuatrimestre).
 
 | Bug | Estado | Cómo se ha arreglado |
 |---|---|---|
@@ -93,7 +93,7 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 
 - **Accesibilidad:** zoom permitido, `color-scheme`, foco visible, `aria-live` en los avisos,
   salto al contenido, `prefers-reduced-motion`, 11 temas con contraste AA corregido,
-  **0 botones y 0 campos sin nombre accesible** en las 28 vistas, `aria-current` en la navegación,
+  **0 botones y 0 campos sin nombre accesible** en las 27 vistas, `aria-current` en la navegación,
   foco atrapado dentro de los diálogos y devuelto al cerrar, y menos toques accidentales
   (quitar una falta o una tarea pide confirmación).
 - **Lo que estaba programado y no se podía usar:** rejilla de 33 temas con categorías,
@@ -125,11 +125,14 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
   contesta sigue el motor local. Se añadió `capacitor.config.json` para que el APK sea
   reproducible, y dentro del APK (`isNativeShell()`) no se registra Service Worker: los
   ficheros ya van dentro y una caché solo serviría versiones viejas.
+- **Vistas retiradas (v53):** fuera **«Cuatrimestre»** (la línea de fechas tipo Gantt): no
+  aportaba nada que no dieran la Agenda y el Cuatrimestre del panel. Se eliminó el botón de
+  «Más», la vista, sus estilos (`gantt-*` y `.timeline`) y su ruta; ahora la app tiene 27 vistas.
 - **Navegación (v52):** la hoja «Más» ya no repite lo que está en la barra de abajo
   (se quitaron «Exámenes» y «Calificaciones», que duplicaban los botones de abajo), con un
   aviso en la propia hoja y una prueba que falla si vuelve a colarse un repetido.
 - **Pruebas:** `npm test` ejecuta **85 comprobaciones** con jsdom en 14 secciones (arranque de
-  las 28 vistas, datos corruptos, cuota, borrado, importación, temporizador, frases, PIN,
+  las 27 vistas, datos corruptos, cuota, borrado, importación, temporizador, frases, PIN,
   `.ics`, etiquetas, SM-2, excepciones de horario, fotos en IndexedDB, copia con fotos y
   **«sin red»** —con un espía de `fetch` que demuestra que el chat no llama a nada si no
   configuras tu Ollama— y **navegación** —que «Más» y la barra de abajo no compartan vistas—)
@@ -435,7 +438,7 @@ Y como `doWipe()` (`js/app.js:2659-2665`) solo hace `state = defaultState()`, la
 
 ## 2. Funciones implementadas que no se pueden usar (sin botón)
 
-Comprobado renderizando las 28 vistas y contando botones en el DOM: **123 acciones pintadas para 170 manejadores**. Estas están programadas pero no tienen ningún botón que las invoque:
+Comprobado renderizando las 28 vistas de entonces y contando botones en el DOM: **123 acciones pintadas para 170 manejadores**. Estas están programadas pero no tienen ningún botón que las invoque:
 
 | Función | Estado | Dónde está el código |
 |---|---|---|
@@ -576,7 +579,7 @@ Y **9 funciones muertas** en `app.js`: `maybeNotify`, `greeting`, `medals`, `hea
 |---|---|
 | Ficheros versionados | 61 (22 avatares + 3 iconos + resto de código y capas CSS) |
 | Líneas totales | 9.225 (`wc -l`): JS 5.002, CSS 3.586, HTML 237, SW 156, Python 244 |
-| Vistas / pantallas | 28 |
+| Vistas / pantallas | 27 (la 28, «Cuatrimestre», se retiró en la v53 por no aportar nada) |
 | Herramientas SMR | 37 |
 | Skins definidas | 33 (+ 2 temas claro/oscuro) |
 | Acciones `data-action` manejadas | 170 (123 con botón) |
@@ -606,4 +609,4 @@ grep -rni "servidor\|sync-" index.html js/*.js css/ | grep -v "servidor web\|ser
 
 ---
 
-**Conclusión honesta:** la app tiene muchísimo producto dentro (28 vistas, 37 herramientas, 33 temas, XP, hábitos, sync, widgets Android) construido encima de una base frágil: un único fichero de 189 KB, sin validación de datos, sin tests y con un `save()` que miente. No hay que rehacerla: hay que **blindar la capa de datos** (Sprint 1) y **terminar de conectar lo que ya está programado** (Sprint 2). Con eso se pasa de "demo muy ambiciosa" a "app que puedes usar todo el curso sin miedo".
+**Conclusión honesta:** la app tiene muchísimo producto dentro (28 vistas en el momento de la auditoría, 37 herramientas, 33 temas, XP, hábitos, sync, widgets Android) construido encima de una base frágil: un único fichero de 189 KB, sin validación de datos, sin tests y con un `save()` que miente. No hay que rehacerla: hay que **blindar la capa de datos** (Sprint 1) y **terminar de conectar lo que ya está programado** (Sprint 2). Con eso se pasa de "demo muy ambiciosa" a "app que puedes usar todo el curso sin miedo".
