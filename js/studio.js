@@ -7,10 +7,8 @@
   const esc = (s) => F("esc")(s);
   const uid = () => F("uid")();
   const todayISO = () => F("todayISO")();
-  const daysUntil = (d) => F("daysUntil")(d);
   const fmtDate = (d) => F("fmtDate")(d);
   const fmtDateLong = (d) => F("fmtDateLong")(d);
-  const fmtHours = (m) => F("fmtHours")(m);
   const subjectName = (id) => F("subjectName")(id);
   const subjectColor = (id) => F("subjectColor")(id);
   const minutesOf = (t) => F("minutesOf")(t);
@@ -18,7 +16,6 @@
   const DAYS = () => F("DAYS");
   const DAYS_SHORT = () => F("DAYS_SHORT");
   const pad = (n) => F("pad")(n);
-  const clamp = (n,a,b) => F("clamp")(n,a,b);
   const localISO = (d) => F("localISO")(d);
   const weekRange = () => F("weekRange")();
   const $ = (s) => F("$")(s);
@@ -27,12 +24,16 @@
   const toast = (m) => F("toast")(m);
   const save = () => F("save")();
   const render = () => F("render")();
-  const go = (v) => F("go")(v);
   const md = (s) => F("md")(s);
   const grantXP = (n,r) => F("grantXP")(n,r);
   const checkAchievements = () => F("checkAchievements")();
   const subjectOptions = (s) => F("subjectOptions")(s);
 
+  // El chat se guarda dentro del estado: se queda con los últimos 40 mensajes
+  function recortarChat() {
+    const c = st()._chat;
+    if (Array.isArray(c) && c.length > 40) c.splice(0, c.length - 40);
+  }
   const dayInfo = (iso) => F("dayInfo")(iso);
   const esLectivo = (iso) => F("isLectivo")(iso);
   const hoyISO = () => F("todayISO")();
@@ -51,8 +52,8 @@
   }
 
   function freeSlots(day, iso) {
-    const startH = Number(st().settings.startHour) || 8;
-    const endH = Number(st().settings.endHour) || 21;
+    const startH = Number.isFinite(Number(st().settings.startHour)) ? Number(st().settings.startHour) : 8;
+    const endH = Number.isFinite(Number(st().settings.endHour)) ? Number(st().settings.endHour) : 21;
     const evs = (iso ? clasesDe(iso, day) : st().events.filter((e) => e.day === day)).slice().sort((a, b) => a.start.localeCompare(b.start));
     const gaps = [];
     let cursor = startH * 60;
@@ -237,7 +238,7 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       ? "Ollama en " + esc(st().settings.ollamaUrl) + " (si no contesta, responde el motor local)"
       : "motor local (sin red)";
     return `<div class="card">
-      <p class="hint">Responde con <strong>tus apuntes y tu calendario</strong>, todo dentro del móvil. Ahora mismo: ${ia}. <a href="#" data-view="admin">Configurar Ollama en «Datos locales»</a>.</p>
+      <p class="hint">Responde con <strong>tus apuntes y tu calendario</strong>, todo dentro del móvil. Ahora mismo: ${ia}. <button class="linkish" data-action="go" data-to="admin">Configurar Ollama en «Datos locales»</button>.</p>
       <div class="chat-log" id="chat-log">${log.map((m) => `<div class="chat-msg ${m.role}"><b>${m.role === "user" ? "Tú" : "Aula"}</b><pre>${esc(m.text)}</pre></div>`).join("") || "<div class='empty'>Prueba: «¿qué tengo esta semana?»</div>"}</div>
       <textarea id="chat-q" rows="3" placeholder="¿Qué tengo esta semana? Explica DHCP…"></textarea>
       <div class="hero-actions">
@@ -308,9 +309,19 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     <div class="card"><h3>Fichas</h3>${cards.map((c) => `<div class="row"><b>${esc(c.front)}</b> — ${esc(c.back)}</div>`).join("") || "Sin fichas."}</div>`;
   }
 
+  // Instantáneas: si el almacén tiene algo que no es una lista (o no es JSON), se ignora
+  function leerSnaps() {
+    try {
+      const v = JSON.parse(localStorage.getItem("aula.snaps") || "[]");
+      return Array.isArray(v) ? v.filter((x) => x && typeof x === "object" && x.id) : [];
+    } catch { return []; }
+  }
+  function guardarSnaps(snaps) {
+    try { localStorage.setItem("aula.snaps", JSON.stringify(snaps.slice(0, 3))); return true; } catch { return false; }
+  }
   function admin() {
     const last = localStorage.getItem("aula.lastBackup") || "nunca";
-    const snaps = JSON.parse(localStorage.getItem("aula.snaps") || "[]");
+    const snaps = leerSnaps();
     return `<div class="card">
       <h3>Todo en este dispositivo</h3>
       <p class="hint">Aula no habla con ningún servidor: ni nube, ni cuentas, ni sincronización. Tus datos viven en este móvil.</p>
@@ -341,6 +352,34 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     </div>`;
   }
 
+  /* Reduce la foto antes de guardarla: una foto de móvil son 3-5 MB y el estado
+     vive en localStorage. Se queda con el lado mayor en `maxSide` px y sale en JPEG. */
+  function shrinkImage(file, maxSide, quality) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      const cerrar = () => { try { URL.revokeObjectURL(url); } catch {} };
+      img.onload = () => {
+        try {
+          const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+          if (!w0 || !h0) throw new Error("imagen vacía");
+          const k = Math.min(1, (maxSide || 1280) / Math.max(w0, h0));
+          const c = document.createElement("canvas");
+          c.width = Math.max(1, Math.round(w0 * k));
+          c.height = Math.max(1, Math.round(h0 * k));
+          const ctx = c.getContext("2d");
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          const data = c.toDataURL("image/jpeg", quality || 0.72);
+          if (!/^data:image\//.test(data)) throw new Error("no se pudo convertir");
+          cerrar();
+          resolve(data);
+        } catch (e) { cerrar(); reject(e); }
+      };
+      img.onerror = () => { cerrar(); reject(new Error("no se pudo leer la imagen")); };
+      img.src = url;
+    });
+  }
+
   function click(action, btn) {
     const Aula = api();
     if (!Aula) return;
@@ -365,7 +404,8 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       if (!q.trim()) return;
       st()._chat = st()._chat || [];
       st()._chat.push({ role: "user", text: q });
-      const finish = (text) => { st()._chat.push({ role: "bot", text }); render(); };
+      recortarChat();
+      const finish = (text) => { st()._chat.push({ role: "bot", text }); recortarChat(); render(); };
       askOllama(q).then(finish).catch(() => finish(localBrain(q) + "\n\n(Ollama no respondió; respondió el motor local.)"));
     }
     if (action === "chat-quiz" || action === "chat-sum" || action === "chat-map") {
@@ -470,24 +510,19 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
         });
     }
     if (action === "snap-now") {
-      let snaps = [];
-      try { snaps = JSON.parse(localStorage.getItem("aula.snaps") || "[]"); } catch { snaps = []; }
+      const snaps = leerSnaps();
       const dump = JSON.stringify(st());
       if (dump.length > 900_000) { toast("Los datos ocupan demasiado para una instantánea"); return; }
-      const id = uid();
-      snaps.unshift({ id, t: Date.now(), n: st().notes.length, data: dump });
+      snaps.unshift({ id: uid(), t: Date.now(), n: st().notes.length, data: dump });
       // Antes se guardaban 5 copias completas: con fotos eso llenaba el almacén.
-      if (snaps.length > 3) snaps.length = 3;
-      try {
-        localStorage.setItem("aula.snaps", JSON.stringify(snaps));
-        localStorage.setItem("aula.lastBackup", new Date().toLocaleString("es-ES"));
+      if (guardarSnaps(snaps)) {
+        try { localStorage.setItem("aula.lastBackup", new Date().toLocaleString("es-ES")); } catch {}
         toast("Punto guardado");
-      } catch { toast("No hay espacio para más copias"); }
+      } else toast("No hay espacio para más copias");
       render();
     }
     if (action === "snap-load") {
-      const snaps = JSON.parse(localStorage.getItem("aula.snaps") || "[]");
-      const s = snaps.find((x) => x.id === id);
+      const s = leerSnaps().find((x) => x.id === id);
       if (!s) { toast("Esa copia ya no está"); return; }
       let data = null;
       try { data = JSON.parse(s.data); } catch { toast("Copia rota"); return; }
@@ -514,9 +549,6 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       st().settings.guest = false;
       save(); toast("Saliendo de invitado"); render();
     }
-    if (action === "note-tpl") {
-      /* noteId exposed on Aula */
-    }
     if (action === "csv-import") document.getElementById("csv-file")?.click();
     if (action === "export-md") {
       const mdAll = st().notes.map((n) => `# ${n.title}\n\n${n.content || ""}`).join("\n\n---\n\n");
@@ -533,7 +565,6 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     }
     if (action === "export-pdf-notes") window.print();
     if (action === "note-tpl") {
-      const note = st().notes[0];
       openModal("Plantilla de apunte", `<div class="field"><label>Plantilla</label>
         <select name="tpl">
           <option value="std">Conceptos / Dudas / Ejemplos</option>
@@ -576,7 +607,8 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
         } else {
           att.data = data;
         }
-        if (!att.data && att.size > 1_400_000) { toast("La foto sigue siendo muy grande"); return; }
+        // Solo importa si la foto acaba dentro del estado (sin almacén de archivos)
+        if (att.data && att.size > 1_400_000) { toast("La foto es muy grande para guardarla dentro: prueba con otra más pequeña"); return; }
         n.attachments.push(att);
         n.content = (n.content || "").replace(/\s*$/, "") + `\n\n![${att.name}](aula-img:${att.id})\n`;
         save(); render();
@@ -588,7 +620,7 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       const s = st();
       s.progress = s.progress || {};
       openModal("Empezar semana nueva", `<p>Se cierra la semana actual, el contador vuelve a cero y recibes un comodín si te queda alguno.</p>
-        <p class="hint">Tus sesiones, exámenes, fichas y notas no se tocan.</p>`, {
+        <p class="hint">Tus sesiones, apuntes, fichas y notas no se tocan.</p>`, {
         confirm: "Empezar semana",
         onSubmit() {
           s.progress.weekStart = todayISO();
@@ -619,8 +651,8 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       if (v) { n.title = v.title; n.content = v.content; closeModal(); save(); render(); }
     }
     if (action === "card-mode") {
-      st()._cardMode = btn.dataset.mode;
-      toast(btn.dataset.mode === "type" ? "Escribe la respuesta" : btn.dataset.mode === "quiz" ? "Test rápido" : "Empareja");
+      st()._cardMode = btn.dataset.mode === "type" ? "type" : "flip";
+      toast(st()._cardMode === "type" ? "Escribe la respuesta y pulsa Comprobar" : "Pulsa la ficha para voltearla");
       render();
     }
     if (action === "card-typed") {
@@ -628,10 +660,13 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       const ans = ((inp && inp.value) || "").trim().toLowerCase();
       const cur = (Aula.cardQueue && Aula.cardQueue[0]) || st().cards.filter((c) => !c.due || c.due <= todayISO())[0];
       if (!cur) return;
-      const ok = ans && cur.back.toLowerCase().includes(ans);
-      toast(ok ? "Correcto" : "Era: " + cur.back);
+      const ok = !!ans && cur.back.toLowerCase().includes(ans);
+      toast(ok ? "¡Correcto!" : "Era: " + cur.back);
       if (ok) grantXP(8, "Ficha escrita");
       checkAchievements();
+      // Y pasa a la siguiente: antes la ficha se quedaba ahí para siempre.
+      if (typeof Aula.gradeCard === "function") Aula.gradeCard(ok ? 4 : 0);
+      else render();
     }
     if (action === "freeze-use") {
       const p = st().progress;

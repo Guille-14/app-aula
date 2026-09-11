@@ -261,7 +261,6 @@ body.timer-on { --bar-h: 40px; }
   background: var(--invert); color: var(--invert-ink);
 }
 .week-pill.is-today b { color: inherit; }
-.week-pill.has-exam b { text-decoration: underline; text-decoration-color: var(--green); }
 
 /* FAB + nav */
 .fab-wrap {
@@ -317,7 +316,7 @@ body.timer-on { --bar-h: 40px; }
 .nav-dot[hidden], .nav-dot:empty { display: none; }
 
 /* generic cards / buttons restyle */
-.card, .stat, .subject-card, .exam-card, .editor, .note-item {
+.card, .stat, .subject-card, .editor, .note-item {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -367,7 +366,6 @@ body.timer-on { --bar-h: 40px; }
   text-transform: uppercase; padding: 3px 8px; border-radius: 999px;
   background: var(--chip); color: var(--muted);
 }
-.badge.examen, .badge.final, .badge.parcial { background: color-mix(in srgb, var(--amber) 14%, transparent); color: var(--amber); }
 .badge.hot, .badge.warn { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
 .badge.done { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
 
@@ -868,7 +866,6 @@ input, textarea, select { user-select: text; -webkit-user-select: text; }
 /* Tabs: el botón ICS no debe hincharse */
 .tabs { align-items: center; }
 .tabs .btn, .tabs button.btn { flex: 0 0 auto; }
-.tabs button[data-action="exam-tab"] { flex: 1; }
 
 /* Día del horario */
 .day-tab { min-width: 52px; font-size: 12px; }

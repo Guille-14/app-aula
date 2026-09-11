@@ -657,6 +657,225 @@ async function testSinRed() {
   if (catalogo) check(!catalogo.some((w) => /examen|tarea/i.test(w.name + w.hint)), "widgets: fuera los de exámenes y tareas");
 }
 
+// -------- 20. auditoría v58: los fallos que se encontraron, ya corregidos
+async function testAuditoria() {
+  // --- El bloque de estudio sobrevive a cerrar y volver a abrir la app ---
+  const env1 = boot();
+  ready(env1.A);
+  env1.A.go("timer");
+  act(env1, "timer-toggle");
+  const guardado = env1.window.localStorage.getItem("aula.timer");
+  check(!!guardado && JSON.parse(guardado).running, "temporizador: al iniciar se guarda el bloque");
+  const env2 = boot({ extra: { "aula.timer": guardado } });
+  ready(env2.A);
+  const tras = env2.window.localStorage.getItem("aula.timer");
+  check(!!tras && JSON.parse(tras).running, "temporizador: al reabrir la app el bloque sigue en marcha");
+  check(/\d{2}:\d{2}/.test(env2.doc.title), "temporizador: la cuenta atrás se ve en el título (" + env2.doc.title + ")");
+  check(!env2.doc.getElementById("timer-bar").hidden, "temporizador: la barra del bloque en curso se pinta al reabrir");
+
+  // --- Buscador de apuntes (antes no filtraba nada) ---
+  {
+    const env = boot();
+    ready(env.A);
+    const sid = env.A.state.subjects[0].id;
+    env.A.state.notes = [
+      { id: "q1", subjectId: sid, title: "Puertos", content: "SSH :: 22", pinned: false, attachments: [], versions: [], createdAt: 1, updatedAt: 2 },
+      { id: "q2", subjectId: sid, title: "DHCP", content: "reparte IP por rango", pinned: false, attachments: [], versions: [], createdAt: 1, updatedAt: 3 },
+    ];
+    env.A.go("notes");
+    const buscar = (t) => {
+      const caja = env.doc.getElementById("note-query");
+      caja.value = t;
+      caja.dispatchEvent(new env.window.Event("input", { bubbles: true }));
+      return [...env.doc.querySelectorAll(".note-item h4")].map((h) => h.textContent).join(", ");
+    };
+    const uno = buscar("dhcp");
+    check(/DHCP/.test(uno) && !/Puertos/.test(uno), "buscador de apuntes: filtra por título (" + uno + ")");
+    const dos = buscar("rango");
+    check(/DHCP/.test(dos), "buscador de apuntes: también busca dentro del texto");
+    buscar("noexiste");
+    check(/Ninguna nota coincide/.test(env.doc.querySelector(".notes-list").textContent), "buscador de apuntes: avisa si no hay resultados");
+  }
+
+  // --- Las flechas del horario avanzan de semana (antes se quedaban en la siguiente) ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.go("schedule");
+    const dias = () => [...env.doc.querySelectorAll(".week-board .sch-day-h strong")].map((e) => e.textContent).join("|");
+    const s0 = dias();
+    act(env, "sch-week", { delta: "1" });
+    const s1 = dias();
+    act(env, "sch-week", { delta: "1" });
+    const s2 = dias();
+    check(s0 !== s1 && s1 !== s2, "horario: las flechas van sumando semanas (" + s0 + " → " + s1 + " → " + s2 + ")");
+    act(env, "sch-week", { delta: "0" });
+    check(dias() === s0, "horario: el botón «Hoy» vuelve a la semana actual");
+    const retro = [];
+    for (let i = 0; i < 3; i++) { act(env, "sch-week", { delta: "-1" }); retro.push(dias()); }
+    check(new Set(retro).size === 3, "horario: hacia atrás también semana a semana");
+  }
+
+  // --- Calendario escolar: las flechas no se salen del curso ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.go("schedule");
+    act(env, "sch-view", { mode: "month" });
+    let guard = 0;
+    while (!env.doc.querySelector('[data-action="cal-prev"]').disabled && guard++ < 24) act(env, "cal-prev");
+    const titulo = env.doc.querySelector(".cal-nav h2").textContent;
+    check(/septiembre 2026/i.test(titulo), "calendario: el mes no se escapa antes del curso (" + titulo.trim() + ")");
+    check(env.doc.querySelector('[data-action="cal-prev"]').disabled, "calendario: el botón de mes anterior se desactiva en el primer mes");
+  }
+
+  // --- Una vista que falla no deja la app en blanco ---
+  {
+    const env = boot({ extra: { "aula.snaps": "{{{esto no es json" } });
+    ready(env.A);
+    env.A.go("admin");
+    check(/Último backup local/.test(env.doc.getElementById("view").textContent), "datos locales: unas copias dañadas no tumban la vista");
+    check(env.errors.length === 0, "datos locales: sin errores de consola (" + env.errors.slice(0, 1).join("") + ")");
+    // Y el botón de punto de restauración sigue funcionando con esa basura dentro
+    act(env, "snap-now");
+    let snaps = [];
+    try { snaps = JSON.parse(env.window.localStorage.getItem("aula.snaps")); } catch {}
+    check(Array.isArray(snaps) && snaps.length === 1, "datos locales: se puede crear un punto de restauración con copias dañadas");
+    if (snaps[0]) {
+      act(env, "snap-load", { id: snaps[0].id });
+      check(confirmModal(env), "datos locales: la copia se puede restaurar");
+    }
+  }
+
+  // --- Fotos de una nota: el botón «Foto» no hacía nada porque shrinkImage no existía ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.go("notes");
+    const nota = env.A.state.notes[0];
+    env.A.noteId = nota.id;
+    env.window.Image = class { constructor() { this.naturalWidth = 4000; this.naturalHeight = 3000; } set src(v) { this._s = v; setTimeout(() => this.onload && this.onload(), 0); } get src() { return this._s; } };
+    env.window.HTMLCanvasElement.prototype.toDataURL = () => "data:image/jpeg;base64," + "B".repeat(2000);
+    const clickOriginal = env.window.HTMLInputElement.prototype.click;
+    env.window.HTMLInputElement.prototype.click = function () {
+      if (this.type === "file") {
+        Object.defineProperty(this, "files", { value: [new env.window.File([new Uint8Array([1, 2, 3])], "foto.jpg", { type: "image/jpeg" })] });
+        this.dispatchEvent(new env.window.Event("change", { bubbles: true }));
+        return;
+      }
+      return clickOriginal.call(this);
+    };
+    act(env, "note-photo");
+    await hasta(() => (nota.attachments || []).length > 0);
+    check((nota.attachments || []).length === 1, "foto de nota: se añade el adjunto (antes fallaba en silencio)");
+    check(/aula-img:/.test(nota.content || ""), "foto de nota: la imagen queda enlazada en el texto");
+    env.A.render();
+    check(env.doc.querySelectorAll(".note-img").length >= 1, "foto de nota: la miniatura se pinta en el editor");
+  }
+
+  // --- Ni una foto ni un avatar pueden colar código desde una copia importada ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.state.settings.customAvatars = [{ id: "x1", data: 'data:image/jpeg;base64,AA" onerror="alert(1)' }];
+    env.A.state.settings.avatarIcon = "c:x1";
+    env.A.render();
+    const img = env.doc.querySelector("#header-avatar img");
+    check(!!img && img.getAttribute("onerror") === null, "seguridad: un avatar con comillas no crea atributos");
+    env.A.state.notes[0].attachments = [{ id: "a1", name: "x", kind: "img", data: "javascript:alert(1)" }];
+    env.A.render();
+    check(!/javascript:/.test(env.doc.getElementById("view").innerHTML), "seguridad: una «foto» que no es imagen se descarta");
+  }
+
+  // --- Herramientas: cuentas que antes daban un resultado falso ---
+  {
+    const env = boot();
+    ready(env.A);
+    const P = (id) => env.doc.getElementById(id);
+    const abrir = (tool) => { env.A.state._tool = tool; env.A.go("tools"); };
+    abrir("conv");
+    P("cv-n").value = "19";
+    P("cv-from").value = "2";
+    act(env, "tool-conv");
+    check(/no válido/i.test(P("cv-out").textContent), "herramientas: «19» en base 2 avisa en vez de convertir");
+    P("cv-n").value = "FF";
+    P("cv-from").value = "16";
+    act(env, "tool-conv");
+    check(/255/.test(P("cv-out").textContent), "herramientas: FF en hexadecimal da 255");
+    abrir("wild");
+    P("wd-in").value = "255.255.0.255";
+    act(env, "tool-wild");
+    check(/no es una máscara válida/i.test(P("wd-out").textContent), "herramientas: una máscara con unos salteados se rechaza");
+    P("wd-in").value = "/26";
+    act(env, "tool-wild");
+    check(/255\.255\.255\.192/.test(P("wd-out").textContent), "herramientas: /26 da la máscara correcta");
+    abrir("raid");
+    P("rd-n").value = "0";
+    P("rd-gb").value = "4";
+    act(env, "tool-raid");
+    check(/Pon cuántos discos/.test(P("rd-out").textContent), "herramientas: RAID sin discos lo dice en vez de enseñar 0 GB");
+    abrir("subnet");
+    P("sn-ip").value = "192.168.10.130/26";
+    act(env, "tool-subnet");
+    const sn = P("sn-out").textContent;
+    check(/192\.168\.10\.128/.test(sn) && /192\.168\.10\.190/.test(sn), "herramientas: el subnetting sigue bien (red .128, último .190)");
+  }
+
+  // --- Fichas: al escribir la respuesta, la tarjeta avanza ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.state._cardMode = "type";
+    env.A.state.cards = [{ id: "t1", subjectId: env.A.state.subjects[0].id, front: "¿Puerto SSH?", back: "22", due: "2000-01-01", interval: 0, reps: 0 }];
+    env.A.go("cards");
+    const campo = env.doc.getElementById("card-typed");
+    check(!!campo, "fichas: el modo «Escribir» tiene campo de respuesta");
+    if (campo) {
+      campo.value = "22";
+      act(env, "card-typed");
+      const c = env.A.state.cards[0];
+      check(c.reps === 1 && c.due > "2026-01-01", "fichas: acertar programa el repaso (reps " + c.reps + ", vuelve el " + c.due + ")");
+    }
+  }
+
+  // --- Textos: la app ya no habla de exámenes ni de deberes en ninguna pantalla ---
+  {
+    const env = boot();
+    ready(env.A);
+    const conTexto = [];
+    for (const v of VIEWS) {
+      env.A.go(v);
+      if (/examen|deber|tarea/i.test(env.doc.getElementById("view").textContent)) conTexto.push(v);
+    }
+    check(conTexto.length === 0, "textos: ninguna vista habla de exámenes, deberes ni tareas" + (conTexto.length ? " (" + conTexto.join(", ") + ")" : ""));
+    env.A.state.settings.onboarded = false;
+    env.A.render();
+    check(!/examen/i.test(env.doc.getElementById("view").textContent), "textos: la primera pantalla tampoco habla de exámenes");
+  }
+
+  // --- Sin restos de la navegación antigua ---
+  {
+    const env = boot();
+    check(!env.doc.getElementById("menu-btn") && !env.doc.getElementById("sidebar") && !env.doc.getElementById("task-count"),
+      "html: fuera el menú lateral y los contadores que ya no se usaban");
+  }
+
+  // --- Tema automático: de noche oscurece también el color de la barra del sistema ---
+  {
+    const env = boot();
+    ready(env.A);
+    env.A.state.settings.skin = "minimal";
+    env.A.state.settings.uiTheme = "light";
+    env.A.state.settings.autoTheme = true;
+    const Reloj = env.window.Date;
+    env.window.Date = class extends Reloj { constructor(...a) { super(...(a.length ? a : [2026, 8, 11, 23, 30])); } static now() { return new Reloj(2026, 8, 11, 23, 30).getTime(); } };
+    env.A.render();
+    env.window.Date = Reloj;
+    check(env.doc.documentElement.getAttribute("data-theme") === "dark", "tema automático: de noche se pone en oscuro");
+    check(env.doc.querySelector('meta[name="theme-color"]').content === "#000000", "tema automático: la barra del móvil también cambia de color");
+  }
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -665,6 +884,7 @@ async function testSinRed() {
     await testMedia();
     await testBackupConFotos();
     await testSinRed();
+    await testAuditoria();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message);
   }

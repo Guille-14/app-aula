@@ -135,9 +135,6 @@ html[data-theme="light"] {
   background: var(--invert) !important;
   color: var(--invert-ink) !important;
 }
-.exam-mods {
-  display: flex; gap: 8px; flex-wrap: wrap;
-}
 .mod-chip {
   border: 1px solid var(--line);
   background: var(--chip);
@@ -227,7 +224,7 @@ html[data-theme="light"] {
 
 .hub-scroll { gap: 18px; padding-top: 8px; }
 
-.live-card, .card, .stat, .subject-card, .exam-card, .editor, .note-item,
+.live-card, .card, .stat, .subject-card, .editor, .note-item,
 .bento-card, .task, .mod-card, .class-row, .profile-card, .sim-box,
 .study-rec, .onboard, .install-banner, .quiet-alert {
   transition: border-color .2s ease, background .2s ease, transform .15s ease;

@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Aula SMR",
   "short_name": "Aula SMR",
-  "description": "Organiza el ciclo de SMR: exámenes, redes, prácticas y estudio. Todo en el móvil, sin nube.",
+  "description": "Organiza el ciclo de SMR: horario, calendario escolar, apuntes y estudio. Todo en el móvil, sin nube.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

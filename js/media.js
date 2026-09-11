@@ -197,7 +197,9 @@
   // Rellena los <img> que están esperando esa foto (por eso el render no se bloquea)
   function hidratar(id, src) {
     try {
-      document.querySelectorAll(`[data-media="${id}"]`).forEach((el) => {
+      // El id puede venir de una copia importada: se escapa para que el selector no rompa
+      const limpio = (window.CSS && CSS.escape) ? CSS.escape(String(id)) : String(id).replace(/["'\\]/g, "");
+      document.querySelectorAll(`[data-media="${limpio}"]`).forEach((el) => {
         if (el.tagName === "IMG") { el.src = src; el.classList.remove("is-loading"); }
         else el.style.backgroundImage = `url("${src}")`;
       });

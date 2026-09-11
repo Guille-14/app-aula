@@ -47,7 +47,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:text="EXAMEN"
+        android:text="SIN CLASE"
         android:textColor="#F59E0B"
         android:textSize="10sp"
         android:textStyle="bold"/>

@@ -40,11 +40,10 @@
     { id: "vapor", name: "Vaporwave", tag: "80s / sunset", cat: "mood", colors: ["#1b1030", "#22d3ee", "#db2777"] },
   ];
   const LIGHT = new Set(["minimal", "azul", "lima", "coral", "pergamino", "gameboy", "isla", "kawaii", "cafe", "win95", "azulgrana"]);
-  const START_HOUR = 8, END_HOUR = 21, SLOT_H = 48;
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v57";
+  const APP_VERSION = "v58";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -100,6 +99,13 @@
     return m ? `${h}h ${m}m` : `${h}h`;
   };
   const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
+  /* Imagen que viene de datos que no controlamos (una copia importada, una foto antigua).
+     Solo se aceptan data URLs de imagen y blobs: nada de comillas ni de código. */
+  const safeImgSrc = (s) => {
+    const v = String(s ?? "").trim();
+    if (!/^(data:image\/[a-z0-9.+-]+;base64,|data:image\/[a-z0-9.+-]+,|blob:)/i.test(v)) return "";
+    return esc(v);
+  };
   function attStats() {
     const rows = state.attendance || [];
     const t = rows.length;
@@ -142,10 +148,6 @@
      state.exceptions = [{ id, kind: "cancel"|"move"|"extra"|"holiday", date, eventId, start, end, room, note }] */
   function excepciones() { return Array.isArray(state.exceptions) ? state.exceptions : []; }
   function exceptionsFor(iso) { return excepciones().filter((x) => x.date === iso); }
-  function exceptionKind(iso, kind) {
-    const hit = exceptionsFor(iso).find((x) => x.kind === kind);
-    return hit || null;
-  }
   function cancelFor(iso, eventId) {
     return exceptionsFor(iso).find((x) => x.kind === "cancel" && x.eventId === eventId) || null;
   }
@@ -317,8 +319,7 @@
       },
       subjects: [], notes: [], events: [], sessions: [], cards: [], inbox: [], attendance: [],
       progress: { bonusXp: 0, unlocked: {}, daily: "", log: [], flags: {}, freeze: 1, lastFreezeWeek: "" },
-      topics: [], habits: [], glossary: [], backupsMeta: [],
-      widgets: ["live","hoy","xp"],
+      habits: [], glossary: [],
     };
   }
 
@@ -531,7 +532,6 @@
   const BAK_AT_KEY = "aula.bakAt";
   let loadProblem = "";
   let saveProblem = "";
-  let backupsRaw = "";
   let papeleraRecuperada = 0;   // notas que volvieron de la papelera al abrir (papelera retirada en la v54)
 
   const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -565,8 +565,8 @@
     settings.pomodoroBreak = clamp(Number(settings.pomodoroBreak) || 5, 1, 60);
     settings.pomodoroLong = clamp(Number(settings.pomodoroLong) || 15, 1, 120);
     settings.gradeMax = clamp(Number(settings.gradeMax) || 10, 5, 100);
-    settings.startHour = clamp(Number(settings.startHour) || 8, 0, 23);
-    settings.endHour = clamp(Number(settings.endHour) || 21, 1, 24);
+    settings.startHour = Number.isFinite(Number(settings.startHour)) ? clamp(Number(settings.startHour), 0, 23) : base.settings.startHour;
+    settings.endHour = Number.isFinite(Number(settings.endHour)) ? clamp(Number(settings.endHour), 1, 24) : base.settings.endHour;
     out.settings = settings;
 
     const subjects = asArray(src.subjects).filter(isObj).map((s) => ({
@@ -582,7 +582,6 @@
     out.subjects = subjects;
     const hasSub = (id) => subjects.some((s) => s.id === id);
     const subOf = (id) => (hasSub(id) ? id : (subjects[0] ? subjects[0].id : ""));
-    const subName = (id) => asText((subjects.find((s) => s.id === id) || {}).name);
 
     out.events = asArray(src.events).filter(isObj).map((e) => ({
       id: asText(e.id) || uid(), subjectId: subOf(e.subjectId),
@@ -649,9 +648,7 @@
       flags: isObj(prog.flags) ? prog.flags : {}, freeze: clamp(Number(prog.freeze ?? 1), 0, 9),
       lastFreezeWeek: asText(prog.lastFreezeWeek),
     };
-    out.widgets = asArray(src.widgets).length ? asArray(src.widgets) : base.widgets;
     out.schemaVersion = SCHEMA_VERSION;   // migraciones futuras: v4 -> v5 se hacen aquí
-    out.topics = asArray(src.topics);
     out.exceptions = asArray(src.exceptions).filter(isObj).filter((x) => ["cancel", "move", "extra", "holiday"].includes(x.kind) && asISO(x.date)).map((x) => ({
       id: asText(x.id) || uid(), kind: x.kind, date: asISO(x.date), eventId: asText(x.eventId),
       subjectId: hasSub(x.subjectId) ? x.subjectId : "", start: asHHMM(x.start, ""), end: asHHMM(x.end, ""),
@@ -676,7 +673,6 @@
     } catch {
       // No se pisa el original: se guarda una copia cruda y se avisa.
       try { localStorage.setItem(BACKUP_KEY, raw); localStorage.setItem(BAK_AT_KEY, String(Date.now())); } catch {}
-      backupsRaw = raw;
       loadProblem = "Los datos guardados estaban dañados y no se han podido leer. He conservado una copia del original.";
       return seedDemo();
     }
@@ -689,13 +685,11 @@
   }
 
   let saveTimer = null;
-  let lastSaveSize = 0;
 
   function save() {
     if (state.settings && state.settings.guest) return;
     let json;
     try { json = JSON.stringify(state); } catch { saveProblem = "Los datos no se pueden preparar para guardar."; return; }
-    lastSaveSize = json.length;
     // Copia de seguridad rotativa (una, cada 6 h) sin dispararse de tamaño.
     try {
       if (json.length < 1_500_000) {
@@ -781,8 +775,6 @@
   let schWeek = 0;                       // 0 = semana actual; -1 y +1 las de al lado
   const plantillaAuto = syncPlantilla(state);
   let exDate = "";
-  let schDay = weekdayMon0(new Date());
-  let agendaFilter = "all";
   let onStep = 0;
   const undoStack = [];
   const unlockedNotes = new Set();
@@ -811,6 +803,11 @@
     document.documentElement.setAttribute("data-skin", id);
     let theme = state.settings.uiTheme;
     if (theme !== "light" && theme !== "dark") theme = LIGHT.has(id) ? "light" : "dark";
+    // Tema automático: de noche se oscurece aunque la plantilla sea clara.
+    if (state.settings.autoTheme) {
+      const h = new Date().getHours();
+      if ((h < 8 || h >= 21) && LIGHT.has(id)) theme = "dark";
+    }
     document.documentElement.setAttribute("data-theme", theme);
     document.documentElement.classList.toggle("dark", theme === "dark");
     document.documentElement.classList.toggle("light", theme === "light");
@@ -827,15 +824,18 @@
     document.documentElement.dataset.compact = st.compact ? "1" : "0";
     document.documentElement.dataset.reduceMotion = st.reduceMotion ? "1" : "0";
     document.body.classList.toggle("hide-att", st.showAttendance === false);
-    if (st.autoTheme) {
-      const h = new Date().getHours();
-      const dark = h < 8 || h >= 21;
-      if (dark && LIGHT.has(id)) {
-        document.documentElement.setAttribute("data-theme", "dark");
-      }
-    }
     if (st.guest) document.body.classList.add("guest-mode");
     else document.body.classList.remove("guest-mode");
+    temaHoraAplicado = new Date().getHours();
+  }
+  // El tema automático cambia de día a noche sin recargar la app (se mira cada pocos segundos).
+  let temaHoraAplicado = -1;
+  function revisarTemaPorHora() {
+    if (!state.settings.autoTheme) return false;
+    const h = new Date().getHours();
+    if (h === temaHoraAplicado) return false;
+    applyTheme();
+    return true;
   }
 
   function toast(msg) {
@@ -1137,8 +1137,6 @@
     const setCount = (id, n) => { const el = $(id); if (!el) return; el.textContent = n || ""; el.dataset.empty = n ? "0" : "1"; };
     setCount("#card-count", dueCards().length);
     setCount("#inbox-count", (state.inbox || []).length);
-    const labels = { dashboard: "Captura", schedule: "Clase", notes: "Nota", cards: "Ficha", timer: "Sesión", stats: "Nuevo", subjects: "Módulo", subject: "Nuevo", settings: "Nuevo", inbox: "Captura", review: "Repaso", achievements: "Logro" };
-    $("#fab-label").textContent = labels[view] || "Nuevo";
     if (!state.settings.onboarded) {
       document.body.classList.add("onboarding");
       $("#view-title").textContent = "Configurar";
@@ -1162,12 +1160,17 @@
         ? window.AulaTools.view()
         : `<div class="empty"><b>Herramientas</b>Recarga la página.</div>`,
     };
-    $("#view").innerHTML = bannersHTML() + (map[view] || renderDashboard)();
+    // Una vista que falle no debe dejar la app en blanco: se enseña el aviso y se sigue.
+    let cuerpo = "";
+    try {
+      cuerpo = (map[view] || renderDashboard)();
+    } catch (err) {
+      console.error("Vista " + view, err);
+      cuerpo = errorViewHTML(view, err);
+    }
+    $("#view").innerHTML = bannersHTML() + cuerpo;
     if (view === "stats") drawStats();
     if (view === "timer") updateTimerUI();
-    if (view === "rendimiento") {
-      const t = $("#sim-target"); if (t) t.dispatchEvent(new Event("input", { bubbles: true }));
-    }
     if (view === "schedule" && schView === "week") {
       const el = $("#sch-day-" + weekdayMon0(new Date()));
       if (el) setTimeout(() => { try { el.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {} }, 50);
@@ -1179,6 +1182,21 @@
         if (u && (u.n !== mediaInfo.n || u.bytes !== mediaInfo.bytes)) { mediaInfo = u; render(); }
       }).catch(() => {});
     }
+  }
+
+  // Panel de emergencia: si una vista revienta, se puede seguir usando la app.
+  function errorViewHTML(v, err) {
+    const detalle = esc(String((err && err.message) || err || "error").slice(0, 200));
+    return `<div class="card">
+      <h3>Esta pantalla ha fallado</h3>
+      <p class="hint" style="margin-top:0">Lo demás sigue funcionando. Tus datos están guardados.</p>
+      <p class="hint" style="font-size:12px;opacity:.8">${esc(v)} · ${detalle}</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary" data-action="go" data-to="dashboard">Volver a Inicio</button>
+        <button class="btn" data-action="export">Exportar copia</button>
+        <button class="btn" data-action="reload">Recargar la app</button>
+      </div>
+    </div>`;
   }
 
   function greeting() {
@@ -1247,13 +1265,6 @@
     const notesN = state.notes.length;
     const attP = (state.attendance || []).filter((a) => a.status === "presente").length;
     const subjectsStudied = new Set(state.sessions.map((s) => s.subjectId)).size;
-    // Hora de creación de cada sesión: permite saber si estudias de madrugada
-    const early = state.sessions.some((s) => {
-      const h = Number(s.hour);
-      if (Number.isFinite(h)) return h >= 6 && h < 8;
-      const c = Number(s.createdAt);
-      return Number.isFinite(c) && new Date(c).getHours() >= 6 && new Date(c).getHours() < 8;
-    });
     const weekend = state.sessions.some((s) => {
       const d = new Date(s.date + "T12:00:00");
       return d.getDay() === 0 || d.getDay() === 6;
@@ -1416,7 +1427,7 @@
       ${onDots(0)}
       <div class="on-hero">${avatarInner()}</div>
       <h2>Aula SMR</h2>
-      <p>Tu ciclo de <b>2.º SMR</b> en el móvil: horario, exámenes, fichas y taller. Todo se queda aquí, sin cuenta ni nube.</p>
+      <p>Tu ciclo de <b>2.º SMR</b> en el móvil: horario, calendario escolar, apuntes, fichas y taller. Todo se queda aquí, sin cuenta ni nube.</p>
       ${foot(false, "Empezar")}
     </div>`;
     if (onStep === 1) return `<div class="onboard-full">
@@ -1466,7 +1477,7 @@
           <b>Ejemplo 2.º SMR</b><small>Horario, parciales, fichas y apuntes de muestra. Los editas.</small>
         </button>
         <button class="on-choice ${st.demo === false ? "is-on" : ""}" data-action="on-data" data-id="empty">
-          <b>Empezar de cero</b><small>Sin clases ni exámenes. Tú creas los módulos.</small>
+          <b>Empezar de cero</b><small>Sin clases ni notas. Tú creas los módulos.</small>
         </button>
         <button class="on-choice" data-action="on-import">
           <b>Traer una copia JSON</b><small>Si exportaste Aula SMR en otro móvil.</small>
@@ -1656,8 +1667,8 @@
     if (!list.length) return "";
     const day = weekdayMon0(new Date(iso + "T12:00:00"));
     const sorted = [...list].sort((a, b) => minutesOf(a.start) - minutesOf(b.start));
-    const ini = Number(state.settings.startHour || 8) * 60;
-    const fin = Number(state.settings.endHour || 21) * 60;
+    const ini = (Number.isFinite(Number(state.settings.startHour)) ? Number(state.settings.startHour) : 8) * 60;
+    const fin = (Number.isFinite(Number(state.settings.endHour)) ? Number(state.settings.endHour) : 21) * 60;
     const gaps = [];
     let cursor = ini;
     sorted.forEach((e) => {
@@ -1815,8 +1826,12 @@
     const minMes = new Date(primero.getFullYear(), primero.getMonth(), 1);
     const maxMes = new Date(ultimo.getFullYear(), ultimo.getMonth(), 1);
     let cur = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), 1);
+    const seSale = cur < minMes || cur > maxMes;
     if (cur < minMes) cur = minMes;
     if (cur > maxMes) cur = maxMes;
+    if (seSale) calendarCursor = new Date(cur);   // el cursor se queda dentro del curso
+    const enElPrimero = cur.getTime() === minMes.getTime();
+    const enElUltimo = cur.getTime() === maxMes.getTime();
     const y = cur.getFullYear(), m = cur.getMonth();
     const startPad = weekdayMon0(new Date(y, m, 1));
     const daysIn = new Date(y, m + 1, 0).getDate();
@@ -1839,9 +1854,9 @@
         </div>`).join("");
     return `<div class="card cal-escuela">
       <div class="cal-nav">
-        <button class="icon-btn" data-action="cal-prev" aria-label="Mes anterior">‹</button>
+        <button class="icon-btn" data-action="cal-prev" aria-label="Mes anterior" ${enElPrimero ? "disabled" : ""}>‹</button>
         <h2>${MONTHS[m]} ${y}</h2>
-        <button class="icon-btn" data-action="cal-next" aria-label="Mes siguiente">›</button>
+        <button class="icon-btn" data-action="cal-next" aria-label="Mes siguiente" ${enElUltimo ? "disabled" : ""}>›</button>
       </div>
       <div class="cal">${DAYS_SHORT.map((d) => `<div class="dow">${d}</div>`).join("")}${celdas}</div>
       <p class="cal-key"><span class="k k-lectivo"></span> Clase · <span class="k k-hol"></span> Festivo · <span class="k k-vac"></span> Vacaciones · <span class="k k-fuera"></span> Sin curso</p>
@@ -1874,7 +1889,7 @@
     if (imgs) {
       t = t.replace(/!\[([^\]]*)\]\(aula-img:([^)\s]+)\)/g, (m, alt, id) => {
         const nombre = alt || "foto";
-        if (imgs[id]) return `<img class="note-img" src="${imgs[id]}" alt="${esc(nombre)}">`;   // foto antigua, dentro del texto
+        if (imgs[id]) return `<img class="note-img" src="${safeImgSrc(imgs[id]) || PUNTO_TRANSPARENTE}" alt="${esc(nombre)}">`;   // foto antigua, dentro del texto
         if (mediaOk()) {
           const ya = Media().urlFor(id);   // en memoria se pinta ya; si no, se carga sola y se rellena
           return `<img class="note-img ${ya ? "" : "is-loading"}" data-media="${esc(id)}" src="${ya || PUNTO_TRANSPARENTE}" alt="${esc(nombre)}">`;
@@ -1883,7 +1898,7 @@
       });
       // Compatibilidad con fotos antiguas guardadas como data URL dentro del texto
       t = t.replace(/!\[([^\]]*)\]\((data:image\/[^)\s]+)\)/g, (m, alt, src) =>
-        `<img class="note-img" src="${src}" alt="${alt || "foto"}">`);
+        `<img class="note-img" src="${safeImgSrc(src) || PUNTO_TRANSPARENTE}" alt="${esc(alt || "foto")}">`);
     }
     t = t.replace(/^### (.*)$/gm, "<h4>$1</h4>").replace(/^## (.*)$/gm, "<h3>$1</h3>").replace(/^# (.*)$/gm, "<h2>$1</h2>");
     t = t.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
@@ -1898,6 +1913,14 @@
   function renderNotes() {
     let notes = [...state.notes].sort((a, b) => (b.pinned - a.pinned) || (b.updatedAt - a.updatedAt));
     if (noteFilter !== "all") notes = notes.filter((n) => n.subjectId === noteFilter);
+    // Buscador: filtra por título y texto (las notas con PIN no se destapan)
+    const q = noteQuery.trim().toLowerCase();
+    if (q) {
+      notes = notes.filter((n) => {
+        if (n.locked && !unlockedNotes.has(n.id)) return (n.title || "").toLowerCase().includes(q);
+        return (n.title || "").toLowerCase().includes(q) || notePlain(n).toLowerCase().includes(q);
+      });
+    }
     if (!noteId && notes[0]) noteId = notes[0].id;
     const current = state.notes.find((n) => n.id === noteId);
     const lockedNow = current && current.locked && !unlockedNotes.has(current.id);
@@ -1919,7 +1942,7 @@
             <h4>${n.pinned ? "📌 " : ""}${bloqueada ? "🔒 " : ""}${esc(n.title || "Sin título")}</h4>
             <p>${bloqueada ? "Nota protegida con PIN" : esc(notePlain(n).replace(/\s+/g, " ").slice(0, 80))}</p>
           </button>`;
-          }).join("") || `<div class="empty">Sin notas.</div>`}
+          }).join("") || `<div class="empty">${noteQuery.trim() ? "Ninguna nota coincide con «" + esc(noteQuery.trim()) + "»." : "Sin notas."}</div>`}
         </div>
       </div>
       <div class="editor">
@@ -1946,7 +1969,7 @@
           ${(current.attachments || []).length ? `<div class="note-photos">${current.attachments.map((a) => {
             const src = a.data || (mediaOk() ? Media().urlFor(a.id) : "") || "";
             return `<figure class="note-photo">
-              <img class="note-img ${src ? "" : "is-loading"}" src="${src || PUNTO_TRANSPARENTE}" data-media="${esc(a.id)}" alt="${esc(a.name || "foto")}" loading="lazy">
+              <img class="note-img ${src ? "" : "is-loading"}" src="${safeImgSrc(src) || PUNTO_TRANSPARENTE}" data-media="${esc(a.id)}" alt="${esc(a.name || "foto")}" loading="lazy">
               <figcaption>${esc(a.name || "foto")}<button class="btn btn-sm btn-danger" data-action="note-photo-del" data-id="${esc(a.id)}" aria-label="Quitar ${esc(a.name || "foto")}">×</button></figcaption>
             </figure>`;
           }).join("")}</div>` : ""}
@@ -2021,7 +2044,6 @@
 
   function renderTimer() {
     const today = todayISO();
-    const wr = weekRange();
     const todaySessions = state.sessions.filter((x) => x.date === today);
     const todayMins = todaySessions.reduce((a, b) => a + b.minutes, 0);
     return `
@@ -2062,7 +2084,6 @@
     const mins = state.sessions.filter((s) => s.date >= wr.from && s.date <= wr.to).reduce((a, b) => a + b.minutes, 0);
     const total = state.sessions.reduce((a, b) => a + b.minutes, 0);
     const graded = state.subjects.filter((s) => s.grade !== "" && Number.isFinite(Number(s.grade)));
-    const avg = graded.length ? graded.reduce((a, b) => a + Number(b.grade), 0) / graded.length : null;
     return `
       <div class="grid grid-4">
         <div class="stat"><div class="k">Total</div><div class="v">${fmtHours(total)}</div></div>
@@ -2146,7 +2167,7 @@
       </div>
       ${notes.length ? `<div class="card" style="margin-top:16px"><h3>Apuntes de ${esc(s.name)}</h3>
         ${notes.slice(0, 6).map((n) => `<button class="row" style="width:100%;text-align:left" data-action="open-note" data-id="${n.id}">
-          <span class="dot" style="background:${safeColor(s.color)}"></span><div>${esc(n.title)}</div><div class="meta">${esc(fmtDate(new Date(n.updatedAt || Date.now()).toISOString().slice(0, 10)))}</div>
+          <span class="dot" style="background:${safeColor(s.color)}"></span><div>${esc(n.title)}</div><div class="meta">${esc(fmtDate(localISO(new Date(n.updatedAt || Date.now()))))}</div>
         </button>`).join("")}</div>` : ""}
     `;
   }
@@ -2228,7 +2249,8 @@
   function avatarInner() {
     const ic = state.settings.avatarIcon || "letter";
     const src = avatarSrc(ic);
-    if (src) return `<img src="${src}" alt="">`;
+    const safe = safeImgSrc(src);
+    if (safe) return `<img src="${safe}" alt="">`;
     const map = { book: "📘", pc: "💻", wrench: "🔧", shield: "🛡️", net: "🌐", bolt: "⚡", lab: "🧪" };
     if (map[ic]) return map[ic];
     return esc(((state.settings.name || "A").trim().charAt(0) || "A").toUpperCase());
@@ -2256,7 +2278,7 @@
           `<button type="button" data-action="${setA}" data-id="${a.id}" class="ava-ph ${ic === a.id ? "is-on" : ""}" aria-label="${esc(a.name || a.id)}" title="${esc(a.name || a.id)}"><img src="${a.src}" alt=""></button>`
         ).join("")}
         ${customs.map((c) =>
-          `<button type="button" data-action="${setA}" data-id="c:${c.id}" class="ava-ph ${ic === "c:" + c.id ? "is-on" : ""}" aria-label="Tu foto" title="Tu foto"><img src="${c.data}" alt=""><span class="ava-x" data-action="del-avatar" data-id="${c.id}" role="presentation">×</span></button>`
+          `<button type="button" data-action="${setA}" data-id="c:${c.id}" class="ava-ph ${ic === "c:" + c.id ? "is-on" : ""}" aria-label="Tu foto" title="Tu foto"><img src="${safeImgSrc(c.data) || PUNTO_TRANSPARENTE}" alt=""><span class="ava-x" data-action="del-avatar" data-id="${c.id}" role="presentation">×</span></button>`
         ).join("")}
         <button type="button" class="ava-ph ava-add" data-action="${addA}" title="Añadir foto" aria-label="Añadir foto">+</button>
       </div>
@@ -2618,7 +2640,7 @@
       <p class="tools-kicker">Datos (este dispositivo)</p>
       <div class="card" style="display:flex;flex-direction:column;gap:8px">
         ${avisoEspacio}
-        <p class="hint" style="margin:0">Notas, exámenes y demás: <b>${kb} KB</b> ${mediaOk() ? `· fotos en el almacén de archivos: <b>${fotosKb} KB</b> (${mediaInfo.n})` : "· las fotos se guardan dentro del estado (este navegador no tiene almacén de archivos)"}.</p>
+        <p class="hint" style="margin:0">Apuntes, módulos y estudio: <b>${kb} KB</b> ${mediaOk() ? `· fotos en el almacén de archivos: <b>${fotosKb} KB</b> (${mediaInfo.n})` : "· las fotos se guardan dentro del estado (este navegador no tiene almacén de archivos)"}.</p>
         <button class="btn btn-primary" data-action="export">Exportar copia JSON (con fotos)</button>
         <button class="btn" data-action="import">Importar JSON</button>
         <button class="btn" data-action="export-ics">Calendario .ics (horario y festivos)</button>
@@ -2794,10 +2816,11 @@
   function timerClear() { try { localStorage.removeItem(TIMER_KEY); } catch {} }
 
   // Al abrir la app se recupera el bloque en curso; si el tiempo ya pasó, se cierra solo.
+  // Devuelve true si había un bloque guardado (para no pisarlo con uno nuevo).
   function timerRestore() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(TIMER_KEY) || "null"); } catch {}
-    if (!saved || typeof saved !== "object") return;
+    if (!saved || typeof saved !== "object") return false;
     timer.mode = ["work", "break", "long"].includes(saved.mode) ? saved.mode : "work";
     timer.total = Number(saved.total) || modeMinutes(timer.mode) * 60;
     timer.cycles = Number(saved.cycles) || 0;
@@ -2809,8 +2832,8 @@
       if (left <= 0) {
         timer.remaining = 0;
         toast("Tu bloque terminó mientras no estabas");
-        completeTimer();
-        return;
+        completeTimer(true);
+        return true;
       }
       startTimerLoop();
       const sub = state.subjects.find((s) => s.id === timer.subjectId);
@@ -2820,6 +2843,7 @@
       if (timer.remaining < timer.total) updateTimerChrome();
     }
     updateTimerUI();
+    return true;
   }
   function startTimerLoop() {
     timer.running = true;
@@ -2925,20 +2949,25 @@
   function icsEscape(s) {
     return String(s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
   }
+  function utf8Len(ch) {
+    const c = ch.codePointAt(0);
+    return c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+  }
   function icsFold(line) {
-    // RFC 5545: líneas de más de 75 octetos se pliegan con CRLF + espacio
+    // RFC 5545: las líneas de más de 75 octetos se pliegan con CRLF + un espacio.
+    // Se cuentan octetos (no letras) porque «Módulo» ocupa más que «Modulo».
     const out = [];
-    let rest = String(line);
-    while (rest.length > 73) { out.push(rest.slice(0, 73)); rest = " " + rest.slice(73); }
-    out.push(rest);
+    let actual = "", bytes = 0;
+    for (const ch of String(line)) {
+      const n = utf8Len(ch);
+      if (bytes + n > 75) { out.push(actual); actual = " "; bytes = 1; }
+      actual += ch; bytes += n;
+    }
+    out.push(actual);
     return out.join("\r\n");
   }
   function icsStamp(d) {
     return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
-  }
-  // Formato local (sin Z) y coherente con un DTSTART en hora local.
-  function icsLocalStamp(d) {
-    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
   function exportICS() {
     const stamp = icsStamp(new Date());
@@ -2983,7 +3012,8 @@
       );
     });
     lineas.push("END:VCALENDAR");
-    const blob = new Blob([lineas.join("\r\n")], { type: "text/calendar;charset=utf-8" });
+    // Cada línea se pliega si pasa de 75 octetos (los nombres largos de módulo lo hacían)
+    const blob = new Blob([lineas.map(icsFold).join("\r\n")], { type: "text/calendar;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "aula-smr-horario.ics";
@@ -3062,7 +3092,7 @@
         try { window.AulaStudio.toolCatalog().forEach((x) => { if (hit(x.title)) out.push({ kind: "Herramienta", title: x.title, run: x.run }); }); } catch {}
       }
     }
-    const prio = { Ir: 0, Módulo: 1, Examen: 1, Tarea: 2, Nota: 2, Ficha: 3, Glosario: 3, Herramienta: 2 };
+    const prio = { Ir: 0, Módulo: 1, Nota: 2, Ficha: 3, Glosario: 3, Herramienta: 2 };
     return out.slice(0, 14).sort((a, b) => (prio[a.kind] || 9) - (prio[b.kind] || 9));
   }
   function renderCmd() {
@@ -3079,8 +3109,6 @@
     persistNoteNow();
     const anterior = view;
     view = v;
-    $("#sidebar")?.classList.remove("open");
-    $("#overlay").classList.remove("menu-on");
     $("#overlay").hidden = true;
     closeCmd(); closeMore();
     // Con pushState, el gesto/botón "atrás" del móvil vuelve a la vista anterior
@@ -3270,7 +3298,6 @@
   function gradeCard(q) {
     const cur = cardQueue[0]; if (!cur) return;
     const card = state.cards.find((c) => c.id === cur.id); if (!card) return;
-    const antes = { ...card };
     const r = sm2(card, q);
     card.ease = r.ease; card.reps = r.reps; card.interval = r.interval; card.lapses = r.lapses;
     card.due = cardDue(card, r.interval);
@@ -3285,7 +3312,6 @@
     checkAchievements(); save();
     toast(q < 3 ? "Vuelve hoy · " + (card.lapses || 1) + " fallo(s)" : "Hecho · vuelve en " + (r.interval === 1 ? "1 día" : r.interval + " días"));
     render();
-    void antes;
   }
   function num(id, fb) { const el = $(id); if (!el) return fb; const n = Number(el.value); return Number.isFinite(n) ? n : fb; }
   function on(id) { const el = $(id); return el ? !!el.checked : undefined; }
@@ -3311,7 +3337,6 @@
     if ($("#set-goal")) st.dailyGoal = num("#set-goal", 90);
     if ($("#set-weekdays")) st.weekGoalDays = num("#set-weekdays", 5);
     if ($("#set-grademax")) st.gradeMax = num("#set-grademax", 10);
-    if ($("#set-prio")) st.defaultPrio = $("#set-prio").value;
     const sat = on("#set-sat"); if (sat !== undefined) st.includeSaturday = sat;
     const att = on("#set-att"); if (att !== undefined) st.showAttendance = att;
     const hc = on("#set-hideok"); if (hc !== undefined) st.hideCompleted = hc;
@@ -3466,6 +3491,7 @@
       else toast("PIN incorrecto");
       render();
     }
+    if (action === "reload") { location.reload(); }
     if (action === "quick-add") quickAdd();
     if (action === "open-cmd") openCmd();
     if (action === "cmd-run") { const it = cmdItems[Number(btn.dataset.i)]; closeCmd(); it?.run(); }
@@ -3523,14 +3549,11 @@
     if (action === "voice-fab") toggleVoice();
     if (action === "nlp-text") { const t = captureText(); if (t) { closeCapture(); processNLP(t); } }
     if (action === "sch-view") { schView = btn.dataset.mode; render(); }
-    if (action === "sch-day") { schDay = Number(id); render(); }
-    if (action === "agenda-filter") { agendaFilter = id; render(); }
     if (action === "open-mod") { subjectFocus = id; go("subject"); }
-    if (action === "sim-run") { /* live via input */ }
     if (action === "edit-grade") addGrade(subjectById(id));
     if (action === "cal-prev") { calendarCursor.setMonth(calendarCursor.getMonth() - 1); render(); }
     if (action === "cal-next") { calendarCursor.setMonth(calendarCursor.getMonth() + 1); render(); }
-    if (action === "sch-week") { schWeek = Number(btn.dataset.delta) || 0; render(); }
+    if (action === "sch-week") { const d = Number(btn.dataset.delta) || 0; schWeek = d === 0 ? 0 : clamp(schWeek + d, -52, 52); render(); }
     if (action === "cal-day") {
       const dia = btn.dataset.date;
       exDate = dia;
@@ -3581,7 +3604,7 @@
     if (action === "wipe") {
       const kb = (storageBytes() / 1024).toFixed(0);
       openModal("Borrar todos los datos", `
-        <p>Se borran de este dispositivo <b>todo</b>: módulos, horario, exámenes, notas, fichas, sesiones y las copias automáticas. Ocupan <b>${kb} KB</b>.</p>
+        <p>Se borran de este dispositivo <b>todo</b>: módulos, horario, apuntes, fichas, sesiones, logros y las copias automáticas. Ocupan <b>${kb} KB</b>.</p>
         <p class="hint">Esto no se puede deshacer desde aquí. Si quieres una copia, descárgala antes.</p>`,
         {
           confirm: "Borrar todo",
@@ -3747,18 +3770,6 @@
   document.addEventListener("input", (e) => {
     if (e.target.id === "cmdk-input") { cmdItems = collectCmd(e.target.value); cmdIndex = 0; renderCmd(); }
     if (e.target.id === "note-title" || e.target.id === "note-body") persistNote();
-    if (e.target.id === "sim-current" || e.target.id === "sim-weight" || e.target.id === "sim-target") {
-      const current = parseFloat($("#sim-current")?.value) || 0;
-      const weight = parseInt($("#sim-weight")?.value, 10) || 0;
-      const target = parseFloat($("#sim-target")?.value) || 5;
-      const disp = $("#sim-target-display"); if (disp) disp.textContent = target.toFixed(1);
-      const res = $("#sim-result"); if (!res) return;
-      const contrib = current * ((100 - weight) / 100);
-      let needed = weight ? (target - contrib) / (weight / 100) : 0;
-      if (needed <= 0) { res.textContent = "¡Ya estás!"; res.style.color = "#3b82f6"; }
-      else if (needed > 10) { res.textContent = "Imposible"; res.style.color = "#ef4444"; }
-      else { res.textContent = needed.toFixed(2); res.style.color = "#10b981"; }
-    }
     if (e.target.id === "note-query") {
       noteQuery = e.target.value;
       const keep = e.target.selectionStart;
@@ -3768,20 +3779,7 @@
     }
   });
 
-  $("#menu-btn")?.addEventListener("click", () => {
-    const open = $("#sidebar").classList.toggle("open");
-    $("#overlay").hidden = !open;
-    $("#overlay").classList.toggle("menu-on", open);
-  });
-  $("#overlay").addEventListener("click", () => {
-    if ($("#sidebar").classList.contains("open")) {
-      $("#sidebar")?.classList.remove("open");
-      $("#overlay").classList.remove("menu-on");
-      $("#overlay").hidden = true;
-      return;
-    }
-    closeModal();
-  });
+  $("#overlay").addEventListener("click", () => { closeModal(); closeMore(); });
   $("#more-sheet")?.addEventListener("click", (e) => { if (e.target.id === "more-sheet") closeMore(); });
   $("#capture")?.addEventListener("click", (e) => { if (e.target.id === "capture") closeCapture(); });
   $("#capture-text")?.addEventListener("keydown", (e) => {
@@ -3922,25 +3920,17 @@
   function updateVoiceUI() {
     const b = $("#capture-voice");
     if (b) { b.classList.toggle("on", voiceOn); b.textContent = voiceOn ? "🎙 Escuchando…" : "🎤 Dictar"; }
-    const fab = $("#fab");
-    if (fab) fab.classList.toggle("listening", voiceOn);
   }
   function toggleVoice() {
     const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const pill = $("#ai-status-pill");
-    const fab = $("#fab");
     const stop = () => {
       voiceOn = false;
       try { voiceRec && voiceRec.stop(); } catch {}
       updateVoiceUI();
-      pill?.classList.remove("on");
     };
     if (voiceOn) { stop(); return; }
     voiceOn = true;
     updateVoiceUI();
-    pill?.classList.add("on");
-    const stt = $("#ai-status-text");
-    if (stt) stt.textContent = "Di: «apunta: el DNS usa el puerto 53»";
     if (!Speech) {
       openCapture();
       stop();
@@ -4076,7 +4066,7 @@
     subjectName, subjectColor, subjectById, minutesOf, weekdayMon0, DAYS, DAYS_SHORT, MONTHS,
     pad, clamp, localISO, weekRange, streak, studiedFor, nextClass, $, $$,
     openModal, closeModal, ask, weightedGPA, grantXP, checkAchievements, needSubjects,
-    pushUndo, undo, sanitize, save, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
+    pushUndo, undo, sanitize, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
     isNativeShell, soloLocal: true,
     safeColor, sm2, cardState, nextLabel, migrateMedia, eventsOnDate, setException, exceptionsFor,
     COURSE, holidayName, OFFICIAL_MODS, OFFICIAL_SLOTS, OFFICIAL_PLAN, applyOfficialTimetable,
@@ -4085,7 +4075,7 @@
     lockNote(id) { unlockedNotes.add(id); },
     get loadProblem() { return loadProblem; },
     get saveProblem() { return saveProblem; },
-    subjectOptions, md, dueCards, attStats, addNote, addCard, addGrade, diasSinClase,
+    subjectOptions, md, dueCards, attStats, addNote, addCard, addGrade, gradeCard, diasSinClase,
     persistNote, buzz, confetti, levelInfo,
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },
@@ -4095,7 +4085,6 @@
   const hash = (location.hash || "").replace("#", "");
   if (esVista(hash)) view = hash;
   applyTheme();
-  setMode("work", true);
   // Concentración que sobrevive a recargas
   const _lockUntil = Number((state.progress && state.progress.flags && state.progress.flags.examLockUntil) || 0);
   if (_lockUntil > Date.now()) {
@@ -4108,7 +4097,9 @@
   const marcarEntrada = () => document.documentElement.classList.toggle("is-touch", window.matchMedia("(pointer: coarse)").matches);
   marcarEntrada();
   window.addEventListener("pointerdown", marcarEntrada, { once: true });
-  timerRestore();
+  // Si había un bloque en curso (la app se cerró o el móvil la durmió), se sigue con él:
+  // solo se estrena uno nuevo cuando no hay nada guardado. Antes se borraba al abrir.
+  if (!timerRestore()) setMode("work", true);
   if (Media()) Media().ready().then((ok) => {
     if (ok) migrateMedia();
     else if (state.notes.some((n) => (n.attachments || []).some((a) => !a.data))) {
@@ -4162,18 +4153,13 @@
     }
   }
   setInterval(() => {
-    const clock = $("#live-clock");
-    if (clock) {
-      const info = nextClassInfo();
-      if (!info) clock.textContent = "—";
-      else clock.textContent = info.live ? "AHORA" : fmtRemain(info.remain);
-    }
     // Si el móvil ha dormido la pestaña, el cronómetro se pone al día aquí
     if (timer.running && timer.endsAt) {
       timer.remaining = Math.max(0, Math.round((timer.endsAt - Date.now()) / 1000));
       if (timer.remaining <= 0) completeTimer();
     }
     updateTimerChrome();
+    revisarTemaPorHora();
     tickNotify();
     const cambioPlantilla = syncPlantilla(state);
     if (cambioPlantilla) { save(); toast(avisoPlantilla(cambioPlantilla)); render(); }

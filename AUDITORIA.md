@@ -50,6 +50,48 @@ sobre la misma rama. Esto es lo que ya está hecho **y verificado**:
 (fotos en IndexedDB, repetición espaciada real y excepciones de horario), `718e69d`
 (receta del APK), `v51` (la app deja de tener servidor), `v52` (navegación sin duplicados), `v53` (fuera la vista Cuatrimestre), `v54` (fuera Guía docente y Papelera), `v55` (Ajustes más cortos), `v56` (horario y calendario reales del centro) y `v57` (horario automático, calendario escolar y la app sin exámenes ni deberes).
 
+### Ronda v58 · auditoría línea a línea de todo el código
+
+**Qué se ha revisado (esta ronda):** el código del repositorio, línea por línea:
+`index.html` (227), `js/app.js` (4 188), `js/studio.js` (731), `js/tools.js` (983), `js/media.js` (224),
+`sw.js`, las 7 hojas CSS, `manifest.webmanifest`, `apk-overlay/` (Java + layouts) y las pruebas.
+Además se pasaron cruces automáticos (acciones `data-action` ↔ manejadores, ids pedidos en JS ↔
+existentes en el HTML, ajustes escritos ↔ leídos, exports de `window.Aula`), `eslint` con las reglas
+de errores reales (duplicados, variables sin usar, `no-undef`) y un recorrido automático en jsdom de
+las 21 vistas con **337 clics** reales y apertura de modales, buscando excepciones y `NaN`.
+
+**Lo que se encontró y ya está corregido** (todo con prueba que lo cubre):
+
+| # | Fallo | Gravedad | Arreglo |
+|---|---|---|---|
+| 1 | **El bloque de estudio en curso se borraba al abrir la app**: el arranque llamaba a `setMode("work", true)` después de `timerRestore()`, así que el pomodoro en marcha se perdía al cerrar y reabrir | 🔴 Alto | El arranque solo estrena bloque si no había nada guardado (`timerRestore()` devuelve si había estado); al volver sigue corriendo la cuenta atrás |
+| 2 | **El buscador de apuntes no filtraba nada**: se guardaba `noteQuery` y se volvía a pintar, pero nadie lo leía | 🔴 Alto | `renderNotes()` filtra por título y texto (sin destapar notas con PIN) y avisa de que no hay resultados |
+| 3 | **El botón «Foto» de una nota estaba roto**: llamaba a `shrinkImage()`, que no existía en ningún fichero → `ReferenceError` y aviso de «no se ha podido leer la imagen» | 🔴 Alto | Se implementa `shrinkImage()` (canvas → JPEG, lado mayor 1280 px) y se arregla la comprobación de tamaño, que estaba invertida |
+| 4 | **Las flechas del horario no pasaban de semana**: `sch-week` asignaba el delta (−1/0/+1) en vez de sumarlo, así que «›» siempre enseñaba la misma semana siguiente | 🟠 Medio | Ahora se suma (con tope de ±52 semanas) y el botón «Hoy» vuelve a la actual |
+| 5 | **El widget «Hoy» del APK enseñaba la etiqueta «EXAMEN»**: el texto estaba fijo en `widget_hoy.xml` y el Java nunca lo sobrescribía | 🟠 Medio | `WidgetStore.java` escribe esa etiqueta con `festivo.kicker` («SIN CLASE», «VACACIONES» o «HOY»); el layout pasa a «SIN CLASE» |
+| 6 | **Una vista que fallaba dejaba la app en blanco** (cualquier dato raro, como `aula.snaps` dañado en «Datos locales», rompía el pintado entero) | 🟠 Medio | `render()` envuelve la vista en `try/catch` y enseña un panel con «Volver a Inicio / Exportar copia / Recargar» |
+| 7 | `JSON.parse(localStorage.getItem("aula.snaps"))` sin protección en «Datos locales» | 🟠 Medio | Se parsea a salvo y, si no es una lista, se ignora |
+| 8 | **Se podía colar HTML/código por una copia importada**: una «foto» con comillas en su data URL se insertaba sin escapar en `src` | 🟠 Medio | Nuevo `safeImgSrc()`: solo `data:image/…` o `blob:` y siempre escapado (avatares, fotos de notas y miniaturas) |
+| 9 | `hidratar()` montaba un selector CSS con ids de una copia importada | 🟡 Bajo | Se escapa con `CSS.escape` |
+| 10 | **Conversor de bases**: `parseInt()` se comía los dígitos inválidos («19» en base 8 daba 1 en silencio) | 🟠 Medio | Se valida el número según la base y se avisa |
+| 11 | **Máscaras de red**: `255.255.0.255` se aceptaba como /16 | 🟡 Bajo | Se comprueba que los unos son contiguos; `/26` y `26` valen igual |
+| 12 | **Calculadora RAID**: sin discos enseñaba «0 GB · sin redundancia» | 🟡 Bajo | Pide discos y tamaño; RAID 1 avisa de que hacen falta 2 |
+| 13 | **Modo «Escribir» de fichas**: al acertar, la ficha se quedaba en pantalla | 🟠 Medio | Se programa el repaso y avanza (`Aula.gradeCard`), con aviso de acierto/fallo |
+| 14 | El enlace «Configurar Ollama» del asistente era `data-view` fuera de la barra: **no hacía nada** | 🟡 Bajo | Ahora navega con `data-action="go"` |
+| 15 | El historial del chat se guardaba entero en el estado, sin límite | 🟡 Bajo | Se queda con los últimos 40 mensajes |
+| 16 | **Calendario escolar**: las flechas de mes se podían pulsar sin fin más allá del curso | 🟡 Bajo | El cursor se queda dentro del curso y las flechas se desactivan en el primer y último mes |
+| 17 | **Tema automático**: de noche oscurecía la app pero no la barra del sistema, no cambiaba solo al llegar la hora y el primer pintado podía parpadear | 🟡 Bajo | `applyTheme()` calcula el tema efectivo una vez (color de sistema y clases incluidas), se revisa cada 15 s y el script de arranque de `index.html` ya lo aplica antes de pintar |
+| 18 | **Textos que ya no tocan**: la portada, «empezar de cero», «Datos», «Borrar todo», la descripción de `index.html` y del manifiesto, y el modal de la semana nueva seguían hablando de exámenes y deberes | 🟡 Bajo | Reescritos (probado: ninguna vista los menciona) |
+| 19 | **Código muerto** que despistaba: `#live-clock`, `#ai-status-pill/text`, el simulador `sim-*`, `#set-prio`/`defaultPrio`, `schDay`, `agendaFilter`, `START_HOUR/END_HOUR/SLOT_H`, `backupsRaw`, `lastSaveSize`, `early`, `subName`, `exceptionKind`, alias sin usar de `studio.js`, el menú lateral (`#menu-btn`, `#sidebar`, `#nav`), el botón flotante oculto y `#task-count` | 🟡 Bajo | Eliminados (0 selectores muertos tras el repaso); `.ics` ahora **usa** `icsFold` de verdad, plegando las líneas a 75 octetos contando bytes UTF-8 |
+| 20 | La guarda `data:image` de las fotos antiguas no validaba el tipo de imagen | 🟡 Bajo | `md()` y las miniaturas pasan por `safeImgSrc()` |
+| 21 | **Instantáneas de «Datos locales» a prueba de basura**: si `aula.snaps` tenía algo que no era una lista, «Punto de restauración» y «Restaurar» lanzaban una excepción | 🟠 Medio | `leerSnaps()`/`guardarSnaps()`: se parsea a salvo y solo se aceptan listas de copias con id |
+| 22 | `settings.startHour`/`endHour` con valor `0` (medianoche) caían al valor por defecto por culpa de `|| 8`: los bloques de estudio y los huecos libres salían mal | 🟡 Bajo | Se comprueba con `Number.isFinite` en vez de `||` |
+
+**Verificación de esta ronda:** `npm test` = **179 comprobaciones ✓ / 0 ✗** (34 nuevas, una por fallo
+de la tabla), recorrido automático de las 21 vistas con 337 clics y 10 modales **sin excepciones**,
+`eslint` sin errores reales (solo quedan avisos de configuración de globals: `Response`, `Aula`,
+`speechSynthesis`) y comprobación de que no queda ningún selector ni ajuste huérfano.
+
 | Bug | Estado | Cómo se ha arreglado |
 |---|---|---|
 | BUG-01 cuota silenciosa | ✅ hecho | `save()` avisa en pantalla, ofrece exportar y deja de mentir. Guardado diferido + `flushSave` al cerrar |

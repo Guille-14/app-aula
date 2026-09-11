@@ -190,9 +190,11 @@
   // Entero aleatorio sin sesgo (descarta la cola que no cabe en el rango)
   function randInt(max) {
     const limite = Math.floor(0xffffffff / max) * max;
+    const c = window.crypto || null;
+    if (!c || typeof c.getRandomValues !== "function") return Math.floor(Math.random() * max);
     const buf = new Uint32Array(1);
     let v;
-    do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= limite);
+    do { c.getRandomValues(buf); v = buf[0]; } while (v >= limite);
     return v % max;
   }
   function genPass(len, opts) {
@@ -335,7 +337,7 @@
       </div>`);
     if (id === "wild") return wrap("Wildcard ACL", cardBox(`
       <div class="field"><label>Prefijo o máscara</label>
-        <input id="wd-in" value="24" placeholder="24 o 255.255.255.0"></div>
+        <input id="wd-in" value="24" placeholder="24, /24 o 255.255.255.0"></div>
       ${liveBtn("tool-wild", "Calcular")}
       <div id="wd-out" class="tool-out"></div>`));
     if (id === "ipv6") return wrap("IPv6", cardBox(`
@@ -717,11 +719,17 @@
       const raw = String((document.getElementById("wd-in") || {}).value || "").trim();
       const el = document.getElementById("wd-out");
       if (!el) return;
-      let p = parseInt(raw, 10);
+      let p = parseInt(raw.replace(/^\//, ""), 10);   // «/26» y «26» valen igual
       if (raw.includes(".")) {
         const oct = parseIp(raw);
         if (!oct) { el.innerHTML = `<p class="hint">Máscara o /prefijo</p>`; return; }
         const bits = oct.reduce((a, n) => a + n.toString(2).replace(/0/g, "").length, 0);
+        const calculada = intToIp(bits === 0 ? 0 : (0xFFFFFFFF << (32 - bits)) >>> 0);
+        // 255.255.0.255 tiene 24 unos pero NO es una máscara: los unos van seguidos
+        if (calculada !== oct.join(".")) {
+          el.innerHTML = `<p class="hint">Esa no es una máscara válida: los unos tienen que ir seguidos (por ejemplo 255.255.255.0).</p>`;
+          return;
+        }
         p = bits;
       }
       if (!(p >= 0 && p <= 32)) { el.innerHTML = `<p class="hint">0–32</p>`; return; }
@@ -817,9 +825,13 @@
       const lv = (document.getElementById("rd-lv") || {}).value || "5";
       const el = document.getElementById("rd-out");
       if (!el) return;
+      if (n < 1 || gb <= 0) {
+        el.innerHTML = kv([["Capacidad usable", "—"], ["Notas", "Pon cuántos discos y de qué tamaño son"]]);
+        return;
+      }
       let cap = 0, note = "";
-      if (lv === "0") { cap = n * gb; note = "Sin redundancia"; }
-      else if (lv === "1") { cap = Math.floor(n / 2) * gb; note = "Espejo"; }
+      if (lv === "0") { cap = n * gb; note = n === 1 ? "Un solo disco: sin redundancia" : "Sin redundancia"; }
+      else if (lv === "1") { cap = Math.floor(n / 2) * gb; note = n < 2 ? "Mínimo 2 discos (espejo)" : "Espejo"; }
       else if (lv === "5") { cap = n >= 3 ? (n - 1) * gb : 0; note = n < 3 ? "Mínimo 3 discos" : "1 disco de paridad"; }
       else if (lv === "6") { cap = n >= 4 ? (n - 2) * gb : 0; note = n < 4 ? "Mínimo 4 discos" : "2 de paridad"; }
       else if (lv === "10") {
@@ -836,7 +848,11 @@
       const from = parseInt((document.getElementById("cv-from") || {}).value, 10) || 10;
       const el = document.getElementById("cv-out");
       if (!el) return;
-      const n = parseInt(raw.replace(/\s/g, ""), from);
+      const limpio = raw.replace(/\s/g, "");
+      const digitos = { 2: /^-?[01]+$/, 8: /^-?[0-7]+$/, 10: /^-?\d+$/, 16: /^-?[0-9a-f]+$/i }[from];
+      // Sin esto, «19» en octal daba 1 en lugar de avisar de que el 9 no existe en base 8
+      if (!digitos || !digitos.test(limpio)) { el.innerHTML = `<p class="hint">Número no válido en base ${from}</p>`; return; }
+      const n = parseInt(limpio, from);
       if (!Number.isFinite(n)) { el.innerHTML = `<p class="hint">Número no válido</p>`; return; }
       el.innerHTML = kv([["Decimal", String(n)], ["Binario", n.toString(2)], ["Hex", n.toString(16).toUpperCase()]]);
     }
@@ -845,12 +861,13 @@
       const el = document.getElementById("hs-out");
       if (!el) return;
       const data = new TextEncoder().encode(texto);
-      if (!(crypto && crypto.subtle && crypto.subtle.digest) || !crypto.subtle) {
+      const cripto = window.crypto || null;
+      if (!cripto || !cripto.subtle || typeof cripto.subtle.digest !== "function") {
         // http://IP:8080 no es contexto seguro: crypto.subtle no existe ahí
         el.innerHTML = `<p class="hint">El hash SHA-256 necesita https o localhost: el navegador lo bloquea en <b>http://</b>. Abre la app instalada o desde localhost.</p>`;
         return;
       }
-      crypto.subtle.digest("SHA-256", data).then((buf) => {
+      cripto.subtle.digest("SHA-256", data).then((buf) => {
         const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
         el.innerHTML = kv([["SHA-256", hex], ["Bytes", String(data.length)]]);
       }).catch((err) => { el.innerHTML = `<p class="hint">No se pudo calcular: ${esc(String(err && err.message || err))}</p>`; });
@@ -907,7 +924,8 @@
     }
     if (action === "tool-uuid") {
       const el = document.getElementById("uu-out");
-      const id = (crypto.randomUUID && crypto.randomUUID()) || (Math.random().toString(16).slice(2) + Date.now());
+      const c = window.crypto || {};
+      const id = (typeof c.randomUUID === "function" && c.randomUUID()) || (Math.random().toString(16).slice(2) + Date.now());
       if (el) el.textContent = id;
       copyText(id);
     }

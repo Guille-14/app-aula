@@ -152,6 +152,8 @@ public final class WidgetStore {
     v.setTextViewText(R.id.w_clase, str(d, "clase.title", "Sin clase"));
     v.setTextViewText(R.id.w_clase_sub, str(d, "clase.sub", ""));
     v.setTextViewText(R.id.w_clase_k, str(d, "clase.kicker", "CLASE"));
+    // La etiqueta de esta fila pasó a ser «SIN CLASE» / «VACACIONES»: antes ponía EXAMEN fijo
+    v.setTextViewText(R.id.w_exam_k, str(d, "festivo.kicker", "SIN CLASE"));
     v.setTextViewText(R.id.w_exam, str(d, "festivo.title", "Sin clase"));
     v.setTextViewText(R.id.w_exam_sub, str(d, "festivo.sub", ""));
     v.setOnClickPendingIntent(R.id.widget_root, openApp(ctx, 13));

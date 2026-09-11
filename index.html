@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark light" />
   <meta name="theme-color" content="#000000" />
-  <meta name="description" content="Aula SMR — exámenes, horario, notas y estudio del ciclo. Todo en el móvil, sin nube." />
+  <meta name="description" content="Aula SMR — horario, calendario escolar, apuntes y estudio del ciclo. Todo en el móvil, sin nube." />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -23,6 +23,12 @@
         var theme = st.uiTheme;
         if (theme !== "light" && theme !== "dark") {
           theme = ["minimal","azul","lima","coral","pergamino","gameboy","isla","kawaii","cafe","win95","azulgrana"].indexOf(st.skin) >= 0 ? "light" : "dark";
+        }
+        if (st.autoTheme) {
+          var h = new Date().getHours();
+          if ((h < 8 || h >= 21) && ["minimal","azul","lima","coral","pergamino","gameboy","isla","kawaii","cafe","win95","azulgrana"].indexOf(st.skin) >= 0) {
+            theme = "dark";
+          }
         }
         html.setAttribute("data-theme", theme);
         html.classList.toggle("dark", theme === "dark");
@@ -50,12 +56,7 @@
   <a class="skip-link" href="#view">Saltar al contenido</a>
   <span id="brand-course" class="sr-only">SMR</span>
   <span id="card-count" class="sr-only"></span>
-  <span id="task-count" class="sr-only"></span>
   <span id="inbox-count" class="sr-only"></span>
-  <span id="fab-label" class="sr-only">Nuevo</span>
-  <button id="menu-btn" class="sr-only" aria-hidden="true"></button>
-  <aside id="sidebar" class="sr-only" hidden></aside>
-  <nav id="nav" class="sr-only" hidden></nav>
 
   <main class="phone" id="app">
     <div id="timer-bar" class="timer-bar" hidden>
@@ -83,8 +84,6 @@
     </header>
 
     <div id="view" class="hub-scroll no-scrollbar"></div>
-
-    <button id="fab" class="sr-only" hidden type="button" data-action="quick-add" tabindex="-1">Nuevo</button>
 
     <nav class="hub-nav" id="bottom-nav" aria-label="Navegación principal">
       <button data-view="dashboard" class="is-active" aria-label="Inicio">

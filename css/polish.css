@@ -41,7 +41,6 @@
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 .sidebar { overflow: auto; }
-#overlay.menu-on { display: block; z-index: 18; }
 
 @media (max-width: 860px) {
   .greeting h2 { font-size: 24px; letter-spacing: -.03em; }
