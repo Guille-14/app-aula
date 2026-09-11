@@ -7,6 +7,7 @@
 **Ronda v59:** rediseño de interfaz (una sola hoja `css/ui.css`, calendario escolar nuevo, 198 pruebas ✓).
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
+**Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
 **Tamaño analizado:** 9.225 líneas / 454 KB (189 KB de `app.js`, 148 KB de CSS).
 
 ## Cómo se ha auditado (para que te fíes de los hallazgos)
@@ -766,6 +767,53 @@ Peticiones del usuario, una a una:
 - `npm test` → **263 comprobaciones ✓** (45 nuevas: exámenes de punta a punta, .ics con la prueba, foco sin botón flotante, chat con su configuración y atajos, y el calendario acotado).
 - Se ha recorrido el DOM de las 23 vistas: ninguna clase pintada sin regla, ningún `undefined` en pantalla, sin errores de consola.
 - Sigue sin haber navegador headless en este entorno: la revisión es por código, DOM y pruebas automáticas.
+
+---
+
+## Ronda v62 · Revisión con navegador de verdad: anchuras, media y boletín
+
+Hasta ahora la interfaz solo se podía revisar leyendo el código y con jsdom (que no calcula
+tamaños). Esta ronda se ha montado un **navegador headless real** (Chromium por npm, con sus
+bibliotecas) y se han sacado capturas y medidas de las 22 vistas con datos de verdad
+(6 módulos, 16 fichas, 34 sesiones, 5 pruebas). Eso ha destapado fallos que no se ven en el código.
+
+### Lo que estaba mal y ya está arreglado
+
+1. **Nota media mal calculada** (el más gordo). `weightedGPA()` hacía `Number(subject.grade)`:
+   un módulo *sin nota* es `""`, y `Number("") === 0`. Resultado: los módulos sin nota contaban
+   como un cero y la media se hundía (con 4 módulos de los que 2 no tienen nota, salía **4,1**
+   en vez de **7,0**). Ahora solo entran los que tienen nota, ya acotada al máximo configurado.
+2. **El boletín de Gráficos salía todo en «—»**. Buscaba las notas por `subjectId`, pero
+   `graded` es una lista de **módulos**: la clave es `id`. Nunca coincidía.
+3. **Veinte rejillas con `1fr` a pelo** (`1fr 1fr`, `repeat(7, 1fr)`…). `1fr` es
+   `minmax(auto, 1fr)`: si el contenido no cabe, la columna **crece** y la fila se sale de la
+   tarjeta. En un móvil de 360 px se salían las tarjetas de Estadísticas, Repaso, Fichas,
+   Ajustes, Herramientas, Logros… Todas usan ya `minmax(0, 1fr)`.
+4. **Filtros de módulos en una sola línea con scroll lateral**: un nombre largo
+   («Proyecto intermodular Sistemas microinformáticos y redes») dejaba el filtro cortado a
+   media pantalla. Ahora envuelven en varias líneas.
+5. **Glosario**: la etiqueta del módulo era una columna a la derecha que se quedaba con el
+   ancho y dejaba la definición en un hilo de 55 px (y de 20 px en pantallas pequeñas…).
+   Pasa a ir debajo, dentro del texto, y los términos ya se leen.
+6. **Mazo de fichas**: «Editar» y «×» se comían media fila. «Editar» es ahora un lápiz
+   compacto y el texto de la ficha manda.
+7. **Chips largos** (una fecha en palabras, un aviso del calendario) se salían de la tarjeta
+   en las cabeceras: ahora se parten en dos líneas dentro de su píldora.
+8. **Formularios**: en móvil estrecho un `input` con su hueco mínimo empujaba la columna de
+   al lado fuera de la tarjeta (Ajustes). Los campos y controles pueden encogerse (`min-width: 0`).
+9. **Tarjetas de texto a media anchura**: en pantallas ≤ 460 px, las tarjetas con texto y
+   cifras (Estadísticas, Fichas, Repaso) pasan a una sola columna; las de cifras siguen a dos.
+
+### Comprobaciones
+
+- `npm test` → **275 comprobaciones ✓** (12 nuevas: la media sin los módulos vacíos, el
+  boletín de Gráficos, ninguna rejilla con `1fr` a pelo, los filtros que envuelven, los chips
+  que se parten, las filas que encogen y las tarjetas que se apilan).
+- Recorridas las 22 vistas en Chromium a 360 × 780: **sin errores de consola, sin `undefined`
+  ni `NaN` en pantalla y sin desbordes**, y probados a mano la hoja «Más», el alta de una
+  prueba, el calendario del centro, el tema claro, el modo concentración y el tamaño de texto
+  grande.
+- Quedan tres avisos de 2 px por un `box-shadow` de un icono (no desplazan nada): no se tocan.
 
 ---
 

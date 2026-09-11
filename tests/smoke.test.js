@@ -919,6 +919,49 @@ async function testAuditoria() {
     check(/curso hasta el/.test(r.querySelector(".cal-title small").textContent), "calendario: el subtítulo cabe (" + r.querySelector(".cal-title small").textContent.trim() + ")");
   }
 
+  // --- v62: la media no cuenta los módulos sin nota, y el boletín enseña la nota ---
+  {
+    const env = boot();
+    ready(env.A);
+    const A = env.A, r = env.doc;
+    A.state.subjects = [
+      { id: "m1", name: "Seguridad informática", grade: 8, color: "#ef4444" },
+      { id: "m2", name: "Servicios en red", grade: "", color: "#db2777" },
+      { id: "m3", name: "Aplicaciones web", grade: 6, color: "#eab308" },
+      { id: "m4", name: "Proyecto intermodular", grade: "", color: "#22c55e" },
+    ];
+    A.go("rendimiento");
+    check(/\b7\b/.test(r.querySelector(".boletin-hero .g").textContent), "media: solo cuentan los módulos con nota (8 y 6 → 7,0), no los vacíos");
+    A.go("stats");
+    const stats = r.getElementById("view").textContent;
+    check(/Nota media[\s\S]{0,40}7\.0/.test(stats.replace(/\s+/g, " ")) || /7\.0/.test(stats), "media: Gráficos enseña 7,0 en vez de la media hundida");
+    check(!/NaN|undefined/.test(r.getElementById("view").innerHTML), "media: sin NaN en pantalla");
+    // Y el boletín de Gráficos ya no sale todo en «—»
+    const filas = [...r.querySelectorAll("#view .card .row")].filter((f) => /Seguridad|Aplicaciones/.test(f.textContent));
+    check(filas.length > 0 && filas.some((f) => /8\.0|6\.0/.test(f.textContent)), "boletín: cada módulo enseña su nota (antes salía siempre «—»)");
+  }
+
+  // --- v62: nada se sale de la tarjeta en un móvil estrecho (360 px) ---
+  {
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+    check(!/grid-template-columns: (1fr|repeat\(\d+, 1fr\))/.test(ui), "anchura: ninguna rejilla usa 1fr a pelo (todas con minmax(0, 1fr))");
+    check(/\.filters \{[^}]*flex-wrap: wrap/.test(ui), "anchura: los filtros de módulos envuelven en varias líneas");
+    check(/\.chips-row \.chip \{[^}]*overflow-wrap: anywhere/.test(ui), "anchura: un chip largo se parte dentro de su píldora");
+    check(/\.row > div, \.row b, \.row small \{[^}]*min-width: 0/.test(ui), "anchura: el texto de una fila puede encogerse (no empuja las cifras)");
+    check(/@media \(max-width: 460px\)[\s\S]{0,200}\.stack-phone/.test(ui), "anchura: las tarjetas de texto se apilan en pantallas estrechas");
+
+    const env = boot();
+    ready(env.A);
+    env.A.state.subjects = [{ id: "m1", name: "Proyecto intermodular Sistemas microinformáticos y redes", grade: 8 }];
+    env.A.go("cards");
+    check(!/style="flex:1;min-width:0"/.test(env.doc.getElementById("view").innerHTML), "fichas: el mazo no fuerza anchos en línea (los pone la hoja de estilo)");
+    env.A.state.glossary = [{ id: "g1", term: "VLAN", def: "Red lógica independiente dentro de un mismo switch físico.", subjectId: "m1" }];
+    env.A.go("glossary");
+    const fila = env.doc.querySelector("#view .row");
+    check(!!fila && !!fila.querySelector(".row-tag"), "glosario: el módulo se etiqueta dentro de la fila, sin comerse la definición");
+    check(!!fila && fila.children.length === 2, "glosario: la fila no tiene columnas que compitan por el ancho (" + (fila ? fila.children.length : 0) + ")");
+  }
+
   // --- v59: una sola hoja de interfaz y el aviso de invitado en la cabecera ---
   {
     const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");

@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v61";
+  const APP_VERSION = "v62";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -923,7 +923,12 @@
   function dueCards() { const t = todayISO(); return state.cards.filter((c) => !c.due || c.due <= t); }
   // Nota media del ciclo: la nota de cada modulo (se pone a mano en Modulos o en Notas)
   function weightedGPA() {
-    const notas = state.subjects.map((s) => Number(s.grade)).filter((n) => Number.isFinite(n) && n >= 0);
+    // Solo cuentan los módulos CON nota: un módulo sin nota no es un 0.
+    // (Antes, Number("") === 0 colaba los seis módulos y la media salía por los suelos.)
+    const max = Number(state.settings.gradeMax) || 10;
+    const notas = state.subjects
+      .filter((s) => s.grade !== "" && s.grade != null && Number.isFinite(Number(s.grade)))
+      .map((s) => clamp(Number(s.grade), 0, max));
     if (!notas.length) return null;
     return notas.reduce((a, b) => a + b, 0) / notas.length;
   }
@@ -2068,7 +2073,7 @@
           <button class="btn btn-sm" data-action="add-card">Nueva</button>
         </span>
       </div>
-      <div class="grid grid-2">
+      <div class="grid grid-2 stack-phone">
         <div class="card" style="min-height:340px">
           <h3>Repaso · ${due.length} hoy</h3>
           <p class="hint" style="margin:0 0 8px">Nuevas ${cuenta.nueva} · aprendiendo ${cuenta.aprendiendo} · maduras ${maduras} · hechas hoy ${hechasHoy}</p>
@@ -2103,7 +2108,7 @@
             return `<div class="row">
             <span class="dot" style="background:${subjectColor(c.subjectId)}"></span>
             <div style="flex:1"><b>${esc(c.front)}</b><small class="hint">${est} · vuelve ${cuando}</small></div>
-            <button class="btn btn-sm" data-action="edit-card" data-id="${c.id}">Editar</button>
+            <button class="btn btn-sm" data-action="edit-card" data-id="${c.id}" aria-label="Editar la ficha" title="Editar">✎</button>
             <button class="btn btn-sm" data-action="delete-card" data-id="${c.id}">×</button>
           </div>`;
           }).join("") || `<div class="empty"><b>Mazo vacío</b><p>Las fichas se crean a mano o desde una nota con «A fichas».</p><button class="btn btn-primary" data-action="add-card">Nueva ficha</button></div>`}
@@ -2161,7 +2166,7 @@
         <div class="stat"><div class="k">Nota media</div><div class="v">${weightedGPA() == null ? "—" : weightedGPA().toFixed(1)}</div></div>
         <div class="stat"><div class="k">Asistencia</div><div class="v">${attStats().pct == null ? "—" : attStats().pct + "%"}</div></div>
       </div>
-      <div class="grid grid-2" style="margin-top:16px">
+      <div class="grid grid-2 stack-phone" style="margin-top:16px">
         <div class="card"><h3>Últimos 28 días</h3>
           <div class="heat">${heatDays().map((d) => `<i class="h${d.v}" title="${d.iso}${d.v ? "" : " · sin estudio"}"></i>`).join("")}</div>
           <p class="hint" style="margin:8px 0 0">Cada cuadro es un día, de más flojo a más estudiado.</p>
@@ -2169,7 +2174,7 @@
         <div class="card"><h3>Horas por módulo (semana)</h3><div class="chart-box"><canvas id="chart-bar"></canvas></div></div>
         <div class="card"><h3>Boletín</h3>
           ${state.subjects.map((s) => {
-            const g = graded.filter((e) => e.subjectId === s.id);
+            const g = graded.filter((e) => e.id === s.id);   // `graded` son módulos: la clave es `id`, no `subjectId`
             const ga = g.length ? g.reduce((a, b) => a + Number(b.grade), 0) / g.length : null;
             return `<div class="row"><span class="dot" style="background:${safeColor(s.color)}"></span><div style="flex:1"><b>${esc(s.name)}</b></div><div class="meta">${ga == null ? "—" : ga.toFixed(1)}</div></div>`;
           }).join("")}
@@ -2432,7 +2437,7 @@
         </div>`).join("") || `<div class="empty">Aún no hay sesiones esta semana. Dale al temporizador.</div>`}
         ${best ? `<p class="hint best-day">Mejor día: <strong>${fmtDate(best[0])}</strong> (${fmtHours(best[1])}).</p>` : ""}
       </div>
-      <div class="grid grid-2" style="margin-top:16px">
+      <div class="grid grid-2 stack-phone" style="margin-top:16px">
         <div class="card">
           <h3>Días sin clase</h3>
           ${diasSinClase(3).map((x) => `<div class="row"><span class="dot ${x.info.kind === "vacaciones" ? "is-vac" : "is-hol"}"></span>

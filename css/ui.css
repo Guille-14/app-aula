@@ -344,8 +344,8 @@ body.hub-body {
 }
 .card { margin: 0; }
 .grid { display: grid; gap: 12px; }
-.grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; }
-.grid-3, .grid-4 { grid-template-columns: 1fr 1fr; }
+.grid-2, .grid-3, .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-3, .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .stat { padding: 16px; }
 .stat .v {
   margin-top: 6px;
@@ -453,18 +453,17 @@ body.hub-body {
 .icon-btn:disabled { opacity: .3; }
 .hero-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .hero-actions .btn { flex: 0 1 auto; }
-.grade-row-btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+.grade-row-btns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
 .grade-row-btns .btn { flex-direction: column; gap: 2px; padding: 10px 4px; min-height: 54px; font-size: 12.5px; }
 .grade-row-btns .btn small { font-size: 10.5px; font-weight: 500; opacity: .65; }
 
 /* ------------------------------------------------------- 9. Chips y filtros */
 .filters {
   display: flex;
+  flex-wrap: wrap;          /* los módulos con nombre largo ya no se salen de pantalla */
   gap: 8px;
-  overflow-x: auto;
   padding: 2px 0 4px;
   margin: 0 -2px;
-  scrollbar-width: none;
 }
 .filters::-webkit-scrollbar { display: none; }
 .chip, .mod-chip, .set-nav a {
@@ -520,6 +519,8 @@ body.hub-body {
 
 /* --------------------------------------------------- 10. Formularios */
 .field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
+.field > * { min-width: 0; }
+input, select, textarea { min-width: 0; }
 .field label {
   font-size: 11.5px;
   font-weight: 620;
@@ -551,7 +552,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--ink) 10%, transparent);
 }
 ::placeholder { color: var(--muted-2); opacity: 1; }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .check {
   display: flex;
   align-items: center;
@@ -598,6 +599,10 @@ input[type="range"] { width: 100%; accent-color: var(--ink); }
 }
 .row:last-child { border-bottom: 0; }
 .row b { font-weight: 620; font-size: 14.5px; }
+/* Un módulo con nombre largo (o una pregunta de ficha) parte la línea en vez de
+   empujar las cifras de la derecha fuera de la tarjeta. */
+.row > div, .row b, .row small { min-width: 0; overflow-wrap: anywhere; }
+
 .row small.hint { display: block; margin-top: 2px; }
 .row .meta {
   margin-left: auto;
@@ -658,7 +663,7 @@ input[type="range"] { width: 100%; accent-color: var(--ink); }
   left: 0; right: 0; bottom: 0;
   z-index: 80;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: start;
   gap: 0;
   height: var(--nav-h);
@@ -819,8 +824,8 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
 }
 .sheet-card h3 { margin: 0 0 6px; font-size: 21px; font-weight: 660; letter-spacing: -0.03em; }
 .sheet-hint { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
-.sheet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0 4px; }
-.sheet-wide { grid-template-columns: 1fr; }
+.sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 8px 0 4px; }
+.sheet-wide { grid-template-columns: minmax(0, 1fr); }
 .sheet-grid button {
   display: flex;
   flex-direction: column;
@@ -1010,7 +1015,7 @@ body.examode .att { display: none !important; }
 .live-foot b { color: var(--ink); font-weight: 620; }
 .live-card .hero-actions { margin-top: 16px; }
 
-.bento { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.bento { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .bento-card {
   display: flex;
   flex-direction: column;
@@ -1041,7 +1046,7 @@ body.examode .att { display: none !important; }
 .bento-card .lbl { margin-top: 3px; font-size: 11.5px; font-weight: 580; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .bento-card > div:last-child { margin-top: auto; }
 
-.week-pills { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.week-pills { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .week-pill {
   display: flex;
   flex-direction: column;
@@ -1420,7 +1425,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .subject-card.is-new { border-style: dashed; }
 .subject-card.is-new .subj-code { background: var(--surface-2); box-shadow: none; color: var(--muted); font-size: 20px; }
 .subject-card.is-new .subj-name { color: var(--ink-2); }
-.mini-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mini-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .mini-stats > div {
   padding: 12px 8px;
   border-radius: 16px;
@@ -1463,12 +1468,12 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .save-warn + .check { margin-top: 10px; }
 
 /* ========================================================= 26. Progreso */
-.review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .review-item { padding: 15px; }
 .review-item .n { font-size: 23px; font-weight: 680; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
 .review-item .l { margin-top: 2px; font-size: 11.5px; color: var(--muted); font-weight: 520; }
 .review-item .bar { margin-top: 10px; }
-.heat { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.heat { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
 .heat i { display: block; aspect-ratio: 1 / 1; border-radius: 5px; background: var(--bg-2); }
 .heat i[data-v="1"] { background: color-mix(in srgb, var(--green) 26%, transparent); }
 .heat i[data-v="2"] { background: color-mix(in srgb, var(--green) 46%, transparent); }
@@ -1504,7 +1509,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .radar-empty p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
 
 /* ============================================================ 27. Logros */
-.ach-hero { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; }
+.ach-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; }
 .ach-lvl {
   width: 74px; height: 74px;
   display: grid; place-items: center;
@@ -1515,7 +1520,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
   font-weight: 680;
   letter-spacing: -0.04em;
 }
-.ach-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.ach-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .ach-card { display: flex; align-items: flex-start; gap: 12px; padding: 13px 14px; }
 .ach-card.lock { opacity: .44; }
 .ach-ico {
@@ -1535,7 +1540,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .xp-log b { color: var(--ink); font-weight: 620; font-variant-numeric: tabular-nums; }
 
 /* ========================================================== 28. Herramientas */
-.tools-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tools-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .tool-card {
   display: flex;
   flex-direction: column;
@@ -1564,7 +1569,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .tool-back { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--muted); font-size: 13.5px; font-weight: 560; }
 .tool-out { display: flex; flex-direction: column; }
 .tool-out .info-row:first-child { border-top: 0; }
-.chmod-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.chmod-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .chmod-col .k { margin-bottom: 8px; }
 .chmod-bits { display: flex; gap: 8px; }
 .chmod-bit {
@@ -1587,7 +1592,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .port-list { display: flex; flex-direction: column; }
 
 /* ==================================================== 29. Agenda y asistente */
-.week-agenda { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.week-agenda { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .wa-day { padding: 14px; }
 .wa-day.today { border-color: var(--line-2); }
 .wa-day.off { opacity: .62; }
@@ -1644,7 +1649,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 }
 .ico-picks button.is-on { border-color: var(--invert); box-shadow: inset 0 0 0 1px var(--invert); }
 .ico-picks button img { width: 28px; height: 28px; border-radius: 8px; object-fit: cover; }
-.ava-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.ava-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .ava-ph {
   position: relative;
   aspect-ratio: 1 / 1;
@@ -1683,7 +1688,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 }
 
 /* =============================================== 31. Widgets del escritorio */
-.wid-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wid-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .wid-pin {
   display: flex;
   flex-direction: column;
@@ -1752,6 +1757,16 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .today-row.is-live .n { font-weight: 640; }
 .demo-banner .hint { margin: 4px 0 0; }
 .course-soon .v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* En un móvil estrecho, una tarjeta con texto y cifras no cabe a media anchura:
+   las rejillas de contenido pasan a una sola columna (las de cifras siguen a dos). */
+@media (max-width: 460px) {
+  .stack-phone, .review-grid, .tools-grid, .sheet-grid { grid-template-columns: minmax(0, 1fr); }
+}
+/* Etiqueta dentro de una fila (el módulo de un término del glosario): va debajo del
+   texto. Antes era una columna a la derecha que se comía la definición (55 px de ancho). */
+.row-tag { display: block; margin-top: 4px; color: var(--muted); font-size: 11.5px; font-weight: 560; overflow-wrap: anywhere; }
+/* Los botones de fila, compactos: el texto de la ficha manda */
+.row > .btn-sm { padding-inline: 10px; }
 @media (max-width: 380px) {
   .course-soon { flex-direction: column; }
   .week-pill { padding: 8px 0; }
@@ -1966,6 +1981,9 @@ button.row { width: 100%; text-align: left; }
 /* — Cabeceras de vista con herramientas a la derecha — */
 .sec-tools { display: flex; align-items: center; gap: 6px; }
 .chips-row { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 0; }
+/* Un chip largo (una fecha en palabras, un aviso del calendario) se parte dentro de su
+   píldora antes que salirse de la tarjeta: en un móvil de 360 px entraba a medias. */
+.chips-row .chip { flex: 0 1 auto; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
 .chip.is-quiet {
   background: var(--surface);
   border-color: var(--card-bd, var(--line));

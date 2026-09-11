@@ -334,8 +334,8 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     const list = st().glossary || [];
     return `<div class="card">
       <div class="card-head"><h3>Glosario técnico</h3><button class="btn btn-sm btn-primary" data-action="gloss-add">Añadir</button></div>
-      ${list.map((g) => `<div class="row"><div style="flex:1"><b>${esc(g.term)}</b><div class="muted">${esc(g.def)}</div></div>
-        <small>${esc(subjectName(g.subjectId))}</small>
+      ${list.map((g) => `<div class="row"><div style="flex:1"><b>${esc(g.term)}</b><div class="muted">${esc(g.def)}</div>
+          ${g.subjectId ? `<small class="row-tag">${esc(subjectName(g.subjectId))}</small>` : ""}</div>
         <button class="btn btn-sm" data-action="gloss-del" data-id="${g.id}">×</button></div>`).join("") || "<div class='empty'>DHCP, GPO, VLAN…</div>"}
     </div>`;
   }
