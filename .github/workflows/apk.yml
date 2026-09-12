@@ -127,6 +127,8 @@ jobs:
 
           - Versión de la web dentro del APK: VERSION_APP · VERSION_WIDGETS widgets ·
             VERSION_MEDIA.
+          - Funciones nativas comprobadas dentro del APK: VERSION_PLUGINS plugins (avisos
+            programados, guardar archivos y hoja de compartir de Android).
           - Tamaño: VERSION_MB MB · SHA-256 del archivo:
             `VERSION_SHA`
           - Firmado con `VERSION_DN`
@@ -146,6 +148,7 @@ jobs:
             -e "s|VERSION_APP|${{ steps.comprobar.outputs.app }}|" \
             -e "s|VERSION_WIDGETS|${{ steps.comprobar.outputs.widgets }}|" \
             -e "s|VERSION_MEDIA|media.js: ${{ steps.comprobar.outputs.media }}|" \
+            -e "s|VERSION_PLUGINS|${{ steps.comprobar.outputs.plugins }}|" \
             -e "s|VERSION_MB|${{ steps.comprobar.outputs.mb }}|" \
             -e "s|VERSION_SHA|${{ steps.comprobar.outputs.sha }}|" \
             -e "s|VERSION_DN|${{ steps.comprobar.outputs.firma_dn }}|" \
