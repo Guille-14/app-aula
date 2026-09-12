@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.2";
+  const APP_VERSION = "v67.3";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -423,10 +423,10 @@
   // Qué toca cada día, tramo a tramo (null = libre). Lunes a viernes.
   const OFFICIAL_PLAN = [
     ["seg", "seg", "ipe", "sor", "sor", "ser", "ser"],        // Lunes
-    ["ipe", "dig", "seg", "seg", "seg", "web", null],         // Martes
-    ["pro", "pro", "opt", "opt", "opt", "sos", null],         // Miércoles
-    ["sor", "sor", "web", "web", "web", "ser", null],         // Jueves
-    ["tut", "ipe", "ser", "ser", "ser", "sor", null],         // Viernes
+    ["ipe", "dig", "seg", "seg", "opt", "web", null],         // Martes
+    ["pro", "pro", "opt", "opt", "ser", "sos", null],         // Miércoles
+    ["sor", "sor", "sor", "web", "web", "ser", null],         // Jueves
+    ["tut", "ipe", "ser", "ser", "sor", "sor", null],         // Viernes
   ];
   // Calendario escolar 2026-2027 (Generalitat / Ayuntamiento de Villena)
   const COURSE = {
@@ -437,7 +437,7 @@
   const TIMETABLE_ID = "2smr-2026-2027";
   // El centro publicó el horario definitivo (clases de 15:10 a 22:15) con algún cambio de
   // módulo respecto al primer documento. Este sello avisa de que hay que actualizarlo.
-  const PLAN_VERSION = 2;
+  const PLAN_VERSION = 3;
   // Horas del primer documento: sirven para reconocer un horario antiguo del centro y no
   // confundirlo con clases puestas a mano.
   const OFFICIAL_SLOTS_V1 = {

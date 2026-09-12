@@ -592,13 +592,14 @@ async function testSinRed() {
     // El plan, tramo a tramo, tal y como está en la hoja del centro
     const plan = A.OFFICIAL_PLAN.map((dia) => dia.map((k) => k || "—").join(","));
     check(plan[0] === "seg,seg,ipe,sor,sor,ser,ser", "centro: lunes seg·seg·ipe·sor·sor·ser·ser");
-    check(plan[2] === "pro,pro,opt,opt,opt,sos,—", "centro: miércoles pro·pro·opt·opt·opt·sos");
-    check(plan[3] === "sor,sor,web,web,web,ser,—", "centro: jueves sor·sor·web·web·web·ser");
-    check(plan[4] === "tut,ipe,ser,ser,ser,sor,—", "centro: viernes tut·ipe·ser·ser·ser·sor");
+    check(plan[1] === "ipe,dig,seg,seg,opt,web,—", "centro: martes ipe·dig·seg·seg·opt·web");
+    check(plan[2] === "pro,pro,opt,opt,ser,sos,—", "centro: miércoles pro·pro·opt·opt·ser·sos");
+    check(plan[3] === "sor,sor,sor,web,web,ser,—", "centro: jueves sor·sor·sor·web·web·ser");
+    check(plan[4] === "tut,ipe,ser,ser,sor,sor,—", "centro: viernes tut·ipe·ser·ser·sor·sor");
     // Cada módulo, una sola asignatura (sin duplicados raros)
     const horas = {};
     A.OFFICIAL_PLAN.flat().filter(Boolean).forEach((k) => { horas[k] = (horas[k] || 0) + 1; });
-    check(horas.seg === 5 && horas.sor === 5 && horas.ser === 6 && horas.web === 4 && horas.ipe === 3,
+    check(horas.seg === 4 && horas.sor === 7 && horas.ser === 6 && horas.web === 3 && horas.ipe === 3 && horas.opt === 3,
       "centro: las horas semanales de cada módulo cuadran con el documento (" + JSON.stringify(horas) + ")");
   }
   check(A.state.subjects.some((s) => s.name === "Servicios en red" && s.room === "AULA 3"), "centro: los módulos llevan su aula habitual");
@@ -1658,10 +1659,25 @@ async function testAuditoria() {
     const lunes = A.state.events.filter((e) => e.day === 0).sort((a, b) => a.start.localeCompare(b.start));
     check(lunes[0].start === "15:10" && A.subjectName(lunes[2].subjectId) === "Itinerario personal para la empleabilidad II",
       "actualización: el lunes entra a las 15:10 y a las 17:00 tiene Itinerario personal");
-    check(A.state.settings.planVersion === 2, "actualización: queda anotado que el horario ya está al día");
+    check(A.state.settings.planVersion === A.PLAN_VERSION, "actualización: queda anotado que el horario ya está al día");
     check(A.state.events.some((e) => e.id === apuntada), "actualización: la clase con la falta apuntada conserva su id");
     check(A.state.attendance.length === 1 && A.state.events.some((e) => e.id === A.state.attendance[0].eventId),
       "actualización: así que la falta sigue apuntando a una clase que existe");
+    // Quien ya se actualizó con la v67.2 (sello 2 pero con las casillas mal) se corrige igual
+    const conSello2 = JSON.parse(JSON.stringify(viejo));
+    conSello2.settings.planVersion = 2;
+    conSello2.events = conSello2.events.map((e) => {
+      const t = { "15:15": ["15:10", "16:05"], "16:05": ["16:05", "17:00"], "17:00": ["17:00", "17:55"], "18:15": ["18:15", "19:10"], "19:10": ["19:10", "20:05"], "20:05": ["20:05", "21:00"], "21:00": ["21:20", "22:15"] }[e.start];
+      return t ? Object.assign({}, e, { start: t[0], end: t[1] }) : e;
+    });
+    const envV2 = boot({ seed: JSON.stringify(conSello2) });
+    ready(envV2.A);
+    const martes = envV2.A.state.events.filter((e) => e.day === 1).sort((a, b) => a.start.localeCompare(b.start));
+    check(envV2.A.state.settings.planVersion === envV2.A.PLAN_VERSION && envV2.A.subjectName(martes[4].subjectId) === "Módulo optativo",
+      "actualización: un horario ya sellado con el plan anterior se vuelve a cuadrar (martes con optativo a las 19:10)");
+    check(envV2.A.state.events.filter((e) => e.day === 3).every((e) => e.start !== "21:20"),
+      "actualización: y el jueves se queda sin la última hora");
+
     // Y si el horario tiene una clase puesta a mano, no se toca nada
     const env2 = boot({ seed: JSON.stringify(Object.assign({}, viejo, { events: viejo.events.concat([{ id: "mia", subjectId: subjectId("seg"), day: 5, start: "11:11", end: "12:00", room: "", type: "clase" }]) })) });
     ready(env2.A);

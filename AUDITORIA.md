@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v67.3:** el horario del centro cuadro a cuadro (31 clases, Sistemas 7 h y el jueves sin última hora) (440 pruebas ✓).
 **Ronda v67.2:** el horario del centro definitivo (15:10–22:15), sin «huecos libres» inventados, la foto de perfil que no cambiaba y los botones de Ajustes flotando (437 pruebas ✓).
 **Ronda v67.1:** la hoja «Más» vuelve a verse pequeña, como antes del rediseño (401 pruebas ✓).
 **Ronda v67:** el bloque de estudio avisa con la app cerrada, «Compartir horario» en texto y recordatorio de copia de seguridad (394 pruebas ✓).
@@ -893,6 +894,38 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 
 ---
 
+## Ronda v67.3 · El horario, casilla a casilla
+
+La v67.2 se publicó con el horario leído de un vistazo y **cuatro casillas equivocadas**: el martes
+tenía tres horas de Seguridad (son dos, y luego Optativo), el miércoles tres de Optativo (son dos, y
+a las 19:10 toca Servicios), el jueves la tanda de Aplicaciones web estaba una hora antes de sitio
+(el día empieza con **tres** horas de Sistemas operativos) y el viernes acababa con Sistemas a las
+20:05 cuando en realidad ocupa las **dos últimas** horas (19:10–21:00).
+
+Releyendo las dos hojas del centro con calma —los recreos parten la tabla en bloques de dos o tres
+horas, y cada módulo ocupa las casillas contiguas que marca la hoja— el reparto definitivo es:
+
+| Tramo | Lunes | Martes | Miércoles | Jueves | Viernes |
+|---|---|---|---|---|---|
+| 1.º (15:10) | Seguridad | Itinerario | Proyecto | Sistemas op. | Tutoría |
+| 2.º (16:05) | Seguridad | Digitalización | Proyecto | Sistemas op. | Itinerario |
+| 3.º (17:00) | Itinerario | Seguridad | Optativo | Sistemas op. | Servicios |
+| 4.º (18:15) | Sistemas op. | Seguridad | Optativo | Aplicaciones web | Servicios |
+| 5.º (19:10) | Sistemas op. | Optativo | Servicios | Aplicaciones web | Sistemas op. |
+| 6.º (20:05) | Servicios | Aplicaciones web | Sostenibilidad | Servicios | Sistemas op. |
+| 7.º (21:20) | Servicios | — | — | — | — |
+
+Con esto, las horas semanales son 31 y cuadran con la hoja: Sistemas 7, Servicios 6, Seguridad 4,
+Itinerario 3, Optativo 3, Aplicaciones web 3, Proyecto 2, Digitalización 1, Sostenibilidad 1 y
+Tutoría 1.
+
+El sello del plan sube a 3, así que quien ya tenga el horario de la v67.2 **se le vuelve a cuadrar
+solo** al abrir la app (mismo mecanismo: conserva el id de cada clase, y con él la asistencia y las
+excepciones).
+
+**Pruebas: 437 → 440 ✓** (el reparto día a día, las horas de cada módulo y la actualización desde el
+plan sellado de la v67.2).
+
 ## Ronda v67.2 · El horario del centro, de verdad
 
 El usuario mandó las dos hojas del centro (temporal de septiembre/junio y curso completo) y pidió:
@@ -914,17 +947,17 @@ El reparto de módulos, tramo a tramo, según la hoja (L = lunes … V = viernes
 |---|---|---|---|---|---|
 | 1.º | Seguridad | Itinerario | Proyecto | Sist. operativos | Tutoría |
 | 2.º | Seguridad | Digitalización | Proyecto | Sist. operativos | Itinerario |
-| 3.º | **Itinerario** | Seguridad | Optativo | **Aplic. web** | Servicios |
+| 3.º | **Itinerario** | Seguridad | Optativo | Sist. operativos | Servicios |
 | 4.º | Sist. operativos | Seguridad | Optativo | Aplic. web | Servicios |
-| 5.º | Sist. operativos | **Seguridad** | Optativo | Aplic. web | Servicios |
+| 5.º | Sist. operativos | Optativo | Servicios | Aplic. web | Sist. operativos |
 | 6.º | Servicios | Aplic. web | Sostenibilidad | Servicios | Sist. operativos |
 | 7.º | Servicios | — | — | — | — |
 
-Los cambios respecto a lo que había: el lunes a las 17:00 toca **Itinerario personal** (no Seguridad),
-el martes tiene **tres** horas seguidas de Seguridad, el miércoles **tres** de Optativo, el jueves la
-tanda es de **Aplicaciones web** (y acaba a las 21:00, sin última hora) y el viernes cierra con
-**Sistemas operativos**. Las horas semanales cuadran con la hoja: Servicios 6, Seguridad 5, Sistemas 5,
-Aplicaciones web 4, Itinerario 3, Proyecto 2, Optativo 3 y una hora de cada uno de los demás.
+Los cambios respecto a lo que había: el lunes a las 17:00 toca **Itinerario personal** (no Seguridad)
+y el jueves el día acaba a las 21:00 (sin la última hora). Las horas semanales cuadran con la hoja:
+Sistemas 7, Servicios 6, Seguridad 4, Itinerario 3, Optativo 3, Aplicaciones web 3, Proyecto 2 y una
+hora de cada uno de los demás (31 clases). *(La tabla se corrigió en la v67.3: la primera lectura de
+las hojas, en la v67.2, metió cuatro casillas mal; ver la ronda siguiente.)*
 
 ### 2. A quien ya tuviera el horario viejo se le pone al día solo
 Nadie tiene que volver a cargar nada. Al abrir la app, si el horario guardado es el del centro (se
