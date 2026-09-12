@@ -2103,6 +2103,10 @@ async function testOllama() {
   A.state.settings.ollamaUrl = "http://192.168.1.10:11434";
   A.state.settings.ollamaModel = "llama3.2";
 
+  // El registro del chat se coloca en el último mensaje al pintarse (la respuesta aparecía por
+  // debajo del scroll y parecía que el asistente no había contestado)
+  check(typeof S.montarChat === "function", "chat: al pintar, el registro baja al mensaje más nuevo");
+
   // 2. Nadie contesta: Ollama escuchando solo en localhost, cortafuegos o Wi-Fi distinta
   env.window.fetch = () => Promise.reject(new TypeError("Failed to fetch"));
   let diag = await S.diagnosticoOllama();

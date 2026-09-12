@@ -361,6 +361,12 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     }
   }
 
+  // Al pintar la vista, el registro baja solo hasta el último mensaje
+  function montarChat() {
+    const caja = document.getElementById("chat-log");
+    if (caja) caja.scrollTop = caja.scrollHeight;
+  }
+
   // Pinta el resultado del diagnóstico dentro de la hoja de configuración
   function pintarDiagOllama(diag) {
     st()._ollamaOk = !!diag.ok && !diag.aviso;   // lo que dirá el badge del chat
@@ -995,7 +1001,7 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
   window.AulaStudio = {
     agenda, chatbot, habits, glossary,
     // Diagnóstico de Ollama (lo usan las pruebas y el propio modal)
-    diagnosticoOllama, ollamaBase, ollamaModelo, ollamaCfgHTML,
+    diagnosticoOllama, ollamaBase, ollamaModelo, ollamaCfgHTML, montarChat,
     examode, quickreview, admin, click, todayStudyHint, hoyISO, dayInfo, esLectivo, bloquesDe,
     // Herramientas que también viven en la sección de utilidades (buscador global)
     toolCatalog() {

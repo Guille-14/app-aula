@@ -8,7 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
-**Ronda v67.4.2:** «No funciona la IA de ollama»: el APK no podía salir por `http://` (contenido mixto y tráfico en claro), y cualquier fallo se contaba igual; ahora cada fallo se distingue y se explica cómo arreglarlo (492 pruebas ✓).
+**Ronda v67.4.2:** «No funciona la IA de ollama»: el APK no podía salir por `http://` (contenido mixto y tráfico en claro), y cualquier fallo se contaba igual; ahora cada fallo se distingue y se explica cómo arreglarlo (493 pruebas ✓).
 **Ronda v67.4 (y v67.4.1):** la auditoría de interfaz del usuario: la barra de abajo vuelve y no se queda escondida, el calendario, la semana, los exámenes y las notas dejan de mentir (476 pruebas ✓).
 **Ronda v67.3:** el horario del centro cuadro a cuadro (31 clases, Sistemas 7 h y el jueves sin última hora) (440 pruebas ✓).
 **Ronda v67.2:** el horario del centro definitivo (15:10–22:15), sin «huecos libres» inventados, la foto de perfil que no cambiaba y los botones de Ajustes flotando (437 pruebas ✓).
@@ -953,7 +953,14 @@ comandos exactos por sistema, recuerda que el móvil tiene que estar en la misma
 la conexión, lista los modelos que tienes en el ordenador para elegir uno **de un toque** (sin
 escribir). «Probar conexión» enseña el resultado ahí mismo y abre la guía si algo falla.
 
-### 5. Un fallo de arranque que salió por el camino
+### 5. La respuesta se quedaba debajo del scroll
+
+Al preguntar, el registro del chat (`max-height: 380px`, con su propio scroll) se quedaba arriba:
+la respuesta aparecía por debajo y, en un móvil, eso se lee como «no ha contestado». Ahora, cada
+vez que se pinta la vista del chat (`AulaStudio.montarChat()` desde `render()`), el registro baja
+solo hasta el último mensaje.
+
+### 6. Un fallo de arranque que salió por el camino
 
 `app.js` pinta la vista antes de que `studio.js` (el módulo del chat, la agenda, las herramientas…)
 esté cargado. Al abrir la app directamente en una de esas vistas salía «Módulo no cargado» y se
@@ -962,15 +969,16 @@ navegador: el chat aparece siempre, incluso entrando directo por el enlace).
 
 ### Pruebas
 
-**476 → 492 ✓** (16 comprobaciones nuevas: los siete diagnósticos, el reintento por el puente
+**476 → 493 ✓** (17 comprobaciones nuevas: los siete diagnósticos, el reintento por el puente
 nativo, el motivo en el chat, el badge, la guía en la hoja, elegir modelo de un toque y las tres
-comprobaciones del APK). `npm run test:min` pasa las mismas 492 sobre el código minificado —que es
+comprobaciones del APK, más el registro que baja solo). `npm run test:min` pasa las mismas 493 sobre el código minificado —que es
 el que va dentro del APK—; para eso el minificador ahora copia también `capacitor.config.json`.
 
 Además, una batería nueva en un navegador de verdad contra un **Ollama de mentira** local
 (`/tmp/ollama-falso.mjs`): configurar la dirección, «Probar conexión» → «Conectado con tu Ollama»,
 preguntar y recibir la respuesta **del modelo** (no del motor local), apagar el servidor y ver el
-diagnóstico completo con el badge en rojo. 9 de 9 y cero errores de consola.
+diagnóstico completo con el badge en rojo y el mensaje nuevo a la vista. 10 de 10 y cero errores
+de consola.
 
 ---
 

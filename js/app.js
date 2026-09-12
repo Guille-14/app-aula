@@ -1352,6 +1352,11 @@
       cuerpo = errorViewHTML(view, err);
     }
     $("#view").innerHTML = bannersHTML() + cuerpo;
+    // El chat se queda mirando al mensaje más nuevo: antes, la respuesta aparecía por debajo
+    // del scroll y parecía que no había contestado.
+    if (view === "chatbot" && window.AulaStudio && typeof window.AulaStudio.montarChat === "function") {
+      try { window.AulaStudio.montarChat(); } catch {}
+    }
     marcarScroll();
     if (view === "stats") drawStats();
     if (view === "timer") updateTimerUI();
