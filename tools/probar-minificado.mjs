@@ -17,7 +17,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WEB = ["index.html", "manifest.webmanifest", "sw.js", "js", "css", "assets"];
 // capacitor.config.json va aquí a propósito: las pruebas comprueban que el APK se empaqueta con
 // permiso para hablar por http:// con el Ollama de casa, y eso tiene que valer también al minificar.
-const COPIAR = ["tests", "apk-overlay", "capacitor.config.json", "package.json", "package-lock.json"];
+// apk-overlay y .github tampoco son «web»: son del repositorio, y las pruebas también los leen
+// (el comprobador del APK vigila los plugins, y el flujo de la release cuenta lo que lleva dentro).
+const COPIAR = ["tests", "apk-overlay", ".github", "capacitor.config.json", "package.json", "package-lock.json"];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aula-min-"));
 try {

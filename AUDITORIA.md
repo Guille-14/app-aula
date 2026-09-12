@@ -9,6 +9,7 @@
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
 **Ronda v67.4.2:** «No funciona la IA de ollama»: el APK no podía salir por `http://` (contenido mixto y tráfico en claro), y cualquier fallo se contaba igual; ahora cada fallo se distingue y se explica cómo arreglarlo (493 pruebas ✓).
+**Ronda v67.7:** el contraste del modo oscuro se mide y se sube (las tarjetas ya no se funden con el negro de la OLED), los campos del esquema tienen forma de caja, la vibración la hace el motor háptico de Android, las entregas de la Agenda se deslizan con el dedo y el simulador «¿qué nota necesito?» dice lo que hace falta sacar en lo que queda —o que ya no llegas, con el máximo real— (665 pruebas ✓).
 **Ronda v67.6:** la Agenda se organiza como la del instituto —cada módulo con sus exámenes y entregas—, los exámenes van de una hora a otra y las entregas tienen plazo (se abre → se cierra) y estado (pendiente · entregado · corregido), que se cambia desde la propia fila (582 pruebas ✓).
 **Ronda v67.5:** la nota de cada módulo se calcula como la calcula tu profe — componentes con peso, notas «sobre X» y reglas que pueden suspender (aprobar todos los RA) — y Exámenes pasa a ser una Agenda con trabajos y entregas que llenan el componente solos (548 pruebas ✓).
 **Ronda v67.4 (y v67.4.1):** la auditoría de interfaz del usuario: la barra de abajo vuelve y no se queda escondida, el calendario, la semana, los exámenes y las notas dejan de mentir (476 pruebas ✓).
@@ -895,6 +896,120 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+---
+
+## Ronda v67.7 · Contraste en oscuro, vibración de verdad, deslizar entregas y «¿qué nota necesito?»
+
+Cinco cosas que se notan en la mano: lo que antes se fundía con el fondo ahora se recorta, el
+esquema se puede escribir sin adivinar dónde, la app vibra como vibran las apps, la Agenda se
+maneja con el dedo y la pregunta de siempre («¿cuánto necesito sacar?») la responde la app.
+
+### 1. El contraste en modo oscuro
+
+El problema no era de gusto, era de medida. En una pantalla OLED el negro del fondo está
+**apagado de verdad**, y con la tarjeta en `#101012` y los bordes al **7,5 %** de blanco, las
+tarjetas se fundían con el fondo: no se veía dónde acababa una lista y empezaba la siguiente.
+
+Dentro de `html[data-theme="dark"]` (y solo ahí; el tema claro no se ha tocado):
+
+| token | antes | ahora |
+|---|---|---|
+| `--line` | `rgba(255,255,255,.075)` | `rgba(255,255,255,.12)` |
+| `--line-2` | `rgba(255,255,255,.16)` | `rgba(255,255,255,.2)` |
+| `--card-bd` | `rgba(255,255,255,.075)` | `rgba(255,255,255,.10)` |
+| `--card-in` | `inset 0 1px 0 rgba(255,255,255,.04)` | `inset 0 1px 0 rgba(255,255,255,.055)` |
+| `--surface` | `#101012` | `#131317` |
+| `--surface-2` / `--chip` | `#17171a` | `#1b1b20` |
+
+El fondo sigue siendo **negro puro** (OLED): lo que sube es la tarjeta, no el fondo. Medido con la
+luminancia relativa de la WCAG, la tarjeta pasa de un contraste de **1,1049** a **1,1332** contra el
+negro, y la superficie de segundo nivel de **1,1739** a **1,2242**. Las pruebas leen esos números del
+CSS, no el texto: el minificador quita las comillas del selector y reescribe los colores, así que
+cualquier comparación de cadena pasaría en casa y se caería dentro del APK.
+
+### 2. Los campos del esquema, con forma de caja
+
+El nombre de cada componente era **una raya de puntos debajo del texto**: no parecía un campo y la
+gente tocaba sin saber que ahí se escribía. Ahora `.eval-row-top input` tiene fondo
+(`--surface-2`), borde de 1 px, esquinas de 10 px y relleno de 9×12 px, con **40 px de alto**
+mínimo (se puede pulsar con el dedo). Al enfocarlo se ilumina **la caja entera**, no solo la raya.
+
+### 3. Vibración nativa (haptics)
+
+`@capacitor/haptics@6` entra en el APK y la vibración la hace el **motor háptico de Android** (un
+golpe seco), no el zumbido del navegador. Fuera del APK cae a `navigator.vibrate` sin romper nada, y
+si no hay ninguno de los dos, no pasa nada: la vibración nunca puede romper la acción que la provoca.
+El interruptor de Ajustes manda siempre.
+
+Un helper, `vibrar(tipo)`, con tres intensidades para que cada gesto se note distinto sin mirar:
+
+* **ligero** (`LIGHT`) al cambiar de pestaña en la barra de abajo,
+* **medio** (`MEDIUM`) al marcar una entrega como entregada,
+* **fuerte** (`HEAVY`) al terminar un bloque de estudio (lo que ya hacía `buzz()`).
+
+El comprobador del APK (`apk-overlay/comprobar-apk.py`) vigila ahora el plugin `HapticsPlugin` **y**
+el permiso `VIBRATE`: sin el permiso el plugin está dentro pero no vibra, y es un fallo que no se ve.
+
+### 4. Deslizar las filas de la Agenda
+
+Como en el correo del móvil: arrastras la fila y debajo aparece, ya escrito, lo que va a pasar.
+
+* **a la derecha** → la entrega pasa a **Entregado**, con una franja verde y su ✓ que se descorre
+  debajo de la fila;
+* **a la izquierda** → se abre la prueba para **editarla**, con franja azul y ✎.
+
+Tres detalles que son los que hacen que se sienta bien y no un estorbo:
+
+1. **Solo cuentan los gestos claramente horizontales** (`|dx| ≥ 10` y `|dx| ≥ 1,4·|dy|`). Si el dedo
+   va hacia abajo, es scroll y se deja correr la página.
+2. **Después de deslizar, el clic siguiente no cuenta.** Al levantar el dedo el navegador suelta un
+   clic sobre la fila, y sin eso la ficha se abría justo cuando querías marcarla como entregada. Se
+   traga en la fase de captura durante 800 ms.
+3. La franja **se va viendo según lo que arrastras** y al pasar el umbral se queda fija: se ve
+   cuándo el gesto ya vale. Umbral **72 px**, tope **108 px**.
+
+A la derecha solo se puede deslizar una **entrega pendiente** (un examen no se entrega). El consejo
+(«Desliza una entrega a la derecha…») sale **una sola vez** y se apunta en
+`state.progress.flags.swipeUsado`.
+
+### 5. El simulador «¿qué nota necesito?»
+
+La pregunta de la víspera del examen, respondida con **todos** los componentes que tienen peso,
+también los que aún no tienen nota — que es justo lo que la media de «lo que llevas» no hace,
+porque esa responde a otra pregunta:
+
+```
+necesaria = (objetivo · Σpesos − Σ(peso · nota)) / Σpesos de lo pendiente
+```
+
+Todo en la escala del módulo, así que un componente «sobre 4» se convierte antes de entrar. Devuelve
+también `actual`, `maxFinal`, `posible`, `yaEsta`, `pendientes` y `minimoPendiente`.
+
+La hoja tiene tres bloques —**Aprobado 5**, **Notable 7**, **Sobresaliente 9**— y cada uno dice lo
+que toca: «**5,50** en «Examen de teoría»», «**Ya lo tienes** (aunque saques un 0 en lo que queda)» o
+«**Ni con un 10** — lo máximo que puedes acabar es 6,80». Esa última es la mitad útil de la
+respuesta: cuando ya no llegas, decir «necesitas un 10,50» no sirve de nada. Además avisa si algún
+componente pide un mínimo y si hay RA sin aprobar, que suspenden aunque la media dé.
+
+Caso de control (y prueba): con **6 en prácticas (20 %)**, **4 en el práctico (40 %)** y la **teoría
+(40 %) sin nota**, para el 5 pide **5,50 exactos** y para el 7 avisa de que el máximo es **6,80**.
+Botón `data-action="eval-simular"` en **Calificaciones** y en la **ficha del módulo**, junto a
+«Meter notas».
+
+### 6. Dos fallos que salieron al comprobarlo de verdad
+
+* **Un `//` dentro del CSS.** `//` no es un comentario en CSS: el navegador descarta todo lo que
+  viene detrás hasta recuperarse, y se habría llevado por delante la hoja entera del deslizamiento
+  **dentro del APK**, que es donde menos se ve. Ahora es un comentario `/* … */` en su propia línea.
+* **`tools/probar-minificado.mjs` no copiaba `.github`.** Las pruebas que leen el flujo de la release
+  reventaban con un `ENOENT` sobre la copia minificada. Se copia, igual que ya se copiaba
+  `apk-overlay`.
+
+**Pruebas: 582 → 665 ✓** (83 nuevas), y las mismas pasan sobre el código minificado que va dentro del
+APK. Comprobado con mutaciones: si se devuelve el borde a 0,075, la superficie a `#101012`, el campo
+a la raya de puntos, la vibración media a `LIGHT`, el divisor del simulador al peso total o el umbral
+del deslizamiento a 90 px, las pruebas fallan diciendo el número que han leído.
 
 ---
 

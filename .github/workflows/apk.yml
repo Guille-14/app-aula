@@ -128,7 +128,9 @@ jobs:
           - Versión de la web dentro del APK: VERSION_APP · VERSION_WIDGETS widgets ·
             VERSION_MEDIA.
           - Funciones nativas comprobadas dentro del APK: VERSION_PLUGINS plugins (avisos
-            programados, guardar archivos y hoja de compartir de Android).
+            programados, guardar archivos, hoja de compartir de Android y **vibración** con el
+            motor háptico: un roce al cambiar de pestaña, un toque al marcar una entrega como
+            entregada y un golpe fuerte al terminar el bloque de estudio).
           - Tamaño: VERSION_MB MB · SHA-256 del archivo:
             `VERSION_SHA`
           - Firmado con `VERSION_DN`

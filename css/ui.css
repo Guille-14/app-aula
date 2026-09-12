@@ -47,17 +47,22 @@ html[data-theme="dark"] {
   --bg: #000000;
   --bg-2: #131316;
   --paper: #0d0d0f;
-  --surface: #101012;
-  --surface-2: #17171a;
-  --chip: #17171a;
+  /* v67.7: la superficie sube un escalón (#101012 → #131317). En una pantalla OLED el
+     negro del fondo está apagado de verdad, y con la tarjeta tan cerca del negro las
+     tarjetas se fundían con el fondo: no se veía dónde acababa una y empezaba otra. */
+  --surface: #131317;
+  --surface-2: #1b1b20;
+  --chip: #1b1b20;
 
   --ink: #ffffff;
   --ink-2: #e6e6e9;
   --muted: #8e8e94;
   --muted-2: #6b6b70;
 
-  --line: rgba(255, 255, 255, 0.075);
-  --line-2: rgba(255, 255, 255, 0.16);
+  /* v67.7: los bordes se ven. Con 0,075 de blanco sobre negro el pelo desaparecía en cuanto
+     bajaba el brillo o había luz en la habitación, y las listas parecían texto suelto. */
+  --line: rgba(255, 255, 255, 0.12);
+  --line-2: rgba(255, 255, 255, 0.2);
 
   --accent: #ffffff;
   --accent-ink: #000000;
@@ -86,8 +91,10 @@ html[data-theme="dark"] {
 
   --shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 30px 70px rgba(0, 0, 0, 0.7);
-  --card-bd: rgba(255, 255, 255, 0.075);
-  --card-in: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  /* v67.7: el borde de la tarjeta (0,10) y el brillo de arriba (0,055) son los que recortan
+     la tarjeta contra el fondo negro; antes eran casi invisibles. */
+  --card-bd: rgba(255, 255, 255, 0.10);
+  --card-in: inset 0 1px 0 rgba(255, 255, 255, 0.055);
   --card-sh: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 
@@ -2233,7 +2240,56 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 .exam-fila + .exam-fila { border-top: 1px solid var(--line); }
 .exam-fila:hover { background: var(--surface-2); }
 .exam-fila.is-hoy { box-shadow: inset 3px 0 0 var(--red); }
-.exam-fila.is-fuera { opacity: .62; }
+/* v67.7: la fila va dentro de un cajón deslizable, así que el atenuado se aplica a lo que hay
+   DENTRO (antes era a la fila entera). Si se atenuara la fila, se vería la franja de detrás. */
+.exam-fila.is-fuera > * { opacity: .62; }
+
+/* — Agenda: deslizar la fila (v67.7) —
+   El cajón (`.swipe`) es lo que recorta: la fila se mueve dentro y deja ver la franja que hay
+   debajo. La fila lleva su propio fondo opaco, que si no se transparentaría la franja en reposo. */
+.swipe { position: relative; overflow: hidden; }
+.swipe + .swipe { border-top: 1px solid var(--line); }
+.swipe > .exam-fila {
+  position: relative; z-index: 1;
+  background: var(--surface);
+  transition: transform .22s cubic-bezier(.22, .61, .36, 1), background .18s ease;
+}
+/* Mientras arrastras, sin retardo: la fila tiene que ir pegada al dedo */
+.swipe.is-swipe > .exam-fila { transition: background .18s ease; }
+.swipe-fondo {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 700; letter-spacing: .01em;
+  opacity: 0; pointer-events: none;
+}
+.swipe-fondo svg { flex: 0 0 auto; width: 17px; height: 17px; }
+.swipe-fondo.is-der {
+  justify-content: flex-start; padding-left: 17px;
+  background: color-mix(in srgb, var(--green) 24%, var(--surface));
+  color: color-mix(in srgb, var(--green) 88%, var(--ink));
+}
+.swipe-fondo.is-izq {
+  justify-content: flex-end; padding-right: 17px;
+  background: color-mix(in srgb, var(--blue) 24%, var(--surface));
+  color: color-mix(in srgb, var(--blue) 88%, var(--ink));
+}
+.swipe.is-der .swipe-fondo.is-der,
+.swipe.is-izq .swipe-fondo.is-izq { opacity: var(--swipe-p, 0); }
+.swipe.is-listo .swipe-fondo { font-weight: 760; }
+
+/* El consejo de «desliza una entrega», que sale una sola vez */
+.swipe-consejo {
+  display: flex; align-items: flex-start; gap: 9px;
+  margin: 12px 0 0; padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed color-mix(in srgb, var(--blue) 45%, transparent);
+  background: color-mix(in srgb, var(--blue) 10%, transparent);
+  color: var(--ink-2); font-size: 12.5px; line-height: 1.4;
+}
+.swipe-consejo b { color: var(--ink); }
+.swipe-consejo-ico { flex: 0 0 auto; width: 18px; height: 18px; color: var(--blue); margin-top: 1px; }
+.swipe-consejo-ico svg { width: 18px; height: 18px; }
+
 .exam-ico {
   width: 34px; height: 34px;
   display: grid; place-content: center;
@@ -2401,13 +2457,17 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
   background: var(--card, var(--surface)); padding: 10px;
 }
 .eval-row-top { display: flex; align-items: center; gap: 8px; }
+/* v67.7: el nombre del componente es un campo de verdad, con su caja. Antes era solo una
+   raya de puntos debajo del texto y no se entendía que ahí se podía escribir: la gente
+   tocaba y no pasaba nada. Ahora tiene fondo, borde y relleno, como los demás campos. */
 .eval-row-top input {
   flex: 1 1 auto; min-width: 0;
   font: inherit; font-size: 14.5px; font-weight: 620;
-  color: var(--ink); background: transparent; border: 0;
-  border-bottom: 1px dashed var(--line); padding: 4px 2px;
+  color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 12px; min-height: 40px;
 }
-.eval-row-top input:focus { outline: none; border-bottom-color: var(--ink); }
+.eval-row-top input:focus { outline: none; border-color: var(--ink); }
 .eval-x { flex: 0 0 auto; width: 32px; height: 32px; font-size: 15px; line-height: 1; }
 .eval-nums { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; }
 .eval-nums label {
@@ -2460,6 +2520,35 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 }
 .eval-nota-in input:disabled { opacity: .55; }
 .eval-sobre { flex: 0 0 auto; font-size: 13px; color: var(--muted); }
+
+/* ————— Simulador «¿qué nota necesito?» (v67.7) —————
+   Un bloque por meta (Aprobado, Notable, Sobresaliente). El color lo pone la respuesta, no la
+   meta: verde cuando ya lo tienes, rojo cuando ya no llegas, y neutro cuando aún hay partido. */
+.sim-lista { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 4px; }
+.sim-bloque {
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.sim-bloque.is-ok { border-color: color-mix(in srgb, var(--green) 42%, transparent); background: color-mix(in srgb, var(--green) 12%, transparent); }
+.sim-bloque.is-bad { border-color: color-mix(in srgb, var(--red) 42%, transparent); background: color-mix(in srgb, var(--red) 12%, transparent); }
+.sim-bloque.is-warn { border-color: color-mix(in srgb, var(--amber) 45%, transparent); background: color-mix(in srgb, var(--amber) 12%, transparent); }
+.sim-meta {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 5px;
+}
+.sim-meta span {
+  font-size: 11px; font-weight: 640;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+}
+.sim-meta b { margin-left: auto; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sim-dice { margin: 0; font-size: 14px; line-height: 1.42; color: var(--ink-2); }
+.sim-dice b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sim-dice b.is-ok { color: var(--green); }
+.sim-dice b.is-bad { color: var(--red); }
+.sim-aviso { margin: 0 0 6px; font-size: 12.5px; line-height: 1.4; }
+.sim-aviso:last-child { margin-bottom: 0; }
 
 /* Agenda: segundo filtro (exámenes / trabajos) */
 .filters-tipo { margin-top: -2px; }

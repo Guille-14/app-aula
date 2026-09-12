@@ -122,6 +122,9 @@ plugins = {
     "notificaciones programadas": (b"LocalNotificationsPlugin", "POST_NOTIFICATIONS"),
     "guardar y compartir archivos": (b"FilesystemPlugin", None),
     "hoja de compartir de Android": (b"SharePlugin", None),
+    # v67.7: la vibración la hace el motor háptico de Android, y sin el permiso VIBRATE el
+    # plugin está dentro pero no vibra (el fallo no se ve: la app simplemente no hace nada).
+    "vibración": (b"HapticsPlugin", "VIBRATE"),
 }
 
 info("ficheros res/xml con nombre de widget: %d (en release se acortan: es normal)"

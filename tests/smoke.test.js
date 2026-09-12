@@ -43,6 +43,44 @@ const oks = [];
 const fails = [];
 const check = (cond, msg) => (cond ? oks : fails).push(msg);
 
+/* --- v67.7: medir el CSS por NÚMEROS, no por texto ---
+   El minificador quita las comillas del selector (`[data-theme="dark"]` → `[data-theme=dark]`),
+   los espacios tras las comas de `rgba()` y reescribe colores. Cualquier comparación de cadena
+   pasaría sobre el CSS de casa y se caería sobre el que de verdad va dentro del APK — que es el
+   único que importa. Así que se extrae el valor y se compara el número. */
+// El cuerpo de declaraciones de `html[data-theme=…]`, con o sin comillas en el atributo
+const bloqueTema = (css, tema) => {
+  const plano = String(css).replace(/\/\*[\s\S]*?\*\//g, "");
+  const m = new RegExp("html\\[data-theme=[\"']?" + tema + "[\"']?\\]\\s*\\{([\\s\\S]*?)\\}").exec(plano);
+  return m ? m[1] : "";
+};
+// El valor crudo de un token (`--line`, `--surface`…) dentro de ese cuerpo
+const tokenCSS = (bloque, nombre) => {
+  const m = new RegExp("--" + nombre.replace(/[-]/g, "\\-") + "\\s*:\\s*([^;}]+)").exec(String(bloque));
+  return m ? m[1].trim() : "";
+};
+// El alfa de un `rgba(…)`, como número (1 si no lleva canal alfa)
+const alfaDe = (v) => {
+  const m = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/.exec(String(v));
+  return m ? Number(m[4] == null ? 1 : m[4]) : NaN;
+};
+// `#rrggbb` → [r, g, b]. Ojo con los desplazamientos: el grupo de captura ya viene SIN la
+// almohadilla, así que los pares son 0-2, 2-4 y 4-6. (Con 1-3, 3-5, 5-7 `#101012` salía como
+// [1, 1, 2] y las comprobaciones de contraste medían un color inventado.)
+const hexRGB = (v) => {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(v).trim());
+  return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : null;
+};
+// Luminancia relativa y contraste WCAG: así «más contraste» es un número, no una opinión
+const lum = ([r, g, b]) => {
+  const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+const contraste = (a, b) => {
+  const A = lum(a), B = lum(b);
+  return (Math.max(A, B) + 0.05) / (Math.min(A, B) + 0.05);
+};
+
 // ---------------------------------------------------------------- arranque
 function boot(opts = {}) {
   const errors = [];
@@ -2555,6 +2593,365 @@ async function testAgenda() {
   check(env.errors.length === 0, "v67.6: sin errores de consola (" + env.errors.slice(0, 2).join(" · ") + ")");
 }
 
+// --------- 24. v67.7: contraste, campos en caja, vibración, deslizar y «¿qué nota necesito?»
+async function testV677() {
+  const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+
+  /* ————— 1. El contraste en modo oscuro, medido por números —————
+     El problema era de medida, no de gusto: en una OLED el negro del fondo está apagado de
+     verdad y las tarjetas, con la superficie en #101012 y los bordes al 7,5 % de blanco, se
+     fundían con él. Aquí se comprueban los números nuevos y que el contraste sube de verdad. */
+  {
+    const oscuro = bloqueTema(ui, "dark");
+    const claro = bloqueTema(ui, "light");
+    check(!!oscuro && !!claro, "contraste: se encuentran los dos bloques de tema en ui.css");
+
+    // Los alfas de los bordes y del brillo de la tarjeta
+    const aLine = alfaDe(tokenCSS(oscuro, "line"));
+    const aLine2 = alfaDe(tokenCSS(oscuro, "line-2"));
+    const aCardBd = alfaDe(tokenCSS(oscuro, "card-bd"));
+    const aCardIn = alfaDe(tokenCSS(oscuro, "card-in"));
+    check(aLine === 0.12, "contraste: --line del tema oscuro es 0,12 (era 0,075) — leído: " + aLine);
+    check(aLine2 === 0.2, "contraste: --line-2 es 0,2 (era 0,16) — leído: " + aLine2);
+    check(aCardBd === 0.10, "contraste: --card-bd es 0,10 (era 0,075) — leído: " + aCardBd);
+    check(aCardIn === 0.055, "contraste: el brillo de arriba de la tarjeta es 0,055 (era 0,04) — leído: " + aCardIn);
+    check(aLine > 0.075 && aLine2 > 0.16 && aCardBd > 0.075 && aCardIn > 0.04,
+      "contraste: los cuatro valores suben respecto a los de la v67.6");
+
+    // Las superficies, y el contraste real contra el fondo negro (WCAG, no a ojo)
+    const negro = hexRGB("#000000");
+    const superficie = hexRGB(tokenCSS(oscuro, "surface"));
+    const superficie2 = hexRGB(tokenCSS(oscuro, "surface-2"));
+    const chip = hexRGB(tokenCSS(oscuro, "chip"));
+    check(!!superficie && contraste(superficie, negro) >= 1.13,
+      "contraste: la tarjeta se recorta contra el negro (" + (superficie ? contraste(superficie, negro).toFixed(4) : "n/d") + " · antes 1,1049)");
+    check(!!superficie2 && contraste(superficie2, negro) >= 1.22 && !!superficie && contraste(superficie2, negro) > contraste(superficie, negro),
+      "contraste: la superficie de segundo nivel se separa aún más (" + (superficie2 ? contraste(superficie2, negro).toFixed(4) : "n/d") + " · antes 1,1739)");
+    check(!!superficie && !!superficie2 && !!chip && tokenCSS(oscuro, "chip") === tokenCSS(oscuro, "surface-2"),
+      "contraste: el chip usa la misma superficie que los campos");
+    // Y el fondo sigue siendo negro puro: lo que sube es la tarjeta, no el fondo
+    check(tokenCSS(oscuro, "bg") === "#000000", "contraste: el fondo sigue siendo negro puro (OLED)");
+    // El tema claro no se toca: si cambia algo aquí, el arreglo se ha ido de las manos
+    check(alfaDe(tokenCSS(claro, "line")) === 0.09 && alfaDe(tokenCSS(claro, "line-2")) === 0.18
+      && tokenCSS(claro, "surface") === "#ffffff",
+      "contraste: el tema claro se queda como estaba (solo se ha tocado el oscuro)");
+  }
+
+  /* ————— 2. El campo del esquema, con forma de caja ————— */
+  {
+    const regla = (sel) => {
+      const plano = String(ui).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+      const m = new RegExp(sel.replace(/[.[]/g, "\\$&") + "\\s*\\{([^}]*)\\}").exec(plano);
+      return m ? m[1] : "";
+    };
+    const campo = regla(".eval-row-top input");
+    const foco = regla(".eval-row-top input:focus");
+    const px = (txt, prop) => Number((txt.match(new RegExp(prop + ":\\s*(-?[\\d.]+)px")) || [0, 0])[1]);
+    check(campo !== "", "esquema: se encuentra la regla del campo con el nombre del componente");
+    check(/background:\s*var\(--surface-2\)/.test(campo), "esquema: el campo tiene fondo (ya no es texto suelto)");
+    check(/border:\s*1px solid var\(--line\)/.test(campo), "esquema: y un borde de 1 px alrededor, no una raya debajo");
+    check(px(campo, "border-radius") === 10, "esquema: las esquinas van a 10 px — leído: " + px(campo, "border-radius"));
+    check(px(campo, "padding") === 9, "esquema: el relleno vertical es de 9 px — leído: " + px(campo, "padding"));
+    check(px(campo, "min-height") >= 40, "esquema: el campo mide 40 px o más de alto (se puede pulsar con el dedo) — leído: " + px(campo, "min-height"));
+    check(/border-color:\s*var\(--ink\)/.test(foco) && !/border-bottom-color/.test(foco),
+      "esquema: al enfocarlo se ilumina la caja entera, no solo la raya de abajo");
+    check(!/border-bottom:\s*1px dashed/.test(campo), "esquema: fuera la raya de puntos que no parecía un campo");
+  }
+
+  /* ————— 3. La vibración nativa —————
+     Se simula el plugin de Capacitor tal como lo ve la app dentro del APK. */
+  {
+    const env = boot();
+    ready(env.A);
+    const A = env.A, r = env.doc;
+    const golpes = [];
+    env.window.Capacitor = { Plugins: { Haptics: { impact: (o) => { golpes.push(o && o.style); return Promise.resolve(); } } } };
+    const vibrateNavegador = [];
+    env.window.navigator.vibrate = (p) => { vibrateNavegador.push(p); return true; };
+
+    check(typeof A.vibrar === "function", "vibración: existe el helper vibrar()");
+    A.vibrar("ligero"); A.vibrar("medio"); A.vibrar("fuerte");
+    check(golpes.join("|") === "LIGHT|MEDIUM|HEAVY",
+      "vibración: ligero/medio/fuerte van al motor háptico como LIGHT/MEDIUM/HEAVY (" + golpes.join("|") + ")");
+    check(vibrateNavegador.length === 0, "vibración: con el plugin nativo presente no se usa navigator.vibrate");
+
+    // El interruptor de Ajustes manda
+    golpes.length = 0;
+    A.state.settings.vibrate = false;
+    check(A.vibrar("fuerte") === false && golpes.length === 0, "vibración: con la vibración apagada en Ajustes no vibra nada");
+    A.state.settings.vibrate = true;
+
+    // Sin plugin (navegador), cae a navigator.vibrate sin romper nada
+    const env2 = boot();
+    ready(env2.A);
+    const patrones = [];
+    env2.window.navigator.vibrate = (p) => { patrones.push(JSON.stringify(p)); return true; };
+    check(env2.window.Capacitor === undefined, "vibración: la prueba del navegador va de verdad sin Capacitor");
+    env2.A.vibrar("ligero"); env2.A.vibrar("fuerte");
+    check(patrones.length === 2, "vibración: sin plugin nativo se usa navigator.vibrate (" + patrones.join(" · ") + ")");
+
+    // Los tres enganches, de punta a punta
+    golpes.length = 0;
+    // a) cambiar de pestaña en la barra de abajo
+    const pestana = r.querySelector('#bottom-nav button[data-view="stats"]') || r.querySelector("#bottom-nav button[data-view]");
+    check(!!pestana, "vibración: la barra de abajo tiene pestañas que pulsar");
+    pestana.dispatchEvent(new env.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    check(golpes.length === 1 && golpes[0] === "LIGHT", "vibración: cambiar de pestaña da un roce ligero (" + golpes.join("|") + ")");
+
+    // b) terminar un bloque de estudio
+    golpes.length = 0;
+    A.go("timer");
+    act(env, "timer-toggle", {});
+    act(env, "timer-skip", {});
+    check(golpes.length === 1 && golpes[0] === "HEAVY", "vibración: terminar el bloque da el golpe fuerte (" + golpes.join("|") + ")");
+
+    // c) marcar una entrega como entregada
+    golpes.length = 0;
+    A.state.subjects.push({ id: "v1", name: "Servicios en red", color: "#db2777", grade: "" });
+    A.state.exams = [{ id: "e1", subjectId: "v1", title: "A1 · Red NAT", kind: "Trabajo", date: A.todayISO(), estado: "pendiente", puntua: false, createdAt: Date.now() }];
+    A.go("exams");
+    act(env, "exam-set-estado", { id: "e1", e: "entregado" });
+    check(golpes.length === 1 && golpes[0] === "MEDIUM", "vibración: marcar una entrega como entregada da un toque medio (" + golpes.join("|") + ")");
+    check(A.state.exams[0].estado === "entregado", "vibración: y la entrega queda marcada");
+
+    check(env.errors.length === 0, "v67.7: sin errores de consola en la vibración (" + env.errors.slice(0, 2).join(" · ") + ")");
+  }
+  // El comprobador del APK tiene que vigilar el plugin nuevo y su permiso
+  {
+    const py = fs.readFileSync(path.join(ROOT, "apk-overlay", "comprobar-apk.py"), "utf8");
+    check(/"vibraci[oó]n":\s*\(b"HapticsPlugin",\s*"VIBRATE"\)/.test(py),
+      "apk: el comprobador vigila el plugin Haptics y el permiso VIBRATE");
+    const yml = fs.readFileSync(path.join(ROOT, ".github", "workflows", "apk.yml"), "utf8");
+    check(/vibraci[oó]n/i.test(yml), "apk: las notas de la release cuentan que la app vibra");
+  }
+
+  /* ————— 4. Deslizar las filas de la Agenda ————— */
+  {
+    const env = boot();
+    ready(env.A);
+    const A = env.A, r = env.doc;
+    // Un evento táctil de verdad: con sus listas de toques, como los que manda el móvil
+    const tactil = (tipo, el, x, y) => {
+      const e = new env.window.Event(tipo, { bubbles: true, cancelable: true });
+      const t = { clientX: x, clientY: y, identifier: 1, target: el };
+      Object.defineProperty(e, "touches", { value: tipo === "touchend" || tipo === "touchcancel" ? [] : [t] });
+      Object.defineProperty(e, "changedTouches", { value: [t] });
+      Object.defineProperty(e, "targetTouches", { value: tipo === "touchend" ? [] : [t] });
+      el.dispatchEvent(e);
+      return e;
+    };
+    const arrastrar = (el, dx, dy, pasos = 6) => {
+      tactil("touchstart", el, 100, 300);
+      for (let i = 1; i <= pasos; i++) tactil("touchmove", el, 100 + (dx * i) / pasos, 300 + (dy * i) / pasos);
+      tactil("touchend", el, 100 + dx, 300 + dy);
+    };
+
+    A.state.subjects = [{ id: "g1", name: "Servicios en red", color: "#db2777", grade: "" }];
+    A.state.exams = [
+      { id: "w1", subjectId: "g1", title: "A1 · Red NAT", kind: "Trabajo", date: "2099-09-21", estado: "pendiente", puntua: false, createdAt: Date.now() },
+      { id: "x1", subjectId: "g1", title: "Tema 3 · Subnetting", kind: "Examen", date: "2099-09-22", estado: "", puntua: false, createdAt: Date.now() },
+    ];
+    A.go("exams");
+
+    const caja = () => r.querySelector('.swipe[data-swipe="w1"]');
+    const cajaExamen = () => r.querySelector('.swipe[data-swipe="x1"]');
+    check(!!caja() && !!cajaExamen(), "deslizar: cada fila de la Agenda va dentro de su cajón");
+    check(caja().dataset.der === "1" && cajaExamen().dataset.der === undefined,
+      "deslizar: solo la entrega pendiente se puede deslizar a la derecha (un examen no se entrega)");
+    check(!!caja().querySelector(".swipe-fondo.is-der") && !!caja().querySelector(".swipe-fondo.is-izq"),
+      "deslizar: debajo de la fila están las dos franjas (entregado y editar)");
+
+    // El consejo, una sola vez
+    check(/Desliza una entrega a la/.test(r.querySelector(".swipe-consejo").textContent),
+      "deslizar: la primera vez sale el consejo");
+    check(A.state.progress.flags.swipeUsado === undefined, "deslizar: el consejo aún no se ha apuntado en el estado");
+
+    // Un gesto vertical es scroll: no se toca nada
+    arrastrar(caja().querySelector(".exam-fila"), 4, 90);
+    check(A.state.exams[0].estado === "pendiente" && !caja().classList.contains("is-der"),
+      "deslizar: un gesto hacia abajo es scroll y no marca la entrega");
+
+    // Un gesto en diagonal no es un deslizamiento: el dedo iba más hacia abajo que hacia el lado
+    arrastrar(caja().querySelector(".exam-fila"), 60, 50);
+    check(A.state.exams[0].estado === "pendiente", "deslizar: en diagonal (60 px de lado, 50 de alto) se toma como scroll");
+
+    // El umbral, medido: 71 px no bastan y 72 sí
+    arrastrar(caja().querySelector(".exam-fila"), 71, 0);
+    check(A.state.exams[0].estado === "pendiente", "deslizar: 71 px a la derecha no bastan");
+    arrastrar(caja().querySelector(".exam-fila"), 72, 0);
+    check(A.state.exams[0].estado === "entregado", "deslizar: 72 px sí (el umbral es justo ese)");
+    check(A.state.progress.flags.swipeUsado === true, "deslizar: el consejo se apunta en el estado (no vuelve a salir)");
+    check(!r.querySelector(".swipe-consejo"), "deslizar: y desaparece de la vista");
+
+    // El clic que el navegador suelta al levantar el dedo NO cuenta
+    const filaNueva = r.querySelector('.swipe[data-swipe="w1"] .exam-fila');
+    filaNueva.dispatchEvent(new env.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    check(!r.getElementById("modal-form"), "deslizar: el clic de después del gesto no abre la ficha");
+    // Pero pasado el rato, el clic vuelve a valer
+    await new Promise((res) => setTimeout(res, 850));
+    filaNueva.dispatchEvent(new env.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    check(!!r.getElementById("modal-form"), "deslizar: pasado el gesto, tocar la fila vuelve a abrirla");
+    act(env, "close-modal", {});
+
+    // A la izquierda se abre la prueba para editarla
+    A.go("exams");
+    arrastrar(r.querySelector('.swipe[data-swipe="w1"] .exam-fila'), -95, 2);
+    const editor = r.getElementById("modal-form");
+    check(!!editor && editor.querySelector('[name="title"]').value === "A1 · Red NAT",
+      "deslizar: a la izquierda se abre la entrega para editarla");
+    act(env, "close-modal", {});
+
+    // Y funciona igual en un examen (que solo admite la izquierda)
+    A.go("exams");
+    arrastrar(cajaExamen().querySelector(".exam-fila"), -95, 0);
+    check(!!r.getElementById("modal-form"), "deslizar: a la izquierda también se abre un examen");
+    act(env, "close-modal", {});
+    A.go("exams");
+    const antes = A.state.exams[1].estado;
+    arrastrar(cajaExamen().querySelector(".exam-fila"), 95, 0);
+    check(A.state.exams[1].estado === antes, "deslizar: a la derecha un examen no hace nada (no se entrega)");
+
+    // El tope: por mucho que arrastres, la fila no se va más allá (a la izquierda, que es el
+    // único lado que admite un examen)
+    tactil("touchstart", cajaExamen().querySelector(".exam-fila"), 400, 300);
+    tactil("touchmove", cajaExamen().querySelector(".exam-fila"), 100, 300);
+    const movida = cajaExamen().querySelector(".exam-fila").style.transform;
+    tactil("touchend", cajaExamen().querySelector(".exam-fila"), 100, 300);
+    check(/-108px/.test(movida), "deslizar: la fila tiene un tope de 108 px (leído: " + movida + ")");
+
+    // (el umbral de 72 px, el tope de 108 y la regla del gesto horizontal se comprueban arriba
+    //  por comportamiento, que es lo único que sobrevive al minificador: dentro del APK los
+    //  nombres de las constantes ya no existen)
+
+    check(env.errors.length === 0, "v67.7: sin errores de consola al deslizar (" + env.errors.slice(0, 2).join(" · ") + ")");
+  }
+
+  /* ————— 5. El simulador «¿qué nota necesito?» ————— */
+  {
+    const env = boot();
+    ready(env.A);
+    const A = env.A, r = env.doc;
+    // El caso de control del encargo: prácticas 6 (20 %), práctico 4 (40 %) y teoría (40 %) sin nota
+    const esquema = () => ({
+      v: 1,
+      componentes: [
+        { id: "t", nombre: "Examen de teoría", peso: 40, sobre: 10, nota: "", min: 0, modo: "auto" },
+        { id: "p", nombre: "Examen práctico", peso: 40, sobre: 10, nota: 4, min: 0, modo: "auto" },
+        { id: "r", nombre: "Prácticas", peso: 20, sobre: 10, nota: 6, min: 0, modo: "auto" },
+      ],
+      reglas: { ra: { activo: false, lista: [] }, min: { activo: false } },
+    });
+    const sub = { id: "m1", name: "Sistemas", color: "#db2777", grade: "", eval: esquema() };
+    A.state.subjects = [sub];
+
+    const r5 = A.notaNecesaria(sub, 5);
+    check(r5.necesaria === 5.5, "simulador: caso de control — para el 5 hacen falta 5,50 exactos (leído: " + r5.necesaria + ")");
+    check(r5.pendientes.length === 1 && r5.pendientes[0].nombre === "Examen de teoría",
+      "simulador: y sabe que esa nota va en «Examen de teoría»");
+    check(r5.posible === true && r5.yaEsta === false, "simulador: para el 5 sí se puede");
+    check(Math.abs(r5.actual - 4.67) < 0.005, "simulador: la media de lo evaluado es 4,67 (leído: " + r5.actual + ")");
+    check(r5.maxFinal === 6.8, "simulador: lo máximo que puede acabar es 6,80 (leído: " + r5.maxFinal + ")");
+
+    const r7 = A.notaNecesaria(sub, 7);
+    check(r7.posible === false, "simulador: para el 7 ya no llega");
+    check(r7.maxFinal === 6.8, "simulador: y lo dice con el máximo real (6,80), no con un «necesitas un 10,50»");
+    const r9 = A.notaNecesaria(sub, 9);
+    check(r9.posible === false && r9.necesaria > 10, "simulador: para el 9 tampoco (harían falta " + r9.necesaria + ")");
+
+    // Ya lo tienes: con todo aprobado de sobra, un 0 en lo que queda sigue valiendo
+    sub.eval.componentes[1].nota = 10; sub.eval.componentes[2].nota = 10;
+    const rYa = A.notaNecesaria(sub, 5);
+    check(rYa.yaEsta === true && rYa.necesaria < 0, "simulador: con 10 y 10 ya tiene el 5 aunque saque un 0 en la teoría");
+    sub.eval = esquema();
+
+    // Un componente que va «sobre 4» entra en la cuenta en la escala del módulo
+    const sub4 = { id: "m4", name: "FOL", grade: "", eval: {
+      v: 1,
+      componentes: [
+        { id: "a", nombre: "Sobre 4", peso: 50, sobre: 4, nota: 2, min: 0, modo: "auto" },   // 2/4 = 5/10
+        { id: "b", nombre: "Sobre 10", peso: 50, sobre: 10, nota: "", min: 0, modo: "auto" },
+      ],
+      reglas: { ra: { activo: false, lista: [] }, min: { activo: false } },
+    } };
+    const r4 = A.notaNecesaria(sub4, 5);
+    check(r4.necesaria === 5, "simulador: un 2 «sobre 4» cuenta como un 5 y pide un 5 en lo que queda (leído: " + r4.necesaria + ")");
+    check(Math.abs(r4.actual - 5) < 0.001, "simulador: y la media de lo evaluado también lo pasa a la escala del módulo");
+
+    // Un componente con peso 0 no decide nada
+    sub.eval.componentes.push({ id: "z", nombre: "Actitud", peso: 0, sobre: 10, nota: 1, min: 0, modo: "auto" });
+    check(A.notaNecesaria(sub, 5).necesaria === 5.5, "simulador: un componente con peso 0 no entra en la cuenta");
+    sub.eval.componentes.pop();
+
+    // Los avisos que pueden suspender aunque la media dé
+    sub.eval.reglas.min.activo = true;
+    sub.eval.componentes[2].min = 7;                       // Prácticas lleva 6 y pide 7
+    const rMin = A.notaNecesaria(sub, 5);
+    check(rMin.minSuspenso.length === 1 && /Prácticas/.test(rMin.minSuspenso[0].nombre),
+      "simulador: avisa de un componente por debajo de su mínimo");
+    sub.eval.componentes[2].min = 0;
+    sub.eval.componentes[0].min = 5;                       // el pendiente es el que exige
+    check(A.notaNecesaria(sub, 5).minimoPendiente && A.notaNecesaria(sub, 5).minimoPendiente.nombre === "Examen de teoría",
+      "simulador: y del mínimo que pide lo que aún no tiene nota");
+    sub.eval.componentes[0].min = 0;
+    sub.eval.reglas.min.activo = false;
+    sub.eval.reglas.ra = { activo: true, lista: [{ id: "ra1", nombre: "RA3 · DHCP", ok: false }] };
+    check(A.notaNecesaria(sub, 5).raSinAprobar.join("|") === "RA3 · DHCP", "simulador: y de los RA sin aprobar");
+    sub.eval = esquema();
+
+    // Sin esquema no hay nada que calcular, y se dice
+    check(A.notaNecesaria({ id: "sin", name: "Sin esquema", grade: "" }, 5).sinEsquema === true,
+      "simulador: un módulo sin esquema lo dice en vez de inventarse una cuenta");
+
+    /* La hoja: los tres bloques con su respuesta. Este es el caso de control entero, tal como
+       lo tiene que leer el usuario. */
+    A.go("rendimiento");
+    const botonBoletin = r.querySelector('.boletin-mod [data-action="eval-simular"]');
+    check(!!botonBoletin && /Qué nota necesito/.test(botonBoletin.textContent),
+      "simulador: el botón está en Calificaciones, junto a «Meter notas»");
+    check(!!r.querySelector('.boletin-mod [data-action="eval-notas"]'), "simulador: y «Meter notas» sigue en su sitio");
+    botonBoletin.dispatchEvent(new env.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    const hoja = r.getElementById("modal-form");
+    const txt = hoja.textContent.replace(/\s+/g, " ");
+    check(!!hoja, "simulador: el botón abre la hoja");
+    check(hoja.querySelectorAll(".sim-bloque").length === 3, "simulador: la hoja trae los tres bloques (Aprobado, Notable, Sobresaliente)");
+    check(/Aprobado/.test(txt) && /Notable/.test(txt) && /Sobresaliente/.test(txt), "simulador: y los tres dicen su nombre");
+    check(/5,50/.test(txt) && /«Examen de teoría»/.test(txt),
+      "simulador: el bloque del 5 dice «5,50 en «Examen de teoría»» — " + (txt.match(/Te hacen falta[^.]*\./) || ["n/d"])[0]);
+    check(/Ni con un 10/.test(txt) && /6,80/.test(txt),
+      "simulador: el bloque del 7 dice «Ni con un 10» y el máximo real (6,80)");
+    check(/,/.test(txt) && !/5\.50/.test(txt), "simulador: las notas se escriben con coma decimal, como en español");
+    act(env, "close-modal", {});
+
+    // El mismo botón en la ficha del módulo
+    act(env, "open-subject", { id: "m1" });
+    const botonFicha = r.querySelector('#view [data-action="eval-simular"]');
+    check(!!botonFicha, "simulador: el botón también está en la ficha del módulo");
+    act(env, "eval-simular", { id: "m1" });
+    // El título del modal vive en el <h2>, fuera del <form>: se mira la hoja entera
+    const hojaFicha = r.querySelector("#modal-root .modal-card");
+    check(!!hojaFicha && /Qué nota necesito/.test(hojaFicha.textContent) && hojaFicha.querySelectorAll(".sim-bloque").length === 3,
+      "simulador: y abre la misma hoja desde la ficha");
+    act(env, "close-modal", {});
+
+    check(env.errors.length === 0, "v67.7: sin errores de consola en el simulador (" + env.errors.slice(0, 2).join(" · ") + ")");
+  }
+
+  // La versión tiene que estar subida en los cuatro sitios a la vez
+  {
+    const app = fs.readFileSync(path.join(ROOT, "js", "app.js"), "utf8");
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+    const lock = JSON.parse(fs.readFileSync(path.join(ROOT, "package-lock.json"), "utf8"));
+    const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
+    // Ojo: terser convierte `const APP_VERSION = "v67.7.0"` en `APP_VERSION="v67.7.0"`, así que
+    // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
+    check(/APP_VERSION\s*[:=]\s*"v67\.7\.0"/.test(app), "versión: js/app.js dice v67.7.0");
+    check(pkg.version === "67.7.0", "versión: package.json dice 67.7.0");
+    check(lock.version === "67.7.0" && lock.packages[""].version === "67.7.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.7\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
+  }
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -2567,6 +2964,7 @@ async function testAgenda() {
     await testOllama();
     await testEsquema();
     await testAgenda();
+    await testV677();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");
   }

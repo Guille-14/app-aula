@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.6.0";
+  const APP_VERSION = "v67.7.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -202,10 +202,38 @@
     }
     return { active, next, weekend: weekdayMon0(new Date()) > 4, holiday: "" };
   }
-  function buzz() {
-    if (state.settings.vibrate === false) return;
-    try { if (navigator.vibrate) navigator.vibrate([40, 40, 80]); } catch {}
+  /* ——— Vibración (v67.7) ———
+     Dentro del APK la hace el motor háptico de Android (`@capacitor/haptics`), que es el que
+     usan las apps de verdad: un golpe seco y corto. Fuera del APK —en el navegador— cae a
+     `navigator.vibrate`, que es lo que había hasta ahora. Y si no hay ninguno de los dos, no
+     pasa nada: la vibración es un adorno y nunca puede romper la acción que la provoca.
+
+     Tres intensidades, para que cada gesto se note distinto sin mirar la pantalla:
+       ligero → cambiar de pestaña en la barra de abajo (un roce: se siente el clic)
+       medio  → marcar una entrega como entregada (confirmación de que se ha guardado)
+       fuerte → terminar un bloque de estudio (aviso: levanta la vista del móvil) */
+  const HAPTIC = { ligero: "LIGHT", medio: "MEDIUM", fuerte: "HEAVY" };
+  const PATRON_VIBRA = { ligero: 12, medio: [0, 30], fuerte: [40, 40, 80] };
+  function vibrar(tipo) {
+    // El interruptor de Ajustes manda: con la vibración apagada no vibra nada, nunca.
+    if (state.settings.vibrate === false) return false;
+    const estilo = HAPTIC[tipo] || HAPTIC.ligero;
+    try {
+      const h = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics;
+      if (h && typeof h.impact === "function") {
+        const r = h.impact({ style: estilo });
+        // El plugin devuelve una promesa: si el móvil no tiene motor háptico, que no salte
+        if (r && typeof r.catch === "function") r.catch(() => {});
+        return true;
+      }
+    } catch { /* sin plugin nativo: se intenta el camino del navegador */ }
+    try {
+      if (navigator.vibrate) { navigator.vibrate(PATRON_VIBRA[tipo] || PATRON_VIBRA.ligero); return true; }
+    } catch { /* ni eso: se acabó, sin ruido */ }
+    return false;
   }
+  // El final del bloque de estudio ya llamaba a `buzz()`: ahora es la vibración fuerte.
+  function buzz() { return vibrar("fuerte"); }
   function confetti() {
     if (state.settings.confetti === false) return;
     const box = document.createElement("div");
@@ -1236,6 +1264,87 @@
   }
 
   function notaModulo(sub) { return estadoModulo(sub).nota; }
+
+  /* ————— Simulador: «¿qué nota necesito?» (v67.7) —————
+     La pregunta de siempre la víspera de un examen: con lo que llevo, ¿cuánto tengo que sacar
+     en lo que queda para llegar al 5, al 7 o al 9?
+
+     La cuenta usa TODOS los componentes con peso, también los que aún no tienen nota — que es
+     justo lo que la media de «lo que llevas» no hace, porque esa responde a otra pregunta. Es
+     la cuenta que harías en un papel:
+
+         necesaria = (objetivo · Σpesos − Σ(peso · nota)) / Σpesos de lo pendiente
+
+     Todo en la escala del módulo (0–10 por defecto): un componente que va «sobre 4» se pasa a
+     la escala del módulo antes de entrar, igual que hace la media ponderada de arriba.
+
+     También devuelve `maxFinal`, lo máximo que puede acabar. Es la mitad útil de la respuesta:
+     cuando ni sacando un 10 en todo lo que queda llega, no sirve de nada decir «necesitas un
+     12,40» — lo que hay que decir es «ya no llegas, y lo máximo que puedes sacar es 6,80». */
+  function notaNecesaria(sub, objetivo) {
+    const max = Number(state.settings.gradeMax) || 10;
+    const ev = evalDe(sub);
+    const meta = clamp(Number(objetivo) || 0, 0, max);
+    const base = {
+      id: (sub && sub.id) || "", modulo: (sub && sub.name) || "", objetivo: meta, max,
+      actual: null, necesaria: null, posible: false, yaEsta: false, maxFinal: null,
+      pendientes: [], minimoPendiente: null, minSuspenso: [], raSinAprobar: [],
+      sinEsquema: !ev, sinPeso: !ev, evaluados: 0, componentes: 0,
+    };
+    if (!ev) return base;
+
+    let pesoTodo = 0, sumaNota = 0, pesoPendiente = 0;
+    const pendientes = [], minSuspenso = [];
+    const minActivo = !!(ev.reglas && ev.reglas.min && ev.reglas.min.activo);
+    ev.componentes.forEach((c) => {
+      const p = clamp(Number(c.peso) || 0, 0, 100);
+      if (p <= 0) return;                     // un componente sin peso no decide nada
+      pesoTodo += p;
+      const n = notaDeComponente(sub, c);
+      const suelo = minActivo && Number(c.min) > 0 ? Number(c.min) : 0;
+      if (n.nota == null) {
+        pesoPendiente += p;
+        pendientes.push({ id: c.id, nombre: c.nombre, peso: p, sobre: n.sobre, min: suelo });
+        return;
+      }
+      sumaNota += (n.nota / n.sobre) * max * p;   // a la escala del módulo
+      if (suelo > 0 && n.nota < suelo) minSuspenso.push({ nombre: c.nombre, min: suelo, sobre: n.sobre, nota: n.nota });
+    });
+    if (!pesoTodo) return Object.assign(base, { sinPeso: true, componentes: ev.componentes.length });
+
+    const pesoEvaluado = pesoTodo - pesoPendiente;
+    const actual = pesoEvaluado > 0 ? Math.round((sumaNota / pesoEvaluado) * 100) / 100 : null;
+    // Lo máximo que puede acabar: lo que queda, todo al máximo
+    const maxFinal = Math.round(((sumaNota + pesoPendiente * max) / pesoTodo) * 100) / 100;
+
+    let necesaria = null, posible, yaEsta;
+    if (pesoPendiente > 0) {
+      necesaria = Math.round(((meta * pesoTodo - sumaNota) / pesoPendiente) * 100) / 100;
+      yaEsta = necesaria <= 0;                       // llega aunque saque un 0 en lo que queda
+      posible = necesaria <= max + 0.001;            // y no le piden más de lo que se puede sacar
+    } else {
+      // Ya está todo evaluado: no hay nada que calcular, solo comparar
+      yaEsta = actual != null && actual >= meta - 0.001;
+      posible = yaEsta;
+    }
+    // El componente pendiente que más exige: el que tiene el suelo más alto en proporción
+    const minimoPendiente = pendientes.filter((c) => c.min > 0)
+      .sort((a, b) => (b.min / b.sobre) - (a.min / a.sobre))[0] || null;
+    const ra = ev.reglas && ev.reglas.ra;
+    const raSinAprobar = ra && ra.activo && Array.isArray(ra.lista)
+      ? ra.lista.filter((x) => !x.ok).map((x) => x.nombre || "un RA") : [];
+
+    return Object.assign(base, {
+      sinEsquema: false, sinPeso: false,
+      actual, necesaria, posible, yaEsta, maxFinal,
+      pendientes, minimoPendiente, minSuspenso, raSinAprobar,
+      evaluados: ev.componentes.length - pendientes.length, componentes: ev.componentes.length,
+      pesoPendiente, pesoTodo,
+    });
+  }
+
+  // «5,50» en vez de «5.50»: en español la coma es el separador decimal
+  const notaEs = (n) => (Number(n).toFixed(2).replace(".", ","));
 
   // Componente al que apunta una entrada de la Agenda (para enseñarlo en la tarjeta)
   function componenteDe(e) {
@@ -2687,6 +2796,7 @@
         ${est.nota == null ? "" : `<p class="eval-pie ${est.aprobado ? "is-ok" : "is-bad"}">Nota final: <b>${est.nota.toFixed(2)}</b> / ${max} · ${est.aprobado ? "Aprobado" : "Suspenso"}</p>`}
         <div class="eval-acciones">
           <button class="btn btn-sm btn-primary" data-action="eval-notas" data-id="${s.id}">Meter notas</button>
+          <button class="btn btn-sm" data-action="eval-simular" data-id="${s.id}">¿Qué nota necesito?</button>
           <button class="btn btn-sm" data-action="eval-editar" data-id="${s.id}">Editar esquema</button>
         </div>
         <p class="hint" style="margin:10px 0 0">Reparto: <b>${esc(ev.componentes.map((c) => c.nombre + " " + Number(c.peso).toFixed(Number(c.peso) % 1 ? 1 : 0) + "%").join(" · "))}</b>${avisoPesos(ev) ? " · " + esc(avisoPesos(ev)) : ""}</p>
@@ -2924,19 +3034,27 @@
       const cuenta = trab && e.puntua !== false
         ? `<span class="exam-meta cola-nota">${componenteDe(e) ? "Cuenta en «" + esc(componenteDe(e).componente.nombre) + "»" : "Cuenta para la nota"}</span>`
         : trab ? `<span class="exam-meta cola-nota">No puntúa para la nota</span>` : "";
-      return `<div class="exam-fila${d === 0 ? " is-hoy" : ""}${pl.cerrada && pl.pendiente ? " is-fuera" : ""}" data-action="edit-exam" data-id="${e.id}">
-        <span class="exam-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${iconoExam(e)}</svg></span>
-        <span class="exam-fila-body">
-          <b>${esc(e.title)}</b>
-          ${meta}
-          ${e.topics ? `<span class="exam-meta is-topics">${esc(e.topics)}</span>` : ""}
-          ${cuenta}
-          ${trab ? chip(e) : ""}
-        </span>
-        <span class="exam-fila-right">
-          <span class="badge ${d < 0 ? "" : "soon"}">${esc(cuando(e))}</span>
-          ${n == null ? "" : `<b class="exam-nota ${n >= 5 ? "is-ok" : "is-bad"}">${n.toFixed(1)}</b>`}
-        </span>
+      // v67.7: la fila va dentro de un cajón (`.swipe`) que es lo que se desliza; debajo quedan
+      // las dos franjas que dicen lo que va a pasar. El cajón es el que separa una fila de otra
+      // (antes lo hacía `.exam-fila + .exam-fila`, y con el cajón en medio ya no son hermanas).
+      const deslizable = trab && estadoDe(e) === "pendiente";
+      return `<div class="swipe" data-swipe="${e.id}"${deslizable ? ` data-der="1"` : ""}>
+        ${deslizable ? `<span class="swipe-fondo is-der" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 13l4 4L19 7"/></svg>Entregado</span>` : ""}
+        <span class="swipe-fondo is-izq" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 20h4l10-10a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5 4 20Z"/><path d="M14 7l3 3"/></svg>Editar</span>
+        <div class="exam-fila${d === 0 ? " is-hoy" : ""}${pl.cerrada && pl.pendiente ? " is-fuera" : ""}" data-action="edit-exam" data-id="${e.id}">
+          <span class="exam-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${iconoExam(e)}</svg></span>
+          <span class="exam-fila-body">
+            <b>${esc(e.title)}</b>
+            ${meta}
+            ${e.topics ? `<span class="exam-meta is-topics">${esc(e.topics)}</span>` : ""}
+            ${cuenta}
+            ${trab ? chip(e) : ""}
+          </span>
+          <span class="exam-fila-right">
+            <span class="badge ${d < 0 ? "" : "soon"}">${esc(cuando(e))}</span>
+            ${n == null ? "" : `<b class="exam-nota ${n >= 5 ? "is-ok" : "is-bad"}">${n.toFixed(1)}</b>`}
+          </span>
+        </div>
       </div>`;
     };
 
@@ -2981,6 +3099,14 @@
       g.items.push(e);
     });
 
+    // El consejo del deslizamiento se enseña una sola vez: en cuanto lo usas, se apunta en el
+    // estado y ya no vuelve a salir (nadie quiere un cartel fijo encima de su lista).
+    const hayDeslizable = lista.some((e) => esTrabajo(e) && estadoDe(e) === "pendiente");
+    const consejo = hayDeslizable && !flags().swipeUsado
+      ? `<p class="swipe-consejo"><span class="swipe-consejo-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M7 8 3 12l4 4M17 8l4 4-4 4M3 12h18"/></svg></span>
+         <span>Desliza una entrega a la <b>derecha</b> para marcarla como entregada, o a la <b>izquierda</b> para abrirla y editarla.</span></p>`
+      : "";
+
     return `
       ${hero}
       <div class="mini-stats">
@@ -2995,6 +3121,7 @@
         ${[["", "Todo", todos.length], ["examenes", "Exámenes", todos.filter((e) => !esTrabajo(e)).length], ["trabajos", "Trabajos", todos.filter(esTrabajo).length]]
           .map(([id, txt, n]) => `<button class="chip ${examTipo === id ? "is-on" : ""}" data-action="exam-tipo" data-f="${id}">${txt} · ${n}</button>`).join("")}
       </div>
+      ${consejo}
       ${lista.length
         ? grupos.map((g) => `<section class="exam-sec">
             <div class="exam-sec-head"><i style="background:${safeColor(subjectColor(g.id))}"></i><b>${esc(subjectName(g.id))}</b><span>${g.items.length}</span></div>
@@ -3005,6 +3132,119 @@
       <button class="btn btn-primary btn-block" data-action="add-exam">+ Añadir prueba o entrega</button>
     `;
   }
+
+  /* ————— Deslizar las filas de la Agenda (v67.7) —————
+     Como en el correo del móvil: arrastras la fila hacia un lado y debajo aparece, ya escrita,
+     lo que va a pasar si la sueltas ahí.
+       → a la DERECHA: la entrega pasa a «Entregado» (franja verde con su ✓)
+       ← a la IZQUIERDA: se abre la prueba para editarla (franja azul con su ✎)
+
+     Tres detalles que son los que hacen que se sienta bien y no un estorbo:
+     1. Solo cuentan los gestos claramente horizontales (|dx| ≥ 10 y |dx| ≥ 1,4·|dy|). Si el
+        dedo va hacia abajo, es que estás haciendo scroll y se deja correr la página.
+     2. Después de deslizar, el clic que el navegador suelta al levantar el dedo NO cuenta:
+        si no, la ficha se abría justo cuando lo que querías era marcarla como entregada.
+     3. La franja se va viendo según lo que llevas arrastrado, y al pasar el umbral se queda
+        fija: se ve cuándo el gesto ya vale. */
+  const SWIPE_UMBRAL = 72;    // a partir de aquí, al soltar, el gesto cuenta
+  const SWIPE_TOPE = 108;     // y a partir de aquí la fila no se mueve más (aunque sigas)
+  const SWIPE_TAPA_CLIC = 800;  // ms durante los que se traga el clic posterior
+  let swipeTapado = 0;        // instante del último deslizamiento que llegó a contar
+  let sw = null;              // el deslizamiento en curso (null si el dedo no está arrastrando)
+
+  function puntoTactil(e) {
+    const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+    return t ? { x: Number(t.clientX) || 0, y: Number(t.clientY) || 0 } : null;
+  }
+
+  function iniciarSwipe(e) {
+    const caja = e.target && e.target.closest ? e.target.closest(".swipe") : null;
+    if (!caja || !caja.dataset.swipe) return;
+    // Si el dedo empieza encima de un control (el desplegable del estado, un enlace…), se deja
+    // en paz: ese dedo quiere pulsar, no arrastrar.
+    if (e.target.closest("button, a, input, select, textarea, label")) return;
+    const p = puntoTactil(e);
+    if (!p) return;
+    sw = { caja, x0: p.x, y0: p.y, dir: "", dx: 0 };
+  }
+
+  function pintarSwipe() {
+    const { caja, dx } = sw;
+    const fila = caja.querySelector(".exam-fila");
+    if (fila) fila.style.transform = dx ? "translateX(" + dx + "px)" : "";
+    caja.classList.toggle("is-der", dx > 0);
+    caja.classList.toggle("is-izq", dx < 0);
+    // Cuánto se ve la franja: proporcional al arrastre, hasta el umbral
+    caja.style.setProperty("--swipe-p", String(Math.round(Math.min(1, Math.abs(dx) / SWIPE_UMBRAL) * 100) / 100));
+    caja.classList.toggle("is-listo", Math.abs(dx) >= SWIPE_UMBRAL);
+  }
+
+  function moverSwipe(e) {
+    if (!sw) return;
+    const p = puntoTactil(e);
+    if (!p) return;
+    const dx = p.x - sw.x0, dy = p.y - sw.y0;
+    if (!sw.dir) {
+      // Todavía no se sabe qué quiere el dedo: se decide con el primer tramo claro
+      if (Math.abs(dx) >= 10 && Math.abs(dx) >= 1.4 * Math.abs(dy)) {
+        // Hacia la derecha solo tiene sentido en una entrega pendiente (un examen no se entrega)
+        if (dx > 0 && sw.caja.dataset.der !== "1") { sw = null; return; }
+        sw.dir = dx > 0 ? "der" : "izq";
+        sw.caja.classList.add("is-swipe");
+      } else if (Math.abs(dy) >= 10) {
+        sw = null;   // es scroll: se suelta la fila y que la página siga
+        return;
+      } else return;   // aún no hay nada claro
+    }
+    // A partir de aquí el gesto es nuestro: que la página no se mueva a la vez
+    if (typeof e.preventDefault === "function" && e.cancelable !== false) e.preventDefault();
+    sw.dx = sw.dir === "der" ? clamp(dx, 0, SWIPE_TOPE) : clamp(dx, -SWIPE_TOPE, 0);
+    pintarSwipe();
+  }
+
+  function soltarSwipe() {
+    if (!sw) return;
+    const { caja, dx } = sw;
+    sw = null;
+    caja.classList.remove("is-swipe", "is-der", "is-izq", "is-listo");
+    caja.style.removeProperty("--swipe-p");
+    const fila = caja.querySelector(".exam-fila");
+    if (fila) fila.style.transform = "";   // vuelve a su sitio (o se repinta al actuar)
+    if (Math.abs(dx) < SWIPE_UMBRAL) return;   // no llegó al umbral: se queda como estaba
+    swipeTapado = Date.now();                  // el clic que viene detrás no cuenta
+    const ex = asArray(state.exams).find((x) => x.id === caja.dataset.swipe);
+    if (!ex) return;
+    if (dx > 0) marcarEntregado(ex); else addExam(ex);
+  }
+
+  /* Marcar una entrega como entregada. Lo usan el desplegable de estado y el deslizamiento a la
+     derecha, para que los dos caminos hagan exactamente lo mismo (y vibren igual). */
+  function marcarEntregado(ex) {
+    if (!ex) return;
+    ex.estado = "entregado";
+    vibrar("medio");
+    // El consejo del deslizamiento ya cumplió su misión: no vuelve a salir
+    ensureProgress();
+    state.progress.flags = { ...(state.progress.flags || {}), swipeUsado: true };
+    save(); render();
+    toast("Entregado: " + etiquetaDe(ex));
+  }
+
+  document.addEventListener("touchstart", iniciarSwipe, { passive: true });
+  document.addEventListener("touchmove", moverSwipe, { passive: false });
+  document.addEventListener("touchend", soltarSwipe, { passive: true });
+  document.addEventListener("touchcancel", soltarSwipe, { passive: true });
+  // Al levantar el dedo después de deslizar, el navegador suelta un clic sobre la fila. Se traga
+  // en la fase de captura para que no llegue al manejador que abre la ficha.
+  document.addEventListener("click", (e) => {
+    if (!swipeTapado) return;
+    if (Date.now() - swipeTapado > SWIPE_TAPA_CLIC) { swipeTapado = 0; return; }
+    if (e.target && e.target.closest && e.target.closest(".swipe")) {
+      swipeTapado = 0;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
 
   function renderInbox() {
     const items = [...(state.inbox || [])].sort((a, b) => b.createdAt - a.createdAt);
@@ -4557,7 +4797,7 @@
     if (e.target.closest(".search-wrap")) { openCmd(); return; }
     const nav = e.target.closest("[data-view]");
     if (nav && nav.dataset.view && (nav.classList.contains("nav-item") || nav.closest("#bottom-nav") || nav.closest("#more-sheet"))) {
-      closeMore(); go(nav.dataset.view); return;
+      closeMore(); vibrar("ligero"); go(nav.dataset.view); return;
     }
     const btn = e.target.closest("[data-action]");
     if (!btn) {
@@ -4758,6 +4998,7 @@
       if (ex && nuevo) {
         ex.estado = nuevo;
         // Al marcar «Corregido» se pregunta la nota: es el momento en el que la sabes
+        if (nuevo === "entregado") vibrar("medio");   // v67.7: se nota en la mano que ha quedado apuntado
         save(); closeModal(); render();
         toast(ESTADOS[nuevo] + ": " + etiquetaDe(ex));
         if (nuevo === "corregido" && (ex.grade === "" || ex.grade == null)) {
@@ -4767,6 +5008,7 @@
     }
     if (action === "eval-nuevo" || action === "eval-editar") abrirEsquema(subjectById(id));
     if (action === "eval-notas") abrirNotas(subjectById(id));
+    if (action === "eval-simular") abrirSimulador(subjectById(id));
     if (action === "eval-modo-notas") {
       const sub = subjectById(subjectFocus);
       const c = sub && evalDe(sub) && evalDe(sub).componentes.find((x) => x.id === id);
@@ -5520,6 +5762,76 @@
     });
   }
 
+  /* La hoja del simulador (v67.7): tres bloques —Aprobado, Notable y Sobresaliente— que dicen,
+     cada uno, lo que hay que sacar en lo que queda. O que ya lo tienes. O que ya no llegas, que
+     también es una respuesta útil (y duele menos si te lo dice la app que el boletín). */
+  function abrirSimulador(sub) {
+    if (!sub) return;
+    const ev = evalDe(sub);
+    if (!ev) { abrirEsquema(sub); return; }
+    const max = Number(state.settings.gradeMax) || 10;
+    const dos = (n) => Math.round(n * 100) / 100;
+    const metas = [[dos(max / 2), "Aprobado"], [dos(max * 0.7), "Notable"], [dos(max * 0.9), "Sobresaliente"]];
+    const ref = notaNecesaria(sub, metas[0][0]);
+
+    // Dónde hay que sacar la nota: si queda un solo componente, se dice por su nombre
+    const donde = (lista) => {
+      if (!lista.length) return "";
+      if (lista.length === 1) return ` en «${esc(lista[0].nombre)}»`;
+      if (lista.length === 2) return ` en «${esc(lista[0].nombre)}» y «${esc(lista[1].nombre)}»`;
+      return ` repartida en lo que queda (${lista.map((x) => esc(x.nombre)).join(", ")})`;
+    };
+
+    const bloque = ([meta, etiqueta]) => {
+      const r = notaNecesaria(sub, meta);
+      let cuerpo, clase = "";
+      if (r.sinPeso) {
+        cuerpo = "Ningún componente tiene peso: repártelo en «Esquema» y aquí sale la cuenta.";
+        clase = "is-warn";
+      } else if (r.yaEsta) {
+        cuerpo = r.pendientes.length
+          ? `<b class="is-ok">Ya lo tienes</b> (aunque saques un 0 en lo que queda)`
+          : `<b class="is-ok">Ya lo tienes</b>: llevas <b>${notaEs(r.actual)}</b> y ya no queda nada por evaluar.`;
+        clase = "is-ok";
+      } else if (!r.posible) {
+        cuerpo = `<b class="is-bad">Ni con un ${notaEs(max)}</b> — lo máximo que puedes acabar es <b>${notaEs(r.maxFinal)}</b>.`;
+        clase = "is-bad";
+      } else {
+        cuerpo = `Te hacen falta <b>${notaEs(r.necesaria)}</b>${donde(r.pendientes)}.`;
+      }
+      return `<div class="sim-bloque ${clase}">
+        <div class="sim-meta"><span>${esc(etiqueta)}</span><b>${notaEs(meta)}</b></div>
+        <p class="sim-dice">${cuerpo}</p>
+      </div>`;
+    };
+
+    // Los avisos que pueden suspender aunque la media dé: la cuenta de arriba no los ve
+    const avisos = [];
+    if (ref.sinPeso) avisos.push("Sin pesos repartidos no se puede calcular nada.");
+    ref.minSuspenso.forEach((m) => avisos.push(
+      `«${esc(m.nombre)}» lleva ${notaEs(m.nota)} y pide un mínimo de ${notaEs(m.min)}: aunque la media llegue, eso suspende.`));
+    if (ref.minimoPendiente) avisos.push(
+      `«${esc(ref.minimoPendiente.nombre)}» pide un mínimo de ${notaEs(ref.minimoPendiente.min)} sobre ${ref.minimoPendiente.sobre}: por debajo suspende por muy bien que vaya la media.`);
+    if (ref.raSinAprobar.length) avisos.push(
+      ref.raSinAprobar.length === 1
+        ? `Queda un RA sin aprobar (${esc(ref.raSinAprobar[0])}) y hay que aprobarlos todos.`
+        : `Quedan ${ref.raSinAprobar.length} RA sin aprobar (${ref.raSinAprobar.map(esc).join(", ")}) y hay que aprobarlos todos.`);
+
+    const resumen = ref.actual == null
+      ? "Todavía no hay ninguna nota: esto es lo que tendrías que sacar en cada parte."
+      : `Llevas <b>${ref.evaluados} de ${ref.componentes}</b> componentes evaluados · media de lo evaluado: <b>${notaEs(ref.actual)}</b>.`;
+
+    openModal("¿Qué nota necesito? · " + sub.name, `
+      <p class="hint" style="margin-top:0">${resumen}</p>
+      <div class="sim-lista">${metas.map(bloque).join("")}</div>
+      ${ref.pendientes.length ? `<p class="hint">Queda por evaluar: <b>${ref.pendientes.map((c) => esc(c.nombre) + " (" + Number(c.peso).toFixed(Number(c.peso) % 1 ? 1 : 0) + " %)").join(" · ")}</b>.</p>` : ""}
+      ${avisos.length ? `<div class="eval-pie is-bad">${avisos.map((a) => `<p class="sim-aviso">${a}</p>`).join("")}</div>` : ""}
+      <p class="hint">La cuenta es la media ponderada de tu esquema: cada parte cuenta lo que pesa, y las notas «sobre X» se pasan a la escala de ${notaEs(max)} antes de entrar.</p>`, {
+      confirm: "Cerrar",
+      onSubmit() { closeModal(); },
+    });
+  }
+
   function renderRendimiento() {
     const gpa = weightedGPA();
     const max = Number(state.settings.gradeMax) || 10;
@@ -5558,6 +5870,7 @@
         <div class="eval-acciones">
           ${est.tieneEsquema
             ? `<button type="button" class="btn btn-sm btn-primary" data-action="eval-notas" data-id="${sub.id}">Meter notas</button>
+               <button type="button" class="btn btn-sm btn-ghost" data-action="eval-simular" data-id="${sub.id}">¿Qué nota necesito?</button>
                <button type="button" class="btn btn-sm" data-action="eval-editar" data-id="${sub.id}">Esquema</button>`
             : `<button type="button" class="btn btn-sm btn-primary" data-action="edit-grade" data-id="${sub.id}">${n == null ? "Poner la nota" : "Cambiar la nota"}</button>
                <button type="button" class="btn btn-sm btn-ghost" data-action="eval-nuevo" data-id="${sub.id}">Esquema de evaluación</button>`}
@@ -5601,6 +5914,8 @@
     // Esquema de evaluación por módulo (v67.5): lo usan las pruebas y la Agenda
     estadoModulo, notaModulo, evalDe, notaDeComponente, mediaEsquema, pesoTotal, avisoPesos, saneEval,
     abrirEsquema, abrirNotas, aplicarEsquemasConocidos, EXAM_KINDS,
+    // v67.7: el simulador de nota, la vibración y el deslizamiento de la Agenda
+    notaNecesaria, abrirSimulador, vibrar, marcarEntregado,
     pushUndo, undo, sanitize, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
     isNativeShell, soloLocal: true,
     safeColor, sm2, cardState, nextLabel, migrateMedia, eventsOnDate, setException, exceptionsFor,
