@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.1";
+  const APP_VERSION = "v67.2";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -394,9 +394,9 @@
     };
   }
 
-  /* Horario real de 2.º SMR, curso 2026-2027 (documento del centro).
-     Son DOS plantillas del mismo horario: el "temporal" solo cambia las horas (se usa en
-     septiembre y junio, de 16:00 a 21:45). El orden de las clases de cada día es el mismo. */
+  /* Horario real de 2.º SMR, curso 2026-2027 (documento del centro, versión definitiva).
+     Son DOS plantillas: el "temporal" (septiembre y junio, de 16:00 a 21:45, clases de 45 min)
+     y la del curso (15:10 a 22:15, clases de 55 min). Los módulos de cada día son los mismos. */
   const OFFICIAL_MODS = [
     { key: "seg", name: "Seguridad informática", teacher: "Raúl Sanchis Camarasa", color: "#ef4444", room: "AULA 1NF3", aliases: ["seguridad"] },
     { key: "ipe", name: "Itinerario personal para la empleabilidad II", teacher: "Natalia Poquet Giner", color: "#f472b6", room: "AULA 1NF3", aliases: ["ipe", "itinerario", "empleabilidad"] },
@@ -412,8 +412,8 @@
   // Tramos horarios: el del curso y el temporal (septiembre y junio, 45 min por clase)
   const OFFICIAL_SLOTS = {
     curso: [
-      ["15:15", "16:05"], ["16:05", "17:00"], ["17:00", "17:55"],
-      ["18:15", "19:10"], ["19:10", "20:05"], ["20:05", "21:00"], ["21:00", "21:45"],
+      ["15:10", "16:05"], ["16:05", "17:00"], ["17:00", "17:55"],
+      ["18:15", "19:10"], ["19:10", "20:05"], ["20:05", "21:00"], ["21:20", "22:15"],
     ],
     temporal: [
       ["16:00", "16:45"], ["16:45", "17:30"], ["17:30", "18:15"],
@@ -422,11 +422,11 @@
   };
   // Qué toca cada día, tramo a tramo (null = libre). Lunes a viernes.
   const OFFICIAL_PLAN = [
-    ["seg", "seg", "seg", "sor", "sor", "ser", "ser"],       // Lunes
-    ["ipe", "dig", "seg", "seg", "opt", "web", null],         // Martes
-    ["pro", "pro", "opt", "opt", "ser", "sos", null],         // Miércoles
-    ["sor", "sor", "sor", "web", "web", "ser", "ser"],        // Jueves
-    ["tut", "ipe", "ser", "ser", "sor", "sor", null],         // Viernes
+    ["seg", "seg", "ipe", "sor", "sor", "ser", "ser"],        // Lunes
+    ["ipe", "dig", "seg", "seg", "seg", "web", null],         // Martes
+    ["pro", "pro", "opt", "opt", "opt", "sos", null],         // Miércoles
+    ["sor", "sor", "web", "web", "web", "ser", null],         // Jueves
+    ["tut", "ipe", "ser", "ser", "ser", "sor", null],         // Viernes
   ];
   // Calendario escolar 2026-2027 (Generalitat / Ayuntamiento de Villena)
   const COURSE = {
@@ -435,6 +435,26 @@
     local: ["2026-09-09", "2026-12-07", "2027-02-08"],   // festivos locales a efectos escolares
   };
   const TIMETABLE_ID = "2smr-2026-2027";
+  // El centro publicó el horario definitivo (clases de 15:10 a 22:15) con algún cambio de
+  // módulo respecto al primer documento. Este sello avisa de que hay que actualizarlo.
+  const PLAN_VERSION = 2;
+  // Horas del primer documento: sirven para reconocer un horario antiguo del centro y no
+  // confundirlo con clases puestas a mano.
+  const OFFICIAL_SLOTS_V1 = {
+    curso: [
+      ["15:15", "16:05"], ["16:05", "17:00"], ["17:00", "17:55"],
+      ["18:15", "19:10"], ["19:10", "20:05"], ["20:05", "21:00"], ["21:00", "21:45"],
+    ],
+    temporal: [
+      ["16:00", "16:45"], ["16:45", "17:30"], ["17:30", "18:15"],
+      ["18:45", "19:30"], ["19:30", "20:15"], ["20:15", "21:00"], ["21:00", "21:45"],
+    ],
+  };
+  // ¿Esta hora de inicio es del horario del centro (de ahora o del anterior)?
+  function esHoraDelCentro(hhmm) {
+    return [OFFICIAL_SLOTS, OFFICIAL_SLOTS_V1].some((juego) =>
+      Object.values(juego).some((tramos) => tramos.some((t) => t[0] === hhmm)));
+  }
   const HOLIDAYS = {
     "2026-09-09": "Festivo local (Villena)",
     "2026-10-09": "Día de la Comunitat Valenciana",
@@ -518,12 +538,40 @@
     });
     return ev;
   }
+  /* Quien ya tuviera el horario del centro cargado (el del primer documento) se actualiza solo
+     al abrir la app, sin perder nada: se conserva el id de las clases que siguen existiendo
+     (mismo día y mismo módulo), así que la asistencia y las excepciones que apuntaban a ellas
+     siguen valiendo. Si hay alguna clase puesta a mano, no se toca nada. */
+  function actualizarHorarioOficial(st, kind) {
+    if (!st || !st.settings || !st.settings.timetableId) return false;
+    if ((Number(st.settings.planVersion) || 1) >= PLAN_VERSION) return false;
+    const todos = asArray(st.events);
+    const clases = todos.filter((e) => !e.type || e.type === "clase");
+    if (clases.some((e) => !esHoraDelCentro(e.start))) return false;   // hay clases suyas: mejor no tocar
+    const viejas = {};
+    clases.forEach((e) => {
+      const k = e.day + "|" + e.subjectId;
+      (viejas[k] = viejas[k] || []).push(e.id);
+    });
+    const ids = {};
+    OFFICIAL_MODS.forEach((m) => { ids[m.key] = officialSubjectId(st, m); });
+    const nuevas = officialEvents(ids, kind || st.settings.timetableKind || "curso").map((e) => {
+      const cola = viejas[e.day + "|" + e.subjectId];
+      return cola && cola.length ? Object.assign({}, e, { id: cola.shift() }) : e;
+    });
+    // Los bloques de estudio y todo lo que no sea una clase del centro se quedan como estaban.
+    const otras = todos.filter((e) => e.type && e.type !== "clase");
+    st.events = nuevas.concat(otras);
+    st.settings.planVersion = PLAN_VERSION;
+    return true;
+  }
   function applyOfficialTimetable(st, kind = "curso") {
     const ids = {};
     OFFICIAL_MODS.forEach((m) => { ids[m.key] = officialSubjectId(st, m); });
     st.events = officialEvents(ids, kind);
     st.settings = st.settings || {};
     st.settings.timetableId = TIMETABLE_ID;
+    st.settings.planVersion = PLAN_VERSION;
     st.settings.timetableKind = kind;
     st.settings.group = st.settings.group || "2SMR";
     if (!st.settings.center || /luis murillo/i.test(String(st.settings.center))) st.settings.center = "";
@@ -565,7 +613,7 @@
   function avisoPlantilla(kind) {
     return kind === "temporal"
       ? "Septiembre y junio: el centro entra a las 16:00 (horario temporal)"
-      : "Horario del curso: entrada a las 15:15";
+      : "Horario del curso: entrada a las 15:10";
   }
 
   function seedDemo() {
@@ -762,6 +810,8 @@
     // cuando no hay ni horario ni marca previa, o si el usuario lo pide.
     const sinHorario = !asArray(out.events).length;
     if (sinHorario && !asText(out.settings.timetableId)) applyOfficialTimetable(out);
+    // El horario del centro cambió (v67.2): se pone al día solo, conservando asistencia y avisos.
+    actualizarHorarioOficial(out, out.settings.timetableKind);
     return out;
   }
 
@@ -1798,13 +1848,18 @@
     `;
   }
 
-  // Huecos entre clases: se ofrece el rato libre para estudiar en vez de dejarlo vacío.
+  /* Huecos de verdad entre clases: si un día te queda una hora suelta (por ejemplo, una clase
+     suspendida) se ofrece para estudiar. El margen son TUS clases de ese día, no la jornada del
+     ajuste: antes se contaba desde las 8:00 hasta las 21:00 y salían «huecos libres» de madrugada
+     y a las tantas de la noche, justo los que sobraban. */
   function studyGapsHTML(iso, list, esHoy) {
     if (!list.length) return "";
     const day = weekdayMon0(new Date(iso + "T12:00:00"));
     const sorted = [...list].sort((a, b) => minutesOf(a.start) - minutesOf(b.start));
-    const ini = (Number.isFinite(Number(state.settings.startHour)) ? Number(state.settings.startHour) : 8) * 60;
-    const fin = (Number.isFinite(Number(state.settings.endHour)) ? Number(state.settings.endHour) : 21) * 60;
+    const ajusteIni = (Number.isFinite(Number(state.settings.startHour)) ? Number(state.settings.startHour) : 8) * 60;
+    const ajusteFin = (Number.isFinite(Number(state.settings.endHour)) ? Number(state.settings.endHour) : 21) * 60;
+    const ini = Math.max(ajusteIni, minutesOf(sorted[0].start));
+    const fin = Math.min(ajusteFin, Math.max(...sorted.map((e) => minutesOf(e.end))));
     const gaps = [];
     let cursor = ini;
     sorted.forEach((e) => {
@@ -2583,11 +2638,20 @@
     const pack = AVATAR_PACK.find((x) => x.id === ic);
     return pack ? pack.src : "";
   }
+  /* Lo que se puede pintar en el avatar: las criaturas son de una lista fija de la app
+     (assets/…) y tus fotos son data URLs. Antes TODO pasaba por safeImgSrc (que solo acepta
+     data: y blob:), así que al elegir una criatura la cabecera se quedaba con la letra. */
+  function avatarSrcPintable(ic) {
+    ic = ic || state.settings.avatarIcon || "letter";
+    if (ic === "dragon") return "assets/icon-192.png";
+    if (String(ic).startsWith("c:")) return safeImgSrc(avatarSrc(ic));
+    const pack = AVATAR_PACK.find((x) => x.id === ic);
+    return pack ? pack.src : "";
+  }
   function avatarInner() {
     const ic = state.settings.avatarIcon || "letter";
-    const src = avatarSrc(ic);
-    const safe = safeImgSrc(src);
-    if (safe) return `<img src="${safe}" alt="" loading="lazy" decoding="async">`;
+    const safe = avatarSrcPintable(ic);
+    if (safe) return `<img src="${esc(safe)}" alt="" loading="lazy" decoding="async">`;
     const map = { book: "📘", pc: "💻", wrench: "🔧", shield: "🛡️", net: "🌐", bolt: "⚡", lab: "🧪" };
     if (map[ic]) return map[ic];
     return esc(((state.settings.name || "A").trim().charAt(0) || "A").toUpperCase());
@@ -2918,10 +2982,10 @@
       <div class="card">
         <p class="hint" style="margin-top:0">Curso del <b>14 de septiembre de 2026</b> al <b>18 de junio de 2027</b>. Festivos locales a efectos escolares: <b>9 de septiembre</b>, <b>7 de diciembre</b> y <b>8 de febrero</b>.</p>
         <div class="hero-actions">
-          <button class="btn ${(st.timetableKind || "curso") === "curso" ? "btn-primary" : ""}" type="button" data-action="restore-timetable" data-kind="curso">Curso · 15:15–21:45</button>
+          <button class="btn ${(st.timetableKind || "curso") === "curso" ? "btn-primary" : ""}" type="button" data-action="restore-timetable" data-kind="curso">Curso · 15:10–22:15</button>
           <button class="btn ${st.timetableKind === "temporal" ? "btn-primary" : ""}" type="button" data-action="restore-timetable" data-kind="temporal">Septiembre y junio · 16:00–21:45</button>
         </div>
-        <p class="hint" style="margin:6px 0 0">Las horas cambian <b>solas</b> en septiembre y junio (entrada a las 16:00); el resto del curso, a las 15:15. El Horario avisa de qué plantilla está puesta y solo enseña clase los días lectivos.</p>
+        <p class="hint" style="margin:6px 0 0">Las horas cambian <b>solas</b> en septiembre y junio (entrada a las 16:00); el resto del curso, a las 15:10. El Horario avisa de qué plantilla está puesta y solo enseña clase los días lectivos.</p>
         <label class="check"><input type="checkbox" data-action="toggle-auto-plantilla" ${st.timetableAuto !== false ? "checked" : ""}/> Cambiar el horario solo en septiembre y junio</label>
         <p class="hint">Cargar una plantilla a mano <b>sustituye</b> tus clases actuales (pide confirmación antes) y desactiva el cambio automático. Las aulas (AULA 1NF3, AULA 2, AULA 3) vienen con cada clase.</p>
       </div>
@@ -4383,7 +4447,7 @@
       const kind = btn.dataset.kind === "temporal" ? "temporal" : "curso";
       const cuando = kind === "temporal"
         ? "el <b>horario temporal</b> de septiembre y junio (16:00 a 21:45)"
-        : "el <b>horario del curso</b> (15:15 a 21:45)";
+        : "el <b>horario del curso</b> (15:10 a 22:15)";
       openModal("Cargar el horario del centro", `<p>Se <b>sustituyen</b> tus clases actuales por ${cuando}, con los ${OFFICIAL_MODS.length} módulos y sus aulas.</p>
         <p class="hint">Con esto el cambio automático de septiembre y junio se queda en pausa; puedes volver a activarlo en Ajustes.</p>
         <p class="hint">Tus apuntes, fichas y sesiones de estudio no se tocan. Puedes deshacerlo justo después.</p>`,
@@ -4742,6 +4806,7 @@
     safeColor, sm2, cardState, nextLabel, migrateMedia, eventsOnDate, setException, exceptionsFor,
     COURSE, holidayName, OFFICIAL_MODS, OFFICIAL_SLOTS, OFFICIAL_PLAN, applyOfficialTimetable,
     dayInfo, isLectivo, plantillaDeMes, syncPlantilla, retimarHorario, semanaDe, HOLIDAYS, VACATIONS,
+    PLAN_VERSION, actualizarHorarioOficial, avatarSrcPintable, OFFICIAL_SLOTS_V1, esHoraDelCentro,
     unlockNote(id) { unlockedNotes.delete(id); },
     lockNote(id) { unlockedNotes.add(id); },
     get loadProblem() { return loadProblem; },

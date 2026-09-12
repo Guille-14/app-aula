@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v67.2:** el horario del centro definitivo (15:10–22:15), sin «huecos libres» inventados, la foto de perfil que no cambiaba y los botones de Ajustes flotando (437 pruebas ✓).
 **Ronda v67.1:** la hoja «Más» vuelve a verse pequeña, como antes del rediseño (401 pruebas ✓).
 **Ronda v67:** el bloque de estudio avisa con la app cerrada, «Compartir horario» en texto y recordatorio de copia de seguridad (394 pruebas ✓).
 **Ronda v66:** «Compartir» un apunte con sus fotos desde el propio apunte, y el comprobador del APK vigila también el FileProvider del que depende (365 pruebas ✓).
@@ -891,6 +892,78 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.2 · El horario del centro, de verdad
+
+El usuario mandó las dos hojas del centro (temporal de septiembre/junio y curso completo) y pidió:
+«Pon bien los horarios de clase anda. Y los huecos que ponías al final, como horas libres, elimínalas».
+De paso, dos fallos que él mismo vio en Ajustes: los botones de guardar flotando y la foto de perfil.
+
+### 1. El horario estaba mal (y ahora está tal cual la hoja del centro)
+El documento definitivo cambia las horas y alguna asignatura respecto al primer documento que tenía la
+app. Comparado hoja a hoja:
+
+* **Horario del curso: 15:10–22:15** (antes 15:15–21:45), con clases de **55 minutos** y el último
+  tramo de **21:20 a 22:15** (antes 21:00–21:45).
+* **Horario temporal (septiembre y junio): 16:00–21:45**, clases de 45 minutos. Esta parte ya estaba
+  bien y no se ha tocado.
+
+El reparto de módulos, tramo a tramo, según la hoja (L = lunes … V = viernes):
+
+| Tramo | Lunes | Martes | Miércoles | Jueves | Viernes |
+|---|---|---|---|---|---|
+| 1.º | Seguridad | Itinerario | Proyecto | Sist. operativos | Tutoría |
+| 2.º | Seguridad | Digitalización | Proyecto | Sist. operativos | Itinerario |
+| 3.º | **Itinerario** | Seguridad | Optativo | **Aplic. web** | Servicios |
+| 4.º | Sist. operativos | Seguridad | Optativo | Aplic. web | Servicios |
+| 5.º | Sist. operativos | **Seguridad** | Optativo | Aplic. web | Servicios |
+| 6.º | Servicios | Aplic. web | Sostenibilidad | Servicios | Sist. operativos |
+| 7.º | Servicios | — | — | — | — |
+
+Los cambios respecto a lo que había: el lunes a las 17:00 toca **Itinerario personal** (no Seguridad),
+el martes tiene **tres** horas seguidas de Seguridad, el miércoles **tres** de Optativo, el jueves la
+tanda es de **Aplicaciones web** (y acaba a las 21:00, sin última hora) y el viernes cierra con
+**Sistemas operativos**. Las horas semanales cuadran con la hoja: Servicios 6, Seguridad 5, Sistemas 5,
+Aplicaciones web 4, Itinerario 3, Proyecto 2, Optativo 3 y una hora de cada uno de los demás.
+
+### 2. A quien ya tuviera el horario viejo se le pone al día solo
+Nadie tiene que volver a cargar nada. Al abrir la app, si el horario guardado es el del centro (se
+reconoce por sus horas) y tiene la versión antigua del plan, se sustituye por el nuevo **conservando
+el id de cada clase que sigue existiendo** (mismo día y mismo módulo), así que la asistencia
+apuntada, las excepciones (una clase movida o suspendida) y los avisos programados siguen valiendo.
+Los bloques de estudio propios se quedan donde estaban. Si hay alguna clase puesta a mano (una hora
+que no es del centro), no se toca nada: mejor no pisar datos del usuario.
+
+### 3. Fuera las «horas libres» que salían al final del día
+En la vista Horario, cada día acababa con dos filas de «Hueco libre»: una de 15:00 a 16:00 (antes de
+entrar) y otra de 21:45 a 23:00 (después de salir), calculadas con la jornada de los ajustes
+(8:00–21:00… 15:00–23:00) en vez de con tus clases. Eran ruido, y el usuario tenía razón en que
+sobraban. Ahora el margen es **de la primera a la última clase del día**, así que:
+
+* Un día normal no enseña ningún «hueco libre»: ni antes de entrar ni después de salir.
+* Si de verdad te queda una hora suelta entre clases (por ejemplo, una clase suspendida), sí se
+  ofrece para estudiar: eso sí es un hueco.
+* En la Agenda pasa lo mismo: los «huecos libres» del día solo salen cuando existen de verdad (antes
+  salían siete huecos inventados cada día, por la jornada del ajuste), el contador desaparece si no
+  hay ninguno y la tarjeta «Huecos libres» no se pinta vacía.
+
+### 4. La foto de perfil no cambiaba (fallo real)
+Al elegir una criatura de la galería, la app **guardaba la elección** pero seguía enseñando la letra
+en la cabecera. La causa: la cabecera pasaba la imagen por `safeImgSrc()`, que por seguridad solo
+acepta `data:` y `blob:` (fotos del usuario); las criaturas son rutas de la app (`assets/avatars/…`)
+y se descartaban. Ahora hay una lista blanca de verdad: criaturas de la app o foto propia, y nada
+más. Comprobado en el navegador con la bolita de Charizard: cabecera, tarjeta de perfil y galería
+marcada.
+
+### 5. Los botones de Ajustes ya no flotan
+`Guardar ajustes` y `Volver a configurar desde el principio` eran `position: sticky; bottom: …` con
+fondo difuminado: se quedaban **encima** de las tarjetas mientras bajabas por los ajustes. Ahora van
+al final de la lista, en su sitio (estáticos), uno debajo del otro.
+
+**Pruebas: 401 → 437 ✓** (36 nuevas: tramos y plan del documento, reparto por días, horario
+actualizado sin perder asistencia, sin pisar clases propias, huecos de verdad en Horario y Agenda,
+la galería de perfil y los botones de Ajustes). Pasan también sobre el código minificado del APK, y
+el barrido de las 21 vistas sigue sin errores ni desbordes.
 
 ## Ronda v67.1 · La hoja «Más» vuelve a verse pequeña
 

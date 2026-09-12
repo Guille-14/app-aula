@@ -582,10 +582,25 @@ async function testSinRed() {
   act(env, "restore-timetable", { kind: "curso" });
   check(confirmModal(env), "centro: cargar el horario avisa antes de sustituir");
   const evs = A.state.events;
-  check(evs.length === 32, "centro: el horario del curso trae la semana completa (" + evs.length + " clases)");
-  check(evs.every((e) => e.start >= "15:15" && e.end <= "21:45"), "centro: las horas van de 15:15 a 21:45");
+  check(evs.length === 31, "centro: el horario del curso trae la semana completa (" + evs.length + " clases)");
+  check(evs.every((e) => e.start >= "15:10" && e.end <= "22:15"), "centro: las horas van de 15:10 a 22:15");
+  check(evs.some((e) => e.start === "21:20" && e.end === "22:15"), "centro: la última clase del día es de 21:20 a 22:15");
   check(new Set(evs.map((e) => e.room)).size >= 3, "centro: cada clase lleva su aula (" + [...new Set(evs.map((e) => e.room))].join(", ") + ")");
   check(evs.filter((e) => e.day === 0).length === 7 && evs.filter((e) => e.day === 1).length === 6, "centro: lunes 7 tramos y martes 6, como el documento");
+  check([1, 2, 3, 4].every((d) => evs.filter((e) => e.day === d).length === 6), "centro: de martes a viernes 6 clases (la última hora queda libre)");
+  {
+    // El plan, tramo a tramo, tal y como está en la hoja del centro
+    const plan = A.OFFICIAL_PLAN.map((dia) => dia.map((k) => k || "—").join(","));
+    check(plan[0] === "seg,seg,ipe,sor,sor,ser,ser", "centro: lunes seg·seg·ipe·sor·sor·ser·ser");
+    check(plan[2] === "pro,pro,opt,opt,opt,sos,—", "centro: miércoles pro·pro·opt·opt·opt·sos");
+    check(plan[3] === "sor,sor,web,web,web,ser,—", "centro: jueves sor·sor·web·web·web·ser");
+    check(plan[4] === "tut,ipe,ser,ser,ser,sor,—", "centro: viernes tut·ipe·ser·ser·ser·sor");
+    // Cada módulo, una sola asignatura (sin duplicados raros)
+    const horas = {};
+    A.OFFICIAL_PLAN.flat().filter(Boolean).forEach((k) => { horas[k] = (horas[k] || 0) + 1; });
+    check(horas.seg === 5 && horas.sor === 5 && horas.ser === 6 && horas.web === 4 && horas.ipe === 3,
+      "centro: las horas semanales de cada módulo cuadran con el documento (" + JSON.stringify(horas) + ")");
+  }
   check(A.state.subjects.some((s) => s.name === "Servicios en red" && s.room === "AULA 3"), "centro: los módulos llevan su aula habitual");
 
   // Horario temporal de septiembre y junio
@@ -596,13 +611,15 @@ async function testSinRed() {
   check(tmp.every((e) => e.start >= "16:00"), "centro: el temporal empieza a las 16:00");
   check(tmp.some((e) => e.end === "21:45"), "centro: el temporal acaba a las 21:45");
   check(A.state.settings.timetableKind === "temporal", "centro: queda anotado qué plantilla está puesta");
-  check(A.OFFICIAL_SLOTS.temporal[0][0] === "16:00" && A.OFFICIAL_SLOTS.curso[0][0] === "15:15", "centro: las dos plantillas de horas están definidas");
+  check(A.OFFICIAL_SLOTS.temporal[0][0] === "16:00" && A.OFFICIAL_SLOTS.curso[0][0] === "15:10", "centro: las dos plantillas de horas están definidas");
+  check(A.OFFICIAL_SLOTS.curso.every((t) => A.minutesOf(t[1]) - A.minutesOf(t[0]) === 55), "centro: las clases del curso duran 55 minutos");
+  check(A.OFFICIAL_SLOTS.temporal.every((t) => A.minutesOf(t[1]) - A.minutesOf(t[0]) === 45), "centro: las del temporal, 45 minutos");
 
   // Cargar a mano deja el automático en pausa; si se vuelve a activar, cambia solo
   check(A.state.settings.timetableAuto === false, "centro: cargar una plantilla a mano pausa el cambio automático");
   A.state.settings.timetableAuto = true;
   check(A.syncPlantilla(A.state, "2026-10-05") === "curso", "centro: en octubre la app vuelve sola al horario del curso");
-  check(A.state.events.every((e) => e.start >= "15:15"), "centro: y las clases vuelven a las 15:15");
+  check(A.state.events.every((e) => e.start >= "15:10"), "centro: y las clases vuelven a las 15:10");
   check(A.syncPlantilla(A.state, "2027-06-10") === "temporal", "centro: en junio vuelve sola a la temporal");
 
   // La semana del primer día de clase, con aulas
@@ -1514,6 +1531,147 @@ async function testAuditoria() {
     env.window.Capacitor.Plugins.LocalNotifications.checkPermissions = async () => ({ display: "denied" });
     const r3 = await AV.sincronizar({ pedirPermiso: false, datos, ahora });
     check(r3.permiso === false && r3.programados === 0, "avisos: sin permiso de Android no se programa nada");
+  }
+
+  // --- v67.2: el horario del centro definitivo, sin horas libres inventadas, la foto de perfil
+  //             que se veía como una letra y los botones de Ajustes flotando ---
+  {
+    // 1) Los tramos y el plan del documento
+    const env = boot();
+    ready(env.A);
+    const A = env.A;
+    check(A.OFFICIAL_SLOTS.curso[0][0] === "15:10" && A.OFFICIAL_SLOTS.curso[6][1] === "22:15",
+      "horario: el curso va de 15:10 a 22:15 (clases de 55 min)");
+    check(A.OFFICIAL_SLOTS.temporal[0][0] === "16:00" && A.OFFICIAL_SLOTS.temporal[6][1] === "21:45",
+      "horario: el temporal, de 16:00 a 21:45 (clases de 45 min)");
+    // Un día del curso con la plantilla puesta y su reparto tal cual el documento
+    A.state.settings.timetableAuto = false;
+    A.state.settings.timetableKind = "curso";
+    A.applyOfficialTimetable(A.state, "curso");
+    const porDia = [0, 1, 2, 3, 4].map((d) => A.state.events.filter((e) => e.day === d).length);
+    check(JSON.stringify(porDia) === "[7,6,6,6,6]", "horario: 7 clases el lunes y 6 de martes a viernes (" + porDia.join("/") + ")");
+    const lunes = A.state.events.filter((e) => e.day === 0).sort((a, b) => a.start.localeCompare(b.start));
+    check(lunes[2].start === "17:00" && A.subjectName(lunes[2].subjectId) === "Itinerario personal para la empleabilidad II",
+      "horario: el lunes a las 17:00 toca Itinerario personal (y no Seguridad)");
+    const jueves = A.state.events.filter((e) => e.day === 3).sort((a, b) => a.start.localeCompare(b.start));
+    check(jueves.every((e) => e.start !== "21:20"), "horario: el jueves ya no tiene la última hora del día");
+
+    // 2) Ni un «hueco libre» inventado delante ni detrás de las clases
+    A.state.settings.includeSaturday = false;
+    A.go("schedule");
+    act(env, "sch-week", { delta: String(A.semanaDe("2026-09-14")) });
+    const semana = env.doc.getElementById("view").textContent;
+    check(!/Hueco libre/.test(semana), "horario: ya no salen «huecos libres» al final (ni al principio) del día");
+    check(env.doc.querySelectorAll("#view .class-row.is-study").length === 0, "horario: y ninguna fila de estudio inventada");
+    // Un hueco de verdad (una clase que se cae) sí se sigue ofreciendo
+    const quitar = A.state.events.filter((e) => e.day === 2).sort((a, b) => a.start.localeCompare(b.start))[1];
+    A.state.events = A.state.events.filter((e) => e.id !== quitar.id);
+    A.go("schedule");
+    const conHueco = env.doc.querySelector("#view .class-row.is-study");
+    check(!!conHueco && /Hueco libre · 55 min/.test(conHueco.textContent.replace(/\s+/g, " ")),
+      "horario: si de verdad te queda una hora suelta, se ofrece para estudiar (" + (conHueco ? conHueco.textContent.replace(/\s+/g, " ").trim() : "nada") + ")");
+
+    // 3) La Agenda: sin clases no hay huecos que ofrecer, y con un hueco real se puede reservar
+    const env2 = boot();
+    ready(env2.A);
+    const A2 = env2.A;
+    A2.state.settings.timetableAuto = false;
+    A2.applyOfficialTimetable(A2.state, "curso");
+    const bloque = A2.state.events.filter((e) => e.day === 2).sort((a, b) => a.start.localeCompare(b.start))[1];
+    A2.state.events = A2.state.events.filter((e) => e.id !== bloque.id);
+    A2.state.settings.demo = false;
+    A2.state.settings.onboarded = true;
+    A2.go("agenda");
+    A2.state._agendaTab = "dia";
+    A2.state._agendaDay = "2026-09-16";         // un miércoles lectivo
+    A2.render();
+    const reservar = env2.doc.querySelector('#view [data-action="slot-study"]');
+    check(!!reservar, "agenda: el hueco real del miércoles se puede reservar");
+    if (reservar) {
+      const antes = A2.state.events.length;
+      act(env2, "slot-study", { start: reservar.dataset.start, end: reservar.dataset.end, day: reservar.dataset.day });
+      check(A2.state.events.length === antes + 1 && A2.state.events[A2.state.events.length - 1].type === "estudio",
+        "agenda: y se apunta como bloque de estudio");
+    }
+
+    // 4) La foto de perfil: las criaturas de la app se pintan (antes quedaba la letra)
+    const env3 = boot();
+    ready(env3.A);
+    const A3 = env3.A;
+    check(A3.avatarSrcPintable("charizard") === "assets/avatars/charizard.jpg",
+      "perfil: las criaturas de la app son una fuente válida para el avatar");
+    check(A3.avatarSrcPintable("letter") === "" && A3.avatarSrcPintable("c:noexiste") === "",
+      "perfil: una foto que ya no está no rompe el avatar (se vuelve a la letra)");
+    A3.go("settings");
+    const bola = env3.doc.querySelector('#view [data-action="set-avatar"][data-id="gengar"]');
+    check(!!bola, "perfil: el apartado de Ajustes tiene la galería de fotos para elegir");
+    if (bola) {
+      bola.dispatchEvent(new env3.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+      check(A3.state.settings.avatarIcon === "gengar", "perfil: al pulsar una criatura queda elegida");
+      const enCabecera = env3.doc.querySelector('#header-avatar img[src*="gengar"]');
+      check(!!enCabecera, "perfil: y la cabecera enseña esa foto (no la letra)");
+      check(!!env3.doc.querySelector('#view [data-action="set-avatar"][data-id="gengar"].is-on'),
+        "perfil: la elegida se marca en la galería");
+    }
+
+    // 5) Los botones de Ajustes, en su sitio (ya no flotan encima del contenido)
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+    check(!tienePropiedad(".set-actions", "position: sticky", ui), "ajustes: los botones de guardar ya no se quedan flotando");
+    check(!tienePropiedad(".set-actions", "backdrop-filter", ui), "ajustes: ni con el fondo difuminado que los hacía parecer flotantes");
+    check(tienePropiedad(".set-actions", "display: flex", ui), "ajustes: siguen uno debajo del otro, al final de la lista");
+  }
+
+  // --- v67.2 (bis): a quien ya tenía el horario viejo del centro se le pone al día solo ---
+  {
+    const A0 = boot();
+    ready(A0.A);
+    const mods = A0.A.OFFICIAL_MODS;
+    const idDe = (k) => mods.find((m) => m.key === k).key;
+    // Un estado como el de la v67: el plan antiguo, con sus horas (15:15 y hasta 21:45)
+    const subjectId = (k) => "s-" + idDe(k);
+    const subjects = mods.map((m) => ({ id: subjectId(m.key), name: m.name, color: m.color, teacher: m.teacher, room: m.room, credits: 0 }));
+    const planViejo = [
+      ["seg", "seg", "seg", "sor", "sor", "ser", "ser"],
+      ["ipe", "dig", "seg", "seg", "opt", "web", null],
+      ["pro", "pro", "opt", "opt", "ser", "sos", null],
+      ["sor", "sor", "sor", "web", "web", "ser", "ser"],
+      ["tut", "ipe", "ser", "ser", "sor", "sor", null],
+    ];
+    const tramosViejos = [["15:15", "16:05"], ["16:05", "17:00"], ["17:00", "17:55"], ["18:15", "19:10"], ["19:10", "20:05"], ["20:05", "21:00"], ["21:00", "21:45"]];
+    const events = [];
+    planViejo.forEach((dia, d) => dia.forEach((k, i) => {
+      if (!k) return;
+      events.push({ id: "ev-" + d + "-" + i, subjectId: subjectId(k), day: d, start: tramosViejos[i][0], end: tramosViejos[i][1], room: "", type: "clase" });
+    }));
+    // Una falta apuntada a la clase del lunes a las 15:15 (Seguridad): debe sobrevivir
+    const apuntada = events.find((e) => e.day === 0 && e.start === "15:15").id;
+    const viejo = {
+      schemaVersion: 5,
+      settings: { onboarded: true, demo: false, timetableId: "2smr-2026-2027", timetableKind: "curso", timetableAuto: false, startHour: 15, endHour: 23 },
+      subjects, events, notes: [], cards: [], sessions: [], inbox: [], attendance: [{ id: "a1", eventId: apuntada, date: "2026-09-14", status: "falta" }],
+    };
+    const env = boot({ seed: JSON.stringify(viejo) });
+    ready(env.A);
+    const A = env.A;
+    check(A.state.events.length === 31, "actualización: el horario viejo del centro se sustituye por el nuevo (31 clases)");
+    check(A.state.events.every((e) => A.esHoraDelCentro(e.start)), "actualización: todas las clases quedan en las horas del centro");
+    const lunes = A.state.events.filter((e) => e.day === 0).sort((a, b) => a.start.localeCompare(b.start));
+    check(lunes[0].start === "15:10" && A.subjectName(lunes[2].subjectId) === "Itinerario personal para la empleabilidad II",
+      "actualización: el lunes entra a las 15:10 y a las 17:00 tiene Itinerario personal");
+    check(A.state.settings.planVersion === 2, "actualización: queda anotado que el horario ya está al día");
+    check(A.state.events.some((e) => e.id === apuntada), "actualización: la clase con la falta apuntada conserva su id");
+    check(A.state.attendance.length === 1 && A.state.events.some((e) => e.id === A.state.attendance[0].eventId),
+      "actualización: así que la falta sigue apuntando a una clase que existe");
+    // Y si el horario tiene una clase puesta a mano, no se toca nada
+    const env2 = boot({ seed: JSON.stringify(Object.assign({}, viejo, { events: viejo.events.concat([{ id: "mia", subjectId: subjectId("seg"), day: 5, start: "11:11", end: "12:00", room: "", type: "clase" }]) })) });
+    ready(env2.A);
+    check(env2.A.state.events.some((e) => e.id === "mia") && env2.A.state.events.length === 33,
+      "actualización: con una clase tuya a mano no se pisa el horario");
+    // Un bloque de estudio tampoco se pierde
+    const env3 = boot({ seed: JSON.stringify(Object.assign({}, viejo, { events: viejo.events.concat([{ id: "est", subjectId: subjectId("seg"), day: 2, start: "10:00", end: "10:45", room: "Estudio", type: "estudio" }]) })) });
+    ready(env3.A);
+    check(env3.A.state.events.some((e) => e.id === "est" && e.type === "estudio"),
+      "actualización: los bloques de estudio que te habías apuntado siguen ahí");
   }
 
   // --- v67.1: la hoja «Más» vuelve a verse pequeña (cada apartado, una tarjeta compacta) ---

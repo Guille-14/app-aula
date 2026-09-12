@@ -55,14 +55,18 @@
     const startH = Number.isFinite(Number(st().settings.startHour)) ? Number(st().settings.startHour) : 8;
     const endH = Number.isFinite(Number(st().settings.endHour)) ? Number(st().settings.endHour) : 21;
     const evs = (iso ? clasesDe(iso, day) : st().events.filter((e) => e.day === day)).slice().sort((a, b) => a.start.localeCompare(b.start));
+    if (!evs.length) return [];
+    // Solo lo que quede entre la primera y la última clase: ni antes de entrar ni después de salir
+    const ini = Math.max(startH * 60, minutesOf(evs[0].start));
+    const finDia = Math.min(endH * 60, Math.max.apply(null, evs.map((e) => minutesOf(e.end))));
     const gaps = [];
-    let cursor = startH * 60;
+    let cursor = ini;
     evs.forEach((e) => {
       const s = minutesOf(e.start);
       if (s - cursor >= 40) gaps.push({ start: pad(Math.floor(cursor / 60)) + ":" + pad(cursor % 60), end: e.start });
       cursor = Math.max(cursor, minutesOf(e.end));
     });
-    if (endH * 60 - cursor >= 40) gaps.push({ start: pad(Math.floor(cursor / 60)) + ":" + pad(cursor % 60), end: pad(endH) + ":00" });
+    if (finDia - cursor >= 40) gaps.push({ start: pad(Math.floor(cursor / 60)) + ":" + pad(cursor % 60), end: pad(Math.floor(finDia / 60)) + ":" + pad(finDia % 60) });
     return gaps;
   }
 
@@ -91,7 +95,7 @@
       body = `
         <div class="mini-stats">
           <div><b>${bloques.length}</b><small>${bloques.length === 1 ? "bloque" : "bloques"}</small></div>
-          <div><b>${gaps.length}</b><small>huecos libres</small></div>
+          ${gaps.length ? `<div><b>${gaps.length}</b><small>huecos libres</small></div>` : ""}
           <div><b>${mins}</b><small>min hoy</small></div>
         </div>
         <div class="card">
@@ -106,13 +110,12 @@
               <div class="meta">${e.start}–${e.end}</div>
             </div>`).join("") : `<div class="empty"><b>Nada reservado</b><p>Pilla un hueco libre y dale a «Reservar».</p></div>`}
         </div>
-        <div class="card">
+        ${gaps.length ? `<div class="card">
           <div class="card-head"><h3>Huecos libres</h3></div>
-          ${gaps.length ? gaps.map((g) => `<div class="row"><div class="meta">${g.start}–${g.end}</div>
+          ${gaps.map((g) => `<div class="row"><div class="meta">${g.start}–${g.end}</div>
               <div style="flex:1"></div>
-              <button class="btn btn-sm" data-action="slot-study" data-day="${weekdayMon0(d)}" data-start="${g.start}" data-end="${g.end}">Reservar</button></div>`).join("")
-            : `<p class="muted">${info.kind === "lectivo" ? "Día lleno o sin huecos claros." : "Hoy no hay clases: todo el día es tuyo."}</p>`}
-        </div>`;
+              <button class="btn btn-sm" data-action="slot-study" data-day="${weekdayMon0(d)}" data-start="${g.start}" data-end="${g.end}">Reservar</button></div>`).join("")}
+        </div>` : ""}`;
     } else if (tab === "semana") {
       const mon = new Date(d); mon.setDate(d.getDate() - weekdayMon0(d));
       const days = Array.from({ length: 7 }, (_, i) => {

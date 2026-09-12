@@ -48,7 +48,7 @@ En el móvil, misma Wi‑Fi: `http://IP-DEL-PC:8080`.
 
 - El **horario es el del centro**: L–V con los 7 tramos reales, el aula de cada clase y la
   **plantilla que cambia sola** en septiembre y junio (entrada a las **16:00**) y el resto del
-  curso a las **15:15**. Se cambia al abrir la app, cada 15 s y al volver del segundo plano.
+  curso a las **15:10** (y hasta las 22:15). Se cambia al abrir la app, cada 15 s y al volver del segundo plano.
 - El horario solo enseña clase **los días que toca**: si es festivo, vacaciones, fin de semana o
   el curso no ha empezado, ese día sale en blanco con el motivo.
 - La pestaña **Calendario** del Horario es el **calendario escolar 2026-27** (septiembre a junio):
