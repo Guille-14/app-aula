@@ -233,6 +233,9 @@ const VIEWS = ["dashboard", "schedule", "notes", "cards", "timer", "stats", "sub
     },
   };
   Object.defineProperty(env.window, "localStorage", { value: fake, configurable: true });
+  // Con el almacenamiento lleno, un guardado de datos NUEVOS es el que debe avisar: muta el
+  // estado para que save() no lo descarte por «nada cambió desde el último guardado».
+  env.A.state.inbox.push({ id: "zz2", text: "cuota", createdAt: Date.now() });
   env.A.save();
   check(!!env.A.saveProblem, "sin espacio: el error de cuota no se traga");
   env.A.render();
@@ -2944,10 +2947,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.7\.1"/.test(app), "versión: js/app.js dice v67.7.1");
-    check(pkg.version === "67.7.1", "versión: package.json dice 67.7.1");
-    check(lock.version === "67.7.1" && lock.packages[""].version === "67.7.1", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.7\.1"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.8\.0"/.test(app), "versión: js/app.js dice v67.8.0");
+    check(pkg.version === "67.8.0", "versión: package.json dice 67.8.0");
+    check(lock.version === "67.8.0" && lock.packages[""].version === "67.8.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.8\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
@@ -3015,6 +3018,103 @@ function testIconoApp() {
   }
 }
 
+// ------------------------------------------------------- v67.8: re-análisis (7 mejoras)
+// Blindaje de las siete mejoras del re-análisis: iconos comprimidos, contraste WCAG de los
+// 33 skins, CSS muerto retirado, escala tipográfica, objetivo táctil del temporizador,
+// blobs revocados y save() que no reescribe en cada navegación.
+function testReanalisis() {
+  const sinComentarios = (t) => t.replace(/\/\*[\s\S]*?\*\//g, "");
+  const cssOrden = ["styles.css", "skins.css", "themes.css", "ui.css"];
+  const cssRaw = cssOrden.map((f) => fs.readFileSync(path.join(ROOT, "css", f), "utf8")).join("\n");
+  const cssLimpio = sinComentarios(cssRaw);
+
+  // 1 · Iconos comprimidos (antes 273 KB y 44 KB; el ahorro se multiplica por cada instalación)
+  const k512 = fs.statSync(path.join(ROOT, "assets", "icon-512.png")).size / 1024;
+  const k192 = fs.statSync(path.join(ROOT, "assets", "icon-192.png")).size / 1024;
+  check(k512 < 100, "re-análisis: icon-512.png pesa <100 KB (antes 273 KB, ahora " + k512.toFixed(0) + " KB)");
+  check(k192 < 25, "re-análisis: icon-192.png pesa <25 KB (antes 44 KB, ahora " + k192.toFixed(0) + " KB)");
+
+  // 2 · Contraste WCAG AA (≥4,5:1) del texto y del botón primario en los 33 skins
+  // Tolerante al minificador: cssnano quita las comillas de [data-skin=x] y acorta #fff.
+  const hex6 = (v) => {
+    const m3 = /^#([0-9a-f]{3})$/i.exec(String(v).trim());
+    if (m3) { const [a, b, c] = m3[1]; return hexRGB("#" + a + a + b + b + c + c); }
+    return hexRGB(v);
+  };
+  const base = {};
+  const pieles = {};
+  for (const f of cssOrden) {
+    const t = sinComentarios(fs.readFileSync(path.join(ROOT, "css", f), "utf8"));
+    for (const m of t.matchAll(/:root[^{]*\{([^{}]*)\}/g)) Object.assign(base, Object.fromEntries([...m[1].matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((x) => [x[1], x[2].trim()])));
+    for (const m of t.matchAll(/\[data-skin="?(?:([a-z0-9-]+)"?)\][^{]*\{([^{}]*)\}/g)) {
+      const toks = Object.fromEntries([...m[2].matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((x) => [x[1], x[2].trim()]));
+      pieles[m[1]] = Object.assign(pieles[m[1]] || {}, toks);
+    }
+  }
+  const nombres = Object.keys(pieles).sort();
+  const bajoAA = [];
+  for (const s of nombres) {
+    const t = Object.assign({}, base, pieles[s]);
+    const bg = hex6(t["--bg"] || ""), ink = hex6(t["--ink"] || "");
+    const ac = hex6(t["--accent"] || ""), ai = hex6(t["--accent-ink"] || "#ffffff");
+    if (bg && ink && contraste(bg, ink) < 4.5) bajoAA.push(s + " texto " + contraste(bg, ink).toFixed(2));
+    if (ac && ai && contraste(ac, ai) < 4.5) bajoAA.push(s + " botón " + contraste(ac, ai).toFixed(2));
+  }
+  check(nombres.length === 33, "re-análisis: se analizan los 33 skins (" + nombres.length + ")");
+  check(bajoAA.length === 0, "re-análisis: ningún skin queda por debajo de 4,5:1 (" + (bajoAA.join(", ") || "todos AA") + ")");
+
+  // 3 · CSS muerto fuera: ni .app/.sidebar/.nav-item ni las variables que solo ellos leían
+  check(!/(^|[\s>+~(,])\.(app|sidebar|nav-item)(?![\w-])/.test(cssLimpio),
+    "re-análisis: el layout muerto (.app/.sidebar/.nav-item) ya no está en el CSS");
+  check(!/--sidebar(-fg)?\s*:/.test(cssLimpio) && !/var\(--sidebar/.test(cssLimpio),
+    "re-análisis: --sidebar y --sidebar-fg (33 skins) desaparecieron");
+  const appjs = fs.readFileSync(path.join(ROOT, "js", "app.js"), "utf8");
+  check(!/\.nav-item/.test(appjs), "re-análisis: el JS ya no consulta .nav-item");
+
+  // 4 · Escala tipográfica: solo pueden existir estos tamaños (más el 0 de «ocultar»)
+  const ESCALA = [0, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 26, 32, 40, 48];
+  const vistos = [...new Set([...cssLimpio.matchAll(/font-size:\s*([0-9.]+)px/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+  const fuera = vistos.filter((t) => !ESCALA.includes(t));
+  check(fuera.length === 0, "re-análisis: los font-size siguen la escala (" + vistos.join("/") + ")");
+
+  // 5 · Objetivo táctil del temporizador ≥44 px
+  const timer = (cssLimpio.match(/\.timer-bar \.btn-sm\s*\{[^}]*\}/) || [""])[0];
+  const altoTimer = Number((timer.match(/min-height:\s*(\d+)px/) || [0, 0])[1]);
+  check(altoTimer >= 44, "re-análisis: el botón del temporizador mide ≥44 px (ahora " + altoTimer + ")");
+
+  // 6 · Los blobs huérfanos se revocan al borrar fotos y al cambiar el favicon
+  // clear() ya revocaba (1); con el arreglo, del() añade una segunda revocación. Contar ≥2
+  // sobrevive al minificado (terser renombra del, pero no el método revokeObjectURL).
+  const media = fs.readFileSync(path.join(ROOT, "js", "media.js"), "utf8");
+  check((media.match(/revokeObjectURL/g) || []).length >= 2, "re-análisis: media.del revoca el blob de la foto borrada");
+  check(/startsWith\("blob:"\)[\s\S]{0,80}revokeObjectURL/.test(appjs), "re-análisis: setLinkIcon libera el icono anterior");
+
+  // 7 · save() sin cambios no reescribe localStorage (y con cambios sí)
+  const env = boot();
+  ready(env.A);
+  const realStore = env.window.localStorage;
+  let escrituras = 0;
+  // Como en la prueba de cuota: jsdom no deja pisar setItem a pelo, se sustituye el objeto entero.
+  const contador = {
+    get length() { return realStore.length; },
+    key: (i) => realStore.key(i),
+    getItem: (k) => realStore.getItem(k),
+    removeItem: (k) => realStore.removeItem(k),
+    clear: () => realStore.clear(),
+    setItem: (k, v) => { escrituras += 1; return realStore.setItem(k, v); },
+  };
+  Object.defineProperty(env.window, "localStorage", { value: contador, configurable: true });
+  env.A.flushSave();
+  escrituras = 0;
+  env.A.save();               // nada cambió: no debe tocar el disco
+  const sinCambio = escrituras;
+  env.A.state.settings.courseName = "Cambio real";
+  env.A.save();               // ahora sí hay un cambio
+  Object.defineProperty(env.window, "localStorage", { value: realStore, configurable: true });
+  check(sinCambio === 0, "re-análisis: save() sin cambios no reescribe (escrituras=" + sinCambio + ")");
+  check(escrituras > 0, "re-análisis: y cuando hay un cambio sí guarda (escrituras=" + escrituras + ")");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -3029,6 +3129,7 @@ function testIconoApp() {
     await testAgenda();
     await testV677();
     testIconoApp();
+    testReanalisis();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");
   }

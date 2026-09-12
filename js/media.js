@@ -133,6 +133,10 @@
     return fila ? aDataURL(fila) : "";
   }
   async function del(id) {
+    // Igual que clear(): si esa foto tenía un object URL en pantalla, revócalo. Antes solo
+    // clear() lo hacía, así que borrar fotos una a una dejaba los blob: sin liberar.
+    const u = urls.get(id);
+    if (u) { try { URL.revokeObjectURL(u); } catch {} }
     urls.delete(id);
     pendientes.delete(id);
     try { const store = await tx("readwrite"); await pedir(store.delete(id)); } catch {}

@@ -24,5 +24,5 @@
         html.classList.toggle("light", theme === "light");
         var meta = document.querySelector('meta[name="theme-color"]');
         if (meta) meta.content = theme === "dark" ? "#000000" : "#f9fafb";
-      } catch (e) {}
+      } catch {}
     })();

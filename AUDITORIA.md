@@ -10,6 +10,7 @@
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
 **Ronda v67.4.2:** «No funciona la IA de ollama»: el APK no podía salir por `http://` (contenido mixto y tráfico en claro), y cualquier fallo se contaba igual; ahora cada fallo se distingue y se explica cómo arreglarlo (493 pruebas ✓).
 **Ronda v67.7.1:** «no funciona lo de cambiar el icono de la app» — el manifiesto declaraba 24 lanzadores (el de MainActivity, siempre el dragón, más los 23 alias), así que cambiar de icono no servía de nada; ahora el único lanzador es el alias que eliges (680 pruebas ✓).
+**Ronda v67.8.0:** re-análisis completo aplicado: iconos comprimidos con pérdida imperceptible (−61 %/−69 %), los 33 skins por encima de 4,5:1 de contraste WCAG (antes 9 por debajo), los `blob:` huérfanos se revocan, el CSS muerto del viejo layout con barra lateral desaparece, la tipografía queda acotada a una escala de 14 tamaños (antes 33), el botón del temporizador sube a 44 px y `save()` deja de reescribir localStorage en cada navegación (693 pruebas ✓).
 **Ronda v67.7:** el contraste del modo oscuro se mide y se sube (las tarjetas ya no se funden con el negro de la OLED), los campos del esquema tienen forma de caja, la vibración la hace el motor háptico de Android, las entregas de la Agenda se deslizan con el dedo y el simulador «¿qué nota necesito?» dice lo que hace falta sacar en lo que queda —o que ya no llegas, con el máximo real— (665 pruebas ✓).
 **Ronda v67.6:** la Agenda se organiza como la del instituto —cada módulo con sus exámenes y entregas—, los exámenes van de una hora a otra y las entregas tienen plazo (se abre → se cierra) y estado (pendiente · entregado · corregido), que se cambia desde la propia fila (582 pruebas ✓).
 **Ronda v67.5:** la nota de cada módulo se calcula como la calcula tu profe — componentes con peso, notas «sobre X» y reglas que pueden suspender (aprobar todos los RA) — y Exámenes pasa a ser una Agenda con trabajos y entregas que llenan el componente solos (548 pruebas ✓).
@@ -899,6 +900,41 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.8.0 · Re-análisis completo (7 mejoras)
+
+Se aplica íntegro el re-análisis externo (hecho sobre la v67.6 de la rama `01a0902`), pero
+**re-verificado contra el código actual**, no a ciegas: varias de sus cifras habían cambiado con
+la v67.7 (p. ej. el informe citaba 5 skins con contraste bajo y en realidad eran 9; se le escaparon
+`oled` 2,14:1, `coral`, `lima` y `pergamino`).
+
+1. **Iconos comprimidos.** `icon-512.png` 273→87 KB (−69 %) y `icon-192.png` 44→17 KB (−61 %),
+   cuantizando a 256 colores con Floyd–Steinberg. Se comprobó *mirando* un lado-a-lado y un panel
+   de diferencias ×6: imperceptible. Es el mismo orden de magnitud que medía el informe con
+   `pngquant`, que aquí no está instalado.
+2. **Contraste WCAG de los 33 skins.** El botón primario y el texto quedan ≥4,5:1 en todos. Regla:
+   si el acento es saturado y oscuro se mantiene la tinta blanca y se oscurece el acento dentro de
+   su tono (`redes`, `cyberpunk`, `lima`, `coral`, `pergamino`, `redteam`); si el acento es claro y
+   es la gracia del skin se conserva y se le pone tinta oscura del mismo tono (`kawaii`, `oled`);
+   `win95` aclara su teal de `#008080` a `#008a8a` (oscurecerlo empeoraba el contraste con negro).
+3. **Blobs huérfanos.** `media.del()` ahora revoca el object URL de la foto borrada (antes solo
+   `clear()` lo hacía) y `setLinkIcon()` revoca el favicon/icono anterior cuando era `blob:`.
+4. **CSS muerto fuera.** Se retira el layout antiguo `.app` / `.sidebar` / `.nav-item` (incluidos los
+   restos dentro de `@media`), y las variables que solo él leía (`--sidebar`, `--sidebar-fg` en los
+   33 skins). Se conservan `--nav-*` porque el `.hub-nav` vivo las usa. El JS ya no consulta
+   `.nav-item`.
+5. **Escala tipográfica.** Los 33 `font-size` distintos quedan en 14 (10–48 px); los medios píxeles
+   se redondean al paso más cercano y `.sheet-txt` sigue en 12 px para no romper su prueba.
+6. **Objetivo táctil.** `.timer-bar .btn-sm` (el botón «Pausa») sube de 32 a 44 px.
+7. **`save()` perezoso.** Compara el JSON con el último guardado correcto y, si no cambió nada, no
+   reescribe localStorage ni re-empuja los widgets en cada navegación. La prueba de cuota se ajustó
+   para mutar el estado antes de forzar el error (es el caso real que debe avisar).
+
+También se limpian los restos que marcaba eslint (`plProx`, `probarOllama`, un `catch (e)` sin usar).
+
+**Pruebas: 680 → 693 ✓** (13 nuevas: peso de iconos, contraste de los 33 skins, CSS muerto,
+escala tipográfica, objetivo táctil, revocación de blobs y guardado perezoso), y las mismas pasan
+sobre el código minificado del APK.
 
 ## Ronda v67.7.1 · «No funciona lo de cambiar el icono de la app»
 

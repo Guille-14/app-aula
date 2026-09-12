@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.7.1";
+  const APP_VERSION = "v67.8.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -923,10 +923,15 @@
 
   let saveTimer = null;
 
+  // JSON del último guardado correcto. Navegar (render) programa un save() aunque no haya
+  // cambiado nada; comparar contra esto evita reescribir localStorage y re-empujar los widgets
+  // en cada vistazo a una pantalla de solo lectura.
+  let lastSavedJson = null;
   function save() {
     if (state.settings && state.settings.guest) return;
     let json;
     try { json = JSON.stringify(state); } catch { saveProblem = "Los datos no se pueden preparar para guardar."; return; }
+    if (json === lastSavedJson) return;   // nada cambió desde el último guardado
     // Copia de seguridad rotativa (una, cada 6 h) sin dispararse de tamaño.
     try {
       if (json.length < 1_500_000) {
@@ -942,6 +947,7 @@
     } catch {}
     try {
       localStorage.setItem(KEY, json);
+      lastSavedJson = json;
       if (saveProblem) { saveProblem = ""; toast("Ya se vuelve a guardar bien"); }
     } catch (e) {
       const quota = /quota|exceed/i.test(String((e && e.name) + (e && e.message)));
@@ -1632,7 +1638,6 @@
     }
     const av = $("#header-avatar");
     if (av) av.innerHTML = avatarInner();
-    $$(".nav-item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === view));
     $$("#bottom-nav button").forEach((b) => {
       const on = b.dataset.view === view;
       b.classList.toggle("is-active", on);
@@ -3062,7 +3067,6 @@
     const prox = lista[0];
     const dProx = prox ? daysUntil(prox.date) : null;
     const proxTrab = prox ? esTrabajo(prox) : false;
-    const plProx = prox ? plazoDe(prox) : null;
     const hero = prox
       ? `<div class="exam-hero${dProx === 0 ? " is-hoy" : ""}">
           <span class="k">${dProx < 0 ? "La última" : dProx === 0 ? (proxTrab ? "La entrega es hoy" : "Es hoy") : dProx === 1 ? (proxTrab ? "La entrega es mañana" : "Es mañana") : (proxTrab ? "Próxima entrega" : "Próxima prueba")}</span>
@@ -3421,7 +3425,12 @@
   }
   function setLinkIcon(sel, href) {
     const el = $(sel);
-    if (el) el.href = href;
+    if (!el) return;
+    // Si el icono anterior era un blob: (de aplicar un avatar propio), libéralo: cada cambio de
+    // icono crea object URLs nuevos y, si no se revocan, la memoria se acumula en sesiones largas.
+    const prev = el.href;
+    el.href = href;
+    if (prev && prev.startsWith("blob:")) { try { URL.revokeObjectURL(prev); } catch {} }
   }
   async function putIconCache(b192, b512, manObj) {
     if (!("caches" in window)) return;
@@ -4796,7 +4805,7 @@
   document.addEventListener("click", (e) => {
     if (e.target.closest(".search-wrap")) { openCmd(); return; }
     const nav = e.target.closest("[data-view]");
-    if (nav && nav.dataset.view && (nav.classList.contains("nav-item") || nav.closest("#bottom-nav") || nav.closest("#more-sheet"))) {
+    if (nav && nav.dataset.view && (nav.closest("#bottom-nav") || nav.closest("#more-sheet"))) {
       closeMore(); vibrar("ligero"); go(nav.dataset.view); return;
     }
     const btn = e.target.closest("[data-action]");

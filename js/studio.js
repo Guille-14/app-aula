@@ -388,10 +388,6 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     }
   }
 
-  async function probarOllama() {
-    const diag = await diagnosticoOllama();
-    return diag.titulo + (diag.texto ? " · " + diag.texto : "");
-  }
   async function askOllama(q) {
     const url = ollamaBase();
     if (!url) return localBrain(q);
