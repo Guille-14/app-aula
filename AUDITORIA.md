@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v65:** los botones de exportar (copia JSON, calendario, Markdown y Anki) funcionan dentro del APK con la hoja de compartir de Android — antes no hacían nada—, el .ics lleva avisos para el calendario del móvil y el comprobador del APK vigila los plugins (356 pruebas ✓).
 **Ronda v64:** los avisos se pueden tocar (abren su pantalla), se puede probar que suenan, se explica el permiso de Android y la app avisa cuando hay versión nueva (336 pruebas ✓).
 **Ronda v63:** cache-first de verdad en el Service Worker, minificado antes de publicar (y dentro del APK), avisos programados en Android, CSS sin duplicados y pantalla ancha (326 pruebas ✓).
 **Ronda v62-b:** los diálogos salían desplazados media pantalla por la herencia de `styles.css`; ahora son hojas con tirador, scroll y botones alcanzables (281 pruebas ✓).
@@ -883,6 +884,54 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+---
+
+## Ronda v65 · Exportar de verdad (y un fallo gordo que nadie veía)
+
+### El fallo: en el APK, los botones de exportar no hacían NADA
+El WebView de Android **no tiene gestor de descargas**, y Capacitor no lo suple (lo comprobé en su
+código: ni `setDownloadListener` ni nada que lo sustituya). Todos los exportadores de la app
+usaban el truco del navegador (`<a download>` con un blob), así que **dentro del APK**:
+
+* «Exportar copia JSON (con fotos)» → no pasaba nada (¡y es la copia de seguridad!),
+* «Calendario .ics» → nada,
+* «Apuntes a Markdown» y «Fichas a CSV (Anki)» → nada (y esos dos botones, además, ni estaban
+  conectados en la vista: los añadí en la v55 pero sin manejador).
+
+Lo peor es que el aviso en pantalla decía «Copia descargada»: mentía.
+
+### El arreglo: una sola forma de guardar, y en Android la hoja de compartir
+Nuevo `guardarArchivo(nombre, texto, mime)` en `app.js`:
+
+* **En el navegador**: descarga normal (como antes, que ahí sí funciona).
+* **Dentro del APK**: escribe el archivo con `@capacitor/filesystem` y abre la **hoja de compartir
+  de Android** (`@capacitor/share`): el alumno decide si lo guarda en Archivos, en Drive o lo
+  manda por WhatsApp. El aviso cambia a «Copia lista: elige dónde guardarla».
+
+Los cuatro exportadores pasan por ahí (los de Markdown y Anki se han movido de `studio.js` a
+`app.js`, como funciones puras que devuelven texto: `markdownApuntes()`, `ankiCSV()`, `icsTexto()`).
+Si el móvil no puede escribir, se avisa en pantalla en vez de decir que se guardó.
+
+Comprobado en el navegador con un Capacitor de mentira: los cuatro botones escriben su archivo en
+la caché de la app y llaman a la hoja de compartir (JSON 19 KB, .ics 18 KB, Markdown 1,6 KB, CSV
+1,3 KB), **y sin Capacitor los cuatro se descargan** con su contenido correcto.
+
+### Avisos dentro del calendario del móvil
+El `.ics` de los exámenes lleva ahora dos `VALARM`: **la víspera y una hora antes**. Así, cuando
+importas el calendario a Google Calendar o al del móvil, los recordatorios siguen ahí incluso sin
+la app. Las clases **no** llevan avisos a propósito (sonarían 30 veces por semana).
+
+### El comprobador del APK ahora vigila los plugins
+Si alguien cambia `cap sync` por `cap copy`, el JavaScript sigue dentro pero **las clases nativas
+no**: las notificaciones programadas y el guardado de archivos dejarían de existir, y sería
+invisible hasta tenerlo en la mano. Ahora el CI busca en el dex `LocalNotificationsPlugin`,
+`FilesystemPlugin` y `SharePlugin`, y comprueba el permiso `POST_NOTIFICATIONS` en el manifest. La
+Release publica `plugins` en `.datos-apk`.
+
+**Pruebas: 336 → 356 ✓** (20 nuevas: Markdown con módulo y fotos, CSV con cabeceras de Anki,
+comillas y saltos escapados, .ics cerrado y con sus dos `VALARM`, y el guardado en los dos
+caminos, incluido el fallo al escribir).
 
 ## Ronda v64 · Los avisos se tocan, se prueban y se explican (y aviso de versión nueva)
 

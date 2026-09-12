@@ -114,6 +114,16 @@ media = "assets/public/js/media.js" in nombres
 paginas = "assets/public/index.html" in nombres
 paquete = "es.aula.smr.hub" in man_txt
 
+# Los plugins de Capacitor (notificaciones programadas, guardar y compartir archivos) tienen
+# que estar COMPILADOS dentro. Si alguien cambia `cap sync` por `cap copy`, el JavaScript
+# seguiría ahí pero las funciones nativas no: la app avisaría de nada y no guardaría archivos.
+# Sus clases viven en los .dex, así que se buscan ahí (y el permiso, en el manifest).
+plugins = {
+    "notificaciones programadas": (b"LocalNotificationsPlugin", "POST_NOTIFICATIONS"),
+    "guardar y compartir archivos": (b"FilesystemPlugin", None),
+    "hoja de compartir de Android": (b"SharePlugin", None),
+}
+
 info("ficheros res/xml con nombre de widget: %d (en release se acortan: es normal)"
      % len([n for n in nombres if re.match(r"res/xml/widget_.*_info\.xml$", n)]))
 ok(paginas, "index.html empaquetado")
@@ -123,6 +133,11 @@ ok(bool(ver) and not fallos_ver, "versión de la web dentro del APK", fallos_ver
 ok(bool(esperados) and not faltan, "los %d widgets van dentro (clases en el dex)" % len(esperados),
    ("faltan: " + ", ".join(faltan)) if faltan else "todos")
 ok(paquete, "paquete es.aula.smr.hub")
+for nombre_plugin, (clase, permiso) in plugins.items():
+    dentro = clase in dex or any(clase in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex"))
+    ok(dentro, "plugin de %s dentro del APK" % nombre_plugin, "" if dentro else "falta la clase %s (¿cap sync?)" % clase.decode())
+    if permiso:
+        ok(permiso in man_txt, "permiso %s declarado" % permiso)
 
 # ---------------------------------------------------------------- datos
 sha = hashlib.sha256(Path(apk).read_bytes()).hexdigest()
@@ -134,6 +149,7 @@ with open(".datos-apk", "w", encoding="utf-8") as f:
     for k, v in {
         "sha": sha, "mb": mb, "firma": digest, "firma_dn": dn, "esquemas": esquemas or "n/d",
         "app": ver, "app_esperada": esperada, "paquete": pkg_ver, "widgets": len(esperados) - len(faltan),
+        "plugins": sum(1 for clase, _ in plugins.values() if clase in dex),
         "media": "sí" if media else "NO",
     }.items():
         f.write("%s=%s\n" % (k, v))

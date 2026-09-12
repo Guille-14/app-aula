@@ -629,19 +629,10 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       save(); toast("Saliendo de invitado"); render();
     }
     if (action === "csv-import") document.getElementById("csv-file")?.click();
-    if (action === "export-md") {
-      const mdAll = st().notes.map((n) => `# ${n.title}\n\n${n.content || ""}`).join("\n\n---\n\n");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([mdAll], { type: "text/markdown" }));
-      a.download = "aula-apuntes.md"; a.click();
-    }
-    if (action === "export-anki") {
-      const rows = st().cards.map((c) => `"${(c.front || "").replace(/"/g, '""')}","${(c.back || "").replace(/"/g, '""')}"`).join("\n");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([rows], { type: "text/csv" }));
-      a.download = "aula-fichas.csv"; a.click();
-      toast("CSV para Anki (importar como básico)");
-    }
+    // Los exportadores viven en app.js (una sola forma de guardar archivos, que dentro del
+    // APK abre la hoja de compartir de Android: ahí las descargas del navegador no existen)
+    if (action === "export-md" && Aula.exportMarkdown) Aula.exportMarkdown();
+    if (action === "export-anki" && Aula.exportAnki) Aula.exportAnki();
     if (action === "export-pdf-notes") window.print();
     if (action === "note-tpl") {
       openModal("Plantilla de apunte", `<div class="field"><label>Plantilla</label>

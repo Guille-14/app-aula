@@ -1130,6 +1130,97 @@ async function testAuditoria() {
     check(!!pkg.devDependencies["@capacitor/local-notifications"], "APK: el plugin de notificaciones locales está en las dependencias");
   }
 
+  // --- v65: exportar de verdad (y guardar dentro del APK, donde las descargas no existen) ---
+  {
+    const env = boot();
+    ready(env.A);
+    const A = env.A;
+    A.state.subjects = [{ id: "s1", name: "Seguridad informática", color: "#14b8a6" }];
+    A.state.notes = [
+      { id: "n1", subjectId: "s1", title: "Cortafuegos", content: "nftables filtra por reglas", attachments: [{ id: "f1", name: "captura.png" }], versions: [], createdAt: Date.now(), updatedAt: Date.now() },
+      { id: "n2", subjectId: "s1", title: 'Comillas "raras" y salto', content: "linea1\nlinea2", attachments: [], versions: [], createdAt: Date.now(), updatedAt: Date.now() },
+    ];
+    A.state.cards = [
+      { id: "c1", subjectId: "s1", front: '¿Puerto de SSH?', back: "22", due: A.todayISO(), interval: 0, reps: 0 },
+      { id: "c2", subjectId: "s1", front: "Con comillas y \n salto", back: 'dice "hola"', due: A.todayISO(), interval: 0, reps: 0 },
+    ];
+    A.state.exams = [{ id: "e1", subjectId: "s1", title: "Tema 3", kind: "Examen", date: A.todayISO(), time: "16:45", room: "AULA 1NF3", topics: "nftables, IPsec" }];
+    A.render();
+
+    // Markdown de los apuntes
+    const md = A.markdownApuntes();
+    check(/^# Apuntes · Aula SMR/.test(md) && md.includes("## ") === false, "exportar: el Markdown lleva cabecera con el número de apuntes");
+    check(md.includes("# Cortafuegos") && md.includes("**Seguridad informática**") && md.includes("nftables filtra por reglas"),
+      "exportar: cada apunte va con su título, su módulo y su contenido");
+    check(md.includes("(1 foto)") && md.includes("linea1") && md.includes("linea2"),
+      "exportar: las fotos se anotan y los saltos de línea se respetan");
+    check((md.match(/^# /gm) || []).length === 3, "exportar: un solo título por apunte (los «#» del contenido no se cuelan)");
+
+    // CSV para Anki: cabeceras, comillas escapadas y saltos dentro de la celda
+    const csv = A.ankiCSV();
+    const lineas = csv.trim().split("\n");
+    check(lineas[0] === "#separator:Comma" && lineas[1] === "#html:false" && lineas[2] === "#columns:front,back,modulo",
+      "exportar: el CSV de Anki lleva sus cabeceras (separador, sin HTML y columnas)");
+    check(lineas.length === 5 && lineas[3] === '"¿Puerto de SSH?","22","Seguridad informática"',
+      "exportar: cada ficha va en su fila con módulo, entrecomillada (" + (lineas[3] || "") + ")");
+    check(lineas[4] === '"Con comillas y <br> salto","dice ""hola""","Seguridad informática"',
+      "exportar: las comillas se escapan y el salto de línea pasa a <br> (" + (lineas[4] || "") + ")");
+
+    // ICS: los exámenes llevan avisos para el calendario del móvil
+    const ics = A.icsTexto();
+    check(ics.startsWith("BEGIN:VCALENDAR") && ics.trimEnd().endsWith("END:VCALENDAR"), "exportar: el .ics está bien cerrado [" + JSON.stringify(ics.slice(0, 36)) + " … " + JSON.stringify(ics.slice(-24)) + "]");
+    check(ics.includes("UID:aula-exam-e1@aula-smr") && ics.includes("SUMMARY:Examen: Tema 3 · Seguridad informática"),
+      "exportar: el examen entra en el calendario con su módulo");
+    const alarmas = ics.match(/BEGIN:VALARM[\s\S]*?END:VALARM/g) || [];
+    check(alarmas.length === 2 && alarmas.some((a) => a.includes("TRIGGER:-P1D")) && alarmas.some((a) => a.includes("TRIGGER:-PT1H")),
+      "exportar: el examen lleva dos avisos en el calendario (víspera y una hora antes)");
+    check(!/BEGIN:VALARM/.test(ics.split("UID:aula-exam")[0]), "exportar: las clases no llevan avisos (no sonaría el móvil 30 veces por semana)");
+    check(ics.split("\r\n").every((l) => l.length <= 75), "exportar: ninguna línea del .ics pasa de 75 octetos (lo pide el formato)");
+
+    // Guardar: en el navegador se descarga…
+    const descargas = [];
+    const clicOriginal = env.window.HTMLAnchorElement.prototype.click;
+    env.window.HTMLAnchorElement.prototype.click = function () { descargas.push({ nombre: this.download, href: this.href }); };
+    const web = await A.guardarArchivo("prueba.md", "hola", "text/markdown");
+    env.window.HTMLAnchorElement.prototype.click = clicOriginal;
+    check(web.nativo === false && web.ok && descargas.length === 1 && descargas[0].nombre === "prueba.md",
+      "exportar: en el navegador el archivo se descarga (" + JSON.stringify(descargas[0] || {}) + ")");
+    // …y dentro del APK se escribe y se comparte (el WebView de Android no descarga nada)
+    check(A.nativoFicheros() === false, "exportar: sin Capacitor no se usa el camino nativo");
+    const guardados = [];
+    env.window.Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {
+        Filesystem: {
+          writeFile: async (o) => guardados.push(["escribir", o.path, o.data.slice(0, 18), o.directory, o.encoding]),
+          getUri: async (o) => { guardados.push(["uri", o.path]); return { uri: "file:///cache/" + o.path }; },
+        },
+        Share: { share: async (o) => guardados.push(["compartir", o.title, o.url]) },
+      },
+    };
+    check(A.nativoFicheros() === true, "exportar: con Capacitor (Filesystem + Share) se usa el camino nativo");
+    const nat = await A.guardarArchivo("aula-smr.json", '{"a":1}', "application/json");
+    check(nat.nativo === true && nat.ok && JSON.stringify(guardados) === JSON.stringify([
+      ["escribir", "aula-smr.json", '{"a":1}', "CACHE", "utf8"],
+      ["uri", "aula-smr.json"],
+      ["compartir", "aula-smr.json", "file:///cache/aula-smr.json"],
+    ]), "exportar: dentro del APK se escribe el archivo y se abre la hoja de compartir (" + JSON.stringify(guardados) + ")");
+    // Si el móvil falla al guardar, el aviso lo dice en vez de mentir
+    env.window.Capacitor.Plugins.Filesystem.writeFile = async () => { throw new Error("sin espacio"); };
+    const fallo = await A.guardarArchivo("x.json", "{}", "application/json");
+    check(fallo.nativo === true && fallo.ok === false, "exportar: si el móvil no puede escribir, la app lo avisa (no dice que se guardó)");
+    check(env.doc.querySelectorAll(".toast").length > 0, "exportar: el fallo se cuenta con un aviso en pantalla");
+
+    // Y los dos botones que antes no hacían nada ahora exportan de verdad
+    env.window.Capacitor = undefined;
+    A.state.cards = [];
+    await A.exportAnki();
+    check(/No hay fichas/.test(env.doc.querySelector("#toast-root").textContent), "exportar: sin fichas, el botón de Anki lo dice en vez de generar un archivo vacío");
+    A.state.notes = [];
+    await A.exportMarkdown();
+    check(/No hay apuntes/.test(env.doc.querySelector("#toast-root").textContent), "exportar: sin apuntes, el botón de Markdown también avisa");
+  }
+
   // --- v63: los avisos que se programan en Android (clases, exámenes, resumen) ---
   {
     const env = boot();

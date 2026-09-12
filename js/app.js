@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v64";
+  const APP_VERSION = "v65";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -3289,6 +3289,38 @@
     if (s) s.hidden = true;
     $("#app")?.classList.remove("more-open");
   }
+  // ---------------------------------------------------------------- archivos
+  // En el navegador un archivo se descarga con <a download>. Dentro del APK no: el WebView de
+  // Android no tiene gestor de descargas, así que ese botón no hacía NADA (ni la copia de
+  // seguridad). Ahí se escribe el archivo y se abre la hoja de compartir del móvil, para
+  // guardarlo en Archivos, Drive, mandarlo por WhatsApp…
+  function nativoFicheros() {
+    const C = window.Capacitor;
+    return !!(C && typeof C.isNativePlatform === "function" && C.isNativePlatform()
+      && C.Plugins && C.Plugins.Filesystem && C.Plugins.Share);
+  }
+  function descargarBlob(nombre, texto, mime) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([texto], { type: mime }));
+    a.download = nombre;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    return { nativo: false, ok: true };
+  }
+  async function guardarArchivo(nombre, texto, mime) {
+    if (!nativoFicheros()) return descargarBlob(nombre, texto, mime);
+    const C = window.Capacitor;
+    try {
+      await C.Plugins.Filesystem.writeFile({ path: nombre, data: texto, directory: "CACHE", encoding: "utf8", recursive: true });
+      const { uri } = await C.Plugins.Filesystem.getUri({ path: nombre, directory: "CACHE" });
+      await C.Plugins.Share.share({ title: nombre, url: uri, dialogTitle: "Guardar o compartir " + nombre });
+      return { nativo: true, ok: true, uri };
+    } catch {
+      toast("No se pudo guardar " + nombre);
+      return { nativo: true, ok: false };
+    }
+  }
+
   function icsEscape(s) {
     return String(s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
   }
@@ -3312,7 +3344,46 @@
   function icsStamp(d) {
     return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
   }
-  function exportICS() {
+  // El .ics se construye aparte (función que solo devuelve texto) para poder probarlo
+  // Apuntes a Markdown y fichas a CSV (Anki): texto puro, para exportarlo desde donde haga falta
+  function markdownApuntes() {
+    const notas = [...(state.notes || [])].sort((a, b) => String(a.subjectId).localeCompare(String(b.subjectId)) || String(a.title).localeCompare(String(b.title)));
+    if (!notas.length) return "";
+    const partes = notas.map((n) => {
+      const sub = subjectById(n.subjectId);
+      const cuerpo = (n.content || "").trim() || "(sin contenido)";
+      const fotos = (n.attachments || []).length ? `\n\n_(${n.attachments.length} foto${n.attachments.length === 1 ? "" : "s"})_` : "";
+      return `# ${n.title}\n\n**${sub ? sub.name : "Sin módulo"}**${n.updatedAt ? " · " + fmtDate(localISO(new Date(n.updatedAt))) : ""}\n\n${cuerpo}${fotos}`;
+    });
+    return `# Apuntes · Aula SMR\n\n_${notas.length} apuntes exportados el ${fmtDate(todayISO())}_\n\n---\n\n` + partes.join("\n\n---\n\n") + "\n";
+  }
+  function ankiCSV() {
+    const fichas = [...(state.cards || [])].filter((c) => c.front);
+    // Cabeceras que entiende Anki al importar (separador y HTML desactivado)
+    const cabeceras = ["#separator:Comma", "#html:false", "#columns:front,back,modulo"].join("\n");
+    const filas = fichas.map((c) => {
+      const sub = subjectById(c.subjectId);
+      const cita = (t) => `"${String(t == null ? "" : t).replace(/"/g, '""').replace(/\r?\n/g, "<br>")}"`;
+      return [cita(c.front), cita(c.back), cita(sub ? sub.name : "")].join(",");
+    });
+    return [cabeceras, ...filas].join("\n") + "\n";
+  }
+  async function exportMarkdown() {
+    const texto = markdownApuntes();
+    if (!texto) { toast("No hay apuntes que exportar"); return; }
+    const r = await guardarArchivo("aula-apuntes.md", texto, "text/markdown;charset=utf-8");
+    const n = (state.notes || []).length;
+    if (r.ok) toast(r.nativo ? `${n} apuntes listos: elige dónde guardarlos` : `${n} apuntes exportados`);
+  }
+  async function exportAnki() {
+    const texto = ankiCSV();
+    const n = (state.cards || []).filter((c) => c.front).length;
+    if (!n) { toast("No hay fichas que exportar"); return; }
+    const r = await guardarArchivo("aula-fichas.csv", texto, "text/csv;charset=utf-8");
+    if (r.ok) toast(r.nativo ? `${n} fichas listas: elige dónde guardarlas` : `${n} fichas en CSV (Anki: básico)`);
+  }
+
+  function icsTexto() {
     const stamp = icsStamp(new Date());
     const lineas = [
       "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Aula SMR//Horario//ES",
@@ -3376,22 +3447,36 @@
       }
       if (e.topics) evento.push("DESCRIPTION:" + icsEscape("Entra: " + e.topics));
       if (e.room) evento.push("LOCATION:" + icsEscape(e.room));
+      // Avisos dentro del propio calendario del móvil: la víspera y una hora antes
+      ["-P1D", "-PT1H"].forEach((cuando) => {
+        evento.push(
+          "BEGIN:VALARM",
+          "TRIGGER:" + cuando,
+          "ACTION:DISPLAY",
+          "DESCRIPTION:" + icsEscape((e.kind || "Examen") + ": " + e.title),
+          "END:VALARM",
+        );
+      });
       evento.push("END:VEVENT");
       lineas.push(...evento);
     });
     lineas.push("END:VCALENDAR");
     // Cada línea se pliega si pasa de 75 octetos (los nombres largos de módulo lo hacían)
-    const blob = new Blob([lineas.map(icsFold).join("\r\n")], { type: "text/calendar;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "aula-smr-horario.ics";
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    return lineas.map(icsFold).join("\r\n") + "\r\n";
+  }
+
+  async function exportICS() {
+    const texto = icsTexto();
+    const nClases = state.events.filter((e) => !e.type || e.type === "clase").length;
+    const nSinClase = (texto.match(/SUMMARY:.*\(sin clase\)/g) || []).length;
+    const nPruebas = (texto.match(/BEGIN:VEVENT[\s\S]*?aula-exam-/g) || []).length;
+    const r = await guardarArchivo("aula-smr-horario.ics", texto, "text/calendar;charset=utf-8");
+    if (!r.ok) return;
     state.progress = state.progress || {}; state.progress.flags = state.progress.flags || {};
     state.progress.flags.exported = true;
     save();
-    const nClases = state.events.filter((e) => !e.type || e.type === "clase").length;
-    toast("Calendario exportado (" + nClases + " clases + " + dias.length + " días sin clase" + (pruebas.length ? " + " + pruebas.length + " pruebas" : "") + ")");
+    const resumen = nClases + " clases + " + nSinClase + " días sin clase" + (nPruebas ? " + " + nPruebas + " pruebas" : "");
+    toast(r.nativo ? "Calendario listo (" + resumen + "): elige dónde guardarlo" : "Calendario exportado (" + resumen + ")");
   }
 
   function noteToCards() {
@@ -3591,12 +3676,12 @@
       }
     }
     const json = JSON.stringify(copia, null, 2);
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-    a.download = "aula-smr.json"; a.click();
+    const r = await guardarArchivo("aula-smr.json", json, "application/json");
+    if (!r.ok) return;
     ensureProgress(); state.progress.flags = { ...(state.progress.flags || {}), exported: true }; checkAchievements(); save();
     const mb = json.length / (1024 * 1024);
-    toast(mb > 20 ? `Copia de ${mb.toFixed(1)} MB (incluye ${fotos} fotos)` : "Copia descargada" + (fotos ? ` con ${fotos} fotos` : ""));
+    const cola = mb > 20 ? ` de ${mb.toFixed(1)} MB (incluye ${fotos} fotos)` : (fotos ? ` con ${fotos} fotos` : "");
+    toast(r.nativo ? "Copia lista" + cola + ": elige dónde guardarla" : "Copia descargada" + cola);
   }
   function importJSON() {
     const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json,.json";
@@ -4477,6 +4562,7 @@
     get loadProblem() { return loadProblem; },
     get saveProblem() { return saveProblem; },
     subjectOptions, md, dueCards, attStats, addNote, addCard, addGrade, gradeCard, diasSinClase,
+    guardarArchivo, nativoFicheros, icsTexto, markdownApuntes, ankiCSV, exportMarkdown, exportAnki,
     persistNote, buzz, confetti, levelInfo,
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },
