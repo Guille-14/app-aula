@@ -134,8 +134,10 @@ jobs:
           - Firmado con `VERSION_DN`
             (SHA-256 del certificado: `VERSION_FIRMA`; esquemas de firma: VERSION_ESQUEMAS).
           - Paquete `es.aula.smr.hub`. Funciona **sin conexión**: no hay servidor ni cuentas.
-            El asistente responde en local y solo usa tu Ollama si le pones la dirección en
-            Ajustes → Datos locales.
+            El asistente responde en local y solo llama a tu Ollama si le pones la dirección
+            en el engranaje del chat.
+          - Chat con tu Ollama en la Wi-Fi: tráfico en claro VERSION_CLEARTEXT · puente nativo
+            de Android VERSION_HTTP (es lo que deja salir a `http://IP:11434`).
 
           **Para instalar:** descarga el `.apk` y ábrelo. Si Android avisa de «apps
           desconocidas», permite la instalación para el navegador o el gestor de archivos.
@@ -154,6 +156,8 @@ jobs:
             -e "s|VERSION_DN|${{ steps.comprobar.outputs.firma_dn }}|" \
             -e "s|VERSION_FIRMA|${{ steps.comprobar.outputs.firma }}|" \
             -e "s|VERSION_ESQUEMAS|${{ steps.comprobar.outputs.esquemas }}|" \
+            -e "s|VERSION_CLEARTEXT|${{ steps.comprobar.outputs.cleartext }}|" \
+            -e "s|VERSION_HTTP|${{ steps.comprobar.outputs.http_nativo }}|" \
             -e "s|VERSION_COMMIT|${GITHUB_SHA:0:7}|" \
             notas.md
           echo "" >> notas.md
