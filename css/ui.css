@@ -2280,3 +2280,130 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 .chat-ia .card-head b { font-size: 15px; font-weight: 640; }
 .chat-ia .card-head .hint { margin-top: 2px; word-break: break-word; }/* — El calendario, a prueba de desbordes: nada se sale de su tarjeta — */
 .cal-sum small, .cal-key, .cal-title b, .cal-title small { overflow-wrap: anywhere; }
+
+/* ————— Esquema de evaluación y Agenda con trabajos (v67.5) —————
+   Piezas nuevas: los componentes de la nota (lista y editor), el aviso de los pesos y los
+   dos filtros de la Agenda (estado y tipo). Tokens de siempre: nada nuevo en :root. */
+
+/* Lista de componentes en Calificaciones y en la ficha del módulo */
+.eval-lista { display: flex; flex-direction: column; margin-top: 10px; }
+.eval-fila {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 2px; border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.eval-fila:first-child { border-top: 0; }
+.eval-fila > i { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; }
+.eval-fila .eval-n { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.eval-fila .eval-n small { color: var(--muted); }
+.eval-fila .eval-p {
+  flex: 0 0 auto; font-size: 12px; font-weight: 620; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.eval-fila .eval-v {
+  flex: 0 0 auto; font-size: 15px; font-weight: 660; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.eval-fila .eval-v span { font-size: 11px; font-weight: 520; color: var(--muted); }
+
+/* Motivo del suspenso (RA sin aprobar, mínimo de un componente...) */
+.eval-motivo {
+  margin: 8px 0 0; padding: 8px 11px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--red) 13%, transparent);
+  color: color-mix(in srgb, var(--red) 88%, var(--ink));
+  font-size: 12.5px; font-weight: 600;
+}
+.eval-acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.eval-pie {
+  margin: 12px 0 0; padding: 10px 12px;
+  border-radius: var(--radius-sm); border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--ink-2); font-size: 13px;
+}
+.eval-pie.is-ok { border-color: color-mix(in srgb, var(--green) 38%, transparent); background: color-mix(in srgb, var(--green) 10%, transparent); }
+.eval-pie.is-bad { border-color: color-mix(in srgb, var(--red) 38%, transparent); background: color-mix(in srgb, var(--red) 10%, transparent); }
+.eval-pie .is-ok, .eval-pie b.is-ok { color: var(--green); }
+.eval-pie .is-bad, .eval-pie b.is-bad { color: var(--red); }
+
+/* Editor del esquema (dentro de la hoja) */
+.eval-total {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 10px 12px; margin: 4px 0 12px;
+  border-radius: var(--radius-sm); border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.eval-total span { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.eval-total b { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.eval-total small { margin-left: auto; color: var(--muted); font-size: 12px; }
+.eval-total.is-warn { border-color: color-mix(in srgb, var(--amber) 45%, transparent); background: color-mix(in srgb, var(--amber) 10%, transparent); }
+.eval-total.is-warn b, .eval-total.is-warn small { color: color-mix(in srgb, var(--amber) 82%, var(--ink)); }
+
+.eval-rows { display: flex; flex-direction: column; gap: 10px; }
+.eval-row {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--card, var(--surface)); padding: 10px;
+}
+.eval-row-top { display: flex; align-items: center; gap: 8px; }
+.eval-row-top input {
+  flex: 1 1 auto; min-width: 0;
+  font: inherit; font-size: 14.5px; font-weight: 620;
+  color: var(--ink); background: transparent; border: 0;
+  border-bottom: 1px dashed var(--line); padding: 4px 2px;
+}
+.eval-row-top input:focus { outline: none; border-bottom-color: var(--ink); }
+.eval-x { flex: 0 0 auto; width: 32px; height: 32px; font-size: 15px; line-height: 1; }
+.eval-nums { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; }
+.eval-nums label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+}
+.eval-nums input {
+  width: 62px; padding: 6px 7px; font: inherit; font-size: 13.5px;
+  color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.eval-origen { margin: 8px 0 0; font-size: 12px; }
+.link-btn {
+  background: none; border: 0; padding: 0 0 0 4px;
+  color: var(--blue, var(--ink)); font: inherit; font-size: 12px;
+  text-decoration: underline; cursor: pointer;
+}
+
+.eval-reglas { margin-top: 14px; display: flex; flex-direction: column; gap: 4px; }
+.eval-ra-lista {
+  margin: 4px 0 8px; padding: 8px 10px;
+  border-radius: var(--radius-sm); border: 1px dashed var(--line);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.eval-ra { display: flex; align-items: center; gap: 8px; }
+.eval-ra input[type="text"], .eval-ra input:not([type]) {
+  flex: 1 1 auto; min-width: 0;
+}
+.eval-ra > input {
+  flex: 1 1 auto; min-width: 0; padding: 7px 8px; font: inherit; font-size: 13px;
+  color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 9px;
+}
+.switch-mini { flex: 0 0 auto; gap: 6px; }
+.switch-mini .switch-t { font-size: 11.5px; color: var(--muted); }
+.switch-mini input[type="checkbox"] { width: 40px; height: 24px; }
+.switch-mini input[type="checkbox"]::after { width: 18px; height: 18px; }
+
+/* Meter notas de los componentes */
+.eval-nota-fila { margin-bottom: 12px; }
+.eval-nota-fila > label { display: flex; align-items: baseline; gap: 8px; }
+.eval-peso { margin-left: auto; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.eval-nota-in { display: flex; align-items: center; gap: 8px; }
+.eval-nota-in input {
+  flex: 1 1 auto; min-width: 0; padding: 11px 12px; font: inherit; font-size: 15px;
+  color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.eval-nota-in input:disabled { opacity: .55; }
+.eval-sobre { flex: 0 0 auto; font-size: 13px; color: var(--muted); }
+
+/* Agenda: segundo filtro (exámenes / trabajos) */
+.filters-tipo { margin-top: -2px; }
+.filters-tipo .chip { font-size: 12.5px; }

@@ -9,6 +9,7 @@
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
 **Ronda v67.4.2:** «No funciona la IA de ollama»: el APK no podía salir por `http://` (contenido mixto y tráfico en claro), y cualquier fallo se contaba igual; ahora cada fallo se distingue y se explica cómo arreglarlo (493 pruebas ✓).
+**Ronda v67.5:** la nota de cada módulo se calcula como la calcula tu profe — componentes con peso, notas «sobre X» y reglas que pueden suspender (aprobar todos los RA) — y Exámenes pasa a ser una Agenda con trabajos y entregas que llenan el componente solos (548 pruebas ✓).
 **Ronda v67.4 (y v67.4.1):** la auditoría de interfaz del usuario: la barra de abajo vuelve y no se queda escondida, el calendario, la semana, los exámenes y las notas dejan de mentir (476 pruebas ✓).
 **Ronda v67.3:** el horario del centro cuadro a cuadro (31 clases, Sistemas 7 h y el jueves sin última hora) (440 pruebas ✓).
 **Ronda v67.2:** el horario del centro definitivo (15:10–22:15), sin «huecos libres» inventados, la foto de perfil que no cambiaba y los botones de Ajustes flotando (437 pruebas ✓).
@@ -893,6 +894,83 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+---
+
+## Ronda v67.5 · Calificaciones a tu manera y la Agenda con trabajos
+
+Hasta ahora cada módulo tenía **una nota** y punto: la escribías tú y la app la repetía en el
+boletín, en la media y en el radar. Eso vale cuando el profe te da un solo número, pero no cuando
+la nota sale de varias partes con pesos distintos y con reglas que la pueden tumbar. Esta ronda la
+app aprende a calcularla, y la pestaña de Exámenes pasa a ser una **Agenda** donde caben también
+los trabajos y las entregas.
+
+### 1. Esquema de evaluación por módulo (opcional)
+
+Cada módulo puede tener su esquema: **componentes con nombre y peso** («Examen de teoría» 40 %,
+«Examen práctico» 40 %, «Prácticas» 20 %), cada uno con su nota y su propio **«sobre X»** (por si
+el profe puntúa sobre 20 o sobre 100). La app avisa si los pesos no suman 100 %, pero deja
+guardarlo igual: manda lo que diga tu profesor.
+
+Y dos **reglas que pueden suspender aunque la media pondere bien**:
+
+* **«Hay que aprobar todos los RA»**: se activa, se añaden los RA uno a uno y se marcan los
+  aprobados. Un RA sin marcar suspende el módulo y la app dice **cuál**.
+* **«Exigir la nota mínima de cada componente»**: si un componente se queda por debajo de su
+  mínimo, el módulo suspende y se explica el motivo.
+
+La nota final es la **media ponderada**, normalizada por el peso de lo que ya tiene nota: un
+componente sin nota **no cuenta como 0**, así la app te va diciendo «lo que llevas» mientras el
+curso avanza, igual que la media del ciclo. Y un módulo **sin esquema sigue igual que siempre**:
+su nota a mano, sin que nada se rompa.
+
+### 2. La nota entra sola desde la Agenda
+
+El tipo **«Trabajo»** (además de Examen, Prueba, Práctico y Recuperación) trae un interruptor:
+**«¿Puntúa para la nota?»**. Si puntúa, se elige su **módulo** y el **componente** del esquema; al
+poner la nota del trabajo (cuando la devuelva el profe), el componente y la nota final del módulo
+se recalculan solos: **no hay que meter la nota dos veces**. Si no puntúa, es un recordatorio de
+entrega y no toca ninguna nota.
+
+Un componente con notas de la Agenda enseña de dónde sale («Lo llena la Agenda: 3 entregas · media
+7,50») y trae un enlace para **escribirla a mano** si prefieres que mande tu nota; y al revés, si la
+tenías a mano y hay entregas, otro enlace para volver a usar la Agenda.
+
+### 3. Exámenes pasa a ser Agenda
+
+Solo el texto visible: la barra de abajo, el título de la vista y el atajo de «Más» ahora dicen
+**Agenda**, con los filtros de siempre (próximas / pasadas / todas) más un segundo filtro
+**Exámenes · Trabajos**. El identificador interno sigue siendo `exams`, así que nada de lo guardado
+se pierde. Los avisos de la tarde antes y de la hora antes distinguen: «Entrega mañana» y «Entrega
+en 1 hora» cuando es un trabajo.
+
+### 4. El radar y las vistas de notas
+
+* **Radar**: entraban solo los 12 primeros módulos y los últimos desaparecían sin avisar. Ahora
+  entran **todos**, y los que aún no tienen nota salen en gris en vez de desaparecer.
+* **Calificaciones**: cada módulo con esquema enseña sus componentes, con su peso, su nota y si la
+  llena la Agenda; con un botón para **meter notas** (solo las que tengas) y otro para **editar el
+  esquema**. Los módulos sin esquema ofrecen montarlo con la plantilla 40 / 40 / 20.
+* **Ficha del módulo**: el mismo bloque, con el botón del esquema y la nota final del tirón.
+
+### 5. Tu primer esquema, ya puesto: Servicios en Red
+
+Como me pasaste los criterios de Servicios en Red, la app lo trae **preparado**: 40 % examen de
+teoría, 40 % examen práctico, 20 % prácticas y la regla **«hay que aprobar todos los RA»**
+activada. Los RA los añades tú (no me los invento): Calificaciones → Servicios en Red → *Esquema de
+evaluación* → *+ Añadir RA*, y marcas los aprobados. Las notas, cuando las tengas, desde **Meter
+notas** o apuntando el trabajo en la Agenda.
+
+### 6. Lo que se ha cuidado
+
+Los datos siguen siendo tuyos y locales: el esquema vive dentro de cada módulo y los trabajos en la
+misma lista de siempre, todo saneado al cargar (un componente borrado se desenlaza solo, un
+«no puntúa» no se pierde). El identificador `exams` no cambia, el estado viejo se lee igual y los
+módulos sin esquema se comportan como antes. Los números con coma («9,5») se aceptan en todos los
+campos nuevos.
+
+**Pruebas: 493 → 548 ✓** (55 nuevas), y las mismas pasan sobre el código minificado que va dentro
+del APK.
 
 ---
 

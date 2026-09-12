@@ -2177,6 +2177,218 @@ async function testOllama() {
   check(env.errors.length === 0, "v67.4.2: sin errores de consola (" + env.errors.slice(0, 2).join(" · ") + ")");
 }
 
+const r_form = (env) => env.doc.getElementById("modal-form");
+
+// --------- 22. esquema de evaluación por módulo y Agenda con trabajos (v67.5)
+/* Cada módulo se evalúa a su manera: componentes con peso, notas sobre lo que toque y reglas
+   especiales que pueden suspender aunque la media pondere bien. Y los trabajos de la Agenda
+   pueden llenar un componente sin que la nota se meta dos veces. */
+async function testEsquema() {
+  const env = boot();
+  ready(env.A);
+  const A = env.A;
+
+  // Saneado de lo que llega (del editor o de una copia antigua)
+  const sucio = A.saneEval({ componentes: [
+    { id: "c1", nombre: "  Teoría  ", peso: 300, sobre: 0, nota: "9,5" },
+    { nombre: "", peso: "x" },
+    { id: "c3", nombre: "Prácticas", peso: 20, sobre: 10, nota: 12 },
+  ], reglas: { ra: { activo: true, lista: [{ nombre: "RA1", ok: true }, { nombre: "" }, { nombre: "RA2" }] } } }, 10);
+  check(sucio.componentes.length === 3 && sucio.componentes[0].peso === 100 && sucio.componentes[0].nombre === "Teoría",
+    "esquema: el saneado arregla el peso y limpia los espacios");
+  check(sucio.componentes[0].sobre === 10 && sucio.componentes[0].nota === 9.5, "esquema: la coma decimal y el «sobre 0» se corrigen");
+  check(sucio.componentes[2].nota === 10, "esquema: una nota mayor que el «sobre» se recorta");
+  check(sucio.reglas.ra.activo && sucio.reglas.ra.lista.length === 2, "esquema: la lista de RA pierde las entradas vacías");
+  check(A.saneEval({ componentes: [] }, 10) === undefined, "esquema: sin componentes no hay esquema");
+  check(A.avisoPesos(sucio) && /suman/.test(A.avisoPesos(sucio)), "esquema: avisa cuando los pesos no suman 100");
+  const cuadra = A.saneEval({ componentes: [{ nombre: "A", peso: 60 }, { nombre: "B", peso: 40 }] }, 10);
+  check(A.avisoPesos(cuadra) === "", "esquema: con 100 % no hay aviso");
+
+  // Un módulo SIN esquema se comporta como siempre
+  const sinEsquema = { id: "s0", name: "Sin esquema", grade: 7.5 };
+  A.state.subjects.push(sinEsquema);
+  check(A.estadoModulo(sinEsquema).nota === 7.5 && A.estadoModulo(sinEsquema).aprobado === true && !A.estadoModulo(sinEsquema).tieneEsquema,
+    "notas: un módulo sin esquema sigue con su nota a mano y su aprobado");
+
+  // Servicios en Red: 40 % teoría, 40 % práctico, 20 % prácticas
+  const ser = { id: "ser", name: "Servicios en red", grade: "", eval: A.saneEval({
+    componentes: [
+      { id: "c1", nombre: "Examen de teoría", peso: 40, sobre: 10, nota: 6 },
+      { id: "c2", nombre: "Examen práctico", peso: 40, sobre: 10, nota: 8 },
+      { id: "c3", nombre: "Prácticas", peso: 20, sobre: 10, nota: 9 },
+    ],
+    reglas: { ra: { activo: true, lista: [{ id: "r1", nombre: "RA1", ok: true }, { id: "r2", nombre: "RA2", ok: true }] } },
+  }, 10) };
+  A.state.subjects.push(ser);
+  check(Math.abs(A.estadoModulo(ser).nota - 7.4) < 0.001, "media ponderada: 40/40/20 con 6, 8 y 9 → 7,4");
+  check(A.estadoModulo(ser).aprobado === true && !A.estadoModulo(ser).motivo, "media ponderada: con 7,6 y los RA aprobados, aprobado");
+
+  // Un componente sin nota no cuenta (no es un 0)
+  ser.eval.componentes[2].nota = "";
+  check(Math.abs(A.estadoModulo(ser).nota - 7) < 0.001, "media ponderada: el componente sin nota no cuenta (6 y 8 → 7,0)");
+  ser.eval.componentes[2].nota = 9;
+
+  // Reglas especiales: un RA sin aprobar suspende aunque la media apruebe
+  ser.eval.reglas.ra.lista[1].ok = false;
+  const estRA = A.estadoModulo(ser);
+  check(estRA.nota === 7.4 && estRA.aprobado === false && /RA2/.test(estRA.motivo), "reglas: un RA sin aprobar suspende un 7,4 y dice cuál");
+  ser.eval.reglas.ra.activo = false;
+  check(A.estadoModulo(ser).aprobado === true, "reglas: la regla de los RA apagada deja de suspender");
+  ser.eval.reglas.ra.activo = true;
+  ser.eval.reglas.ra.lista[1].ok = true;
+  check(A.estadoModulo(ser).aprobado === true, "reglas: con todos los RA aprobados vuelve el aprobado");
+
+  // Nota mínima por componente
+  ser.eval.reglas.min.activo = true;
+  ser.eval.componentes[0].min = 7;
+  check(A.estadoModulo(ser).aprobado === false && /mínimo/.test(A.estadoModulo(ser).motivo),
+    "reglas: la nota mínima de un componente también suspende, y lo explica");
+  ser.eval.reglas.min.activo = false;
+  ser.eval.componentes[0].min = 0;
+
+  // La media del ciclo usa la nota del esquema (los módulos sin nota no cuentan)
+  A.state.subjects.forEach((x) => { if (x !== ser && x !== sinEsquema) x.grade = ""; });
+  check(Math.abs(A.weightedGPA() - (7.4 + 7.5) / 2) < 0.01, "media del ciclo: cuenta la nota calculada del esquema");
+
+  // ————— Agenda: un trabajo que puntúa llena el componente
+  const comp = ser.eval.componentes[2];
+  A.state.exams.push({ id: "t1", subjectId: "ser", title: "Práctica 3", kind: "Trabajo", date: A.todayISO(), grade: 5, puntua: true, componenteId: comp.id, createdAt: Date.now() });
+  const nc1 = A.notaDeComponente(ser, comp);
+  check(nc1.origen === "agenda" && nc1.nota === 5, "agenda: el trabajo que puntúa manda en su componente");
+  check(Math.abs(A.estadoModulo(ser).nota - 6.6) < 0.001, "agenda: la nota del módulo se recalcula sola (40/40/20 con 6, 8 y 5 → 6,6)");
+  A.state.exams.push({ id: "t2", subjectId: "ser", title: "Práctica 4", kind: "Trabajo", date: A.todayISO(), grade: 9, puntua: true, componenteId: comp.id, createdAt: Date.now() });
+  check(A.notaDeComponente(ser, comp).nota === 7 && A.notaDeComponente(ser, comp).trabajos.length === 2,
+    "agenda: con varias entregas, el componente es su media (5 y 9 → 7)");
+  check(Math.abs(A.estadoModulo(ser).nota - 7) < 0.001, "agenda: la media ponderada sigue al día (6, 8 y 7 → 7,0)");
+
+  // Un trabajo que NO puntúa no toca nada
+  A.state.exams.push({ id: "t3", subjectId: "ser", title: "Charla", kind: "Trabajo", date: A.todayISO(), grade: 2, puntua: false, componenteId: "", createdAt: Date.now() });
+  check(A.notaDeComponente(ser, comp).nota === 7 && Math.abs(A.estadoModulo(ser).nota - 7) < 0.001,
+    "agenda: un trabajo que no puntúa no cambia ninguna nota");
+
+  // Borrar el trabajo devuelve el componente a su nota a mano
+  A.state.exams = A.state.exams.filter((e) => e.id !== "t1" && e.id !== "t2");
+  const nc2 = A.notaDeComponente(ser, comp);
+  check(nc2.origen === "mano" && nc2.nota === 9, "agenda: al quitar los trabajos vuelve la nota escrita a mano");
+  check(Math.abs(A.estadoModulo(ser).nota - 7.4) < 0.001, "agenda: y la nota del módulo vuelve a su sitio");
+
+  // «Escribirla a mano» gana a la Agenda (modo manual)
+  A.state.exams.push({ id: "t4", subjectId: "ser", title: "Práctica 5", kind: "Trabajo", date: A.todayISO(), grade: 3, puntua: true, componenteId: comp.id, createdAt: Date.now() });
+  comp.modo = "manual";
+  check(A.notaDeComponente(ser, comp).origen === "mano" && A.notaDeComponente(ser, comp).nota === 9,
+    "agenda: con el componente en modo manual manda tu nota, aunque haya entregas");
+  comp.modo = "auto";
+  check(A.notaDeComponente(ser, comp).nota === 3, "agenda: en modo automático vuelve a mandar la Agenda");
+
+  // Saneado del estado: un componente que ya no existe deja de apuntar a nada
+  const guardado = JSON.parse(JSON.stringify({ settings: { onboarded: true }, subjects: [ser], exams: [{ id: "x", subjectId: "ser", title: "Prueba", kind: "Trabajo", componenteId: "fantasma", puntua: false }] }));
+  const limpio = A.sanitize(guardado);
+  check(limpio.exams[0].componenteId === "" && limpio.exams[0].puntua === false,
+    "estado: un componente borrado se desenlaza y el «no puntúa» se conserva");
+
+  // ————— Vista de Calificaciones y radar
+  const s1 = { id: "s1", name: "Aplicaciones web", grade: "", color: "#eab308" };
+  A.state.subjects.push(s1);   // 13 módulos: antes el radar cortaba en 12 y ya no se veía el último
+  A.go("rendimiento");
+  const v = env.doc.getElementById("view");
+  check(/Meter notas/.test(v.textContent) && /Examen de teoría/.test(v.textContent),
+    "calificaciones: el módulo con esquema enseña sus componentes y el botón de meter notas");
+  check(/Esquema de evaluación/.test(v.textContent), "calificaciones: los módulos sin esquema ofrecen montarlo");
+  check(A.state.subjects.length > 12, "radar: la prueba va con más módulos que el viejo tope de 12 (" + A.state.subjects.length + ")");
+  check(v.querySelectorAll("svg.radar-box text").length === A.state.subjects.length,
+    "radar: entran TODOS los módulos (sin tope) — " + A.state.subjects.length + " ejes");
+  check(v.querySelectorAll("svg.radar-box circle").length >= A.state.subjects.length, "radar: cada módulo tiene su punto");
+
+  // ————— El editor del esquema, de punta a punta
+  A.go("subjects");
+  A.go("rendimiento");
+  act(env, "eval-nuevo", { id: "s1" });
+  const form = r_form(env);
+  check(!!form && !!form.querySelector('input[name^="c:"][name$=":nombre"]'), "editor: el módulo sin esquema abre el editor con una fila");
+  act(env, "eval-plantilla", {});
+  const form2 = r_form(env);
+  const nombres = [...form2.querySelectorAll('input[name$=":nombre"]')].map((i) => i.value);
+  check(nombres.join("|") === "Examen de teoría|Examen práctico|Prácticas", "editor: la plantilla trae teoría, práctico y prácticas");
+  const pesos = [...form2.querySelectorAll('input[name$=":peso"]')].map((i) => Number(i.value));
+  check(pesos.join("+") === "40+40+20", "editor: la plantilla reparte 40/40/20");
+  check(form2.querySelector('input[name="regla-ra"]').checked, "editor: la plantilla activa «hay que aprobar todos los RA»");
+  act(env, "eval-add-comp", {});
+  check(r_form(env).querySelectorAll('input[name^="c:"][name$=":nombre"]').length === 4, "editor: se añaden componentes sin perder lo escrito");
+  check(!r_form(env).querySelector('input[name^="ra:"]'), "editor: sin RA en la lista, no hay filas fantasma");
+  act(env, "eval-add-ra", {});
+  check(/RA1/.test(r_form(env).querySelector('input[name^="ra:"]').value), "editor: se añaden RA a mano");
+  // Guardar: los pesos y las notas que se ven en el formulario se guardan en el módulo
+  const f3 = r_form(env);
+  f3.querySelectorAll('input[name$=":nota"]')[0].value = "5";
+  f3.querySelectorAll('input[name$=":peso"]')[3].value = "0";
+  f3.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
+  const ev1 = A.evalDe(A.state.subjects.find((x) => x.id === "s1"));
+  check(!!ev1 && ev1.componentes.length === 4 && ev1.componentes[0].nota === 5 && A.estadoModulo(s1).nota === 5,
+    "editor: lo que se escribe en el modal se guarda y calcula la nota del módulo");
+  check(ev1.reglas.ra.lista.length === 1, "editor: los RA añadidos también se guardan");
+
+  // Editar un esquema que YA existe no puede perder lo que hay dentro (se coló hasta el navegador)
+  act(env, "eval-editar", { id: "ser" });
+  const fe2 = r_form(env);
+  const nombresEd = [...fe2.querySelectorAll('input[name^="c:"][name$=":nombre"]')].map((i) => i.value);
+  const notasEd = [...fe2.querySelectorAll('input[name$=":nota"]')].map((i) => i.value);
+  check(nombresEd.join("|") === "Examen de teoría|Examen práctico|Prácticas" && notasEd.join("|") === "6|8|9",
+    "editor: al editar un esquema que ya está, los componentes y las notas siguen ahí (" + nombresEd.length + " · " + notasEd.join("/") + ")");
+  check(fe2.querySelectorAll('input[name^="ra:"][name$=":nombre"]').length === 2 && fe2.querySelectorAll('input[name$=":ok"]').length === 2,
+    "editor: los RA guardados también vuelven al editor (nombre y casilla)");
+  act(env, "eval-add-comp", {});
+  check(r_form(env).querySelectorAll('input[name^="c:"][name$=":nombre"]').length === 4, "editor: se añade un componente al esquema existente sin perder los demás");
+  act(env, "close-modal", {});
+
+  // ————— La Agenda, con el nombre y los tipos nuevos
+  check(A.EXAM_KINDS.includes("Trabajo"), "agenda: «Trabajo» es un tipo más");
+  check([...env.doc.querySelectorAll("#bottom-nav .nav-lbl")].some((e) => e.textContent.trim() === "Agenda"),
+    "agenda: la barra de abajo dice «Agenda»");
+  A.go("exams");
+  check(/^Agenda/.test(env.doc.getElementById("view-title").textContent), "agenda: el título de la vista es «Agenda»");
+  check(/Agenda/.test(env.doc.querySelector('#more-sheet') ? env.doc.querySelector('#more-sheet').textContent : "Agenda"),
+    "agenda: el atajo de «Más» también dice Agenda");
+  check(A.state.subjects.some((x) => x.eval) && env.doc.getElementById("view").textContent.length > 0, "agenda: la vista pinta sin errores");
+
+  // Un trabajo apuntado desde el formulario de la Agenda
+  const antes = A.state.exams.length;
+  act(env, "add-exam", {});
+  const fe = r_form(env);
+  // Se elige el módulo y el tipo como lo haría una persona: el desplegable de componentes y el
+  // bloque «¿puntúa?» aparecen al cambiar el formulario.
+  const selSub = fe.querySelector('[name="subjectId"]');
+  selSub.value = "s1";
+  selSub.dispatchEvent(new env.window.Event("change", { bubbles: true }));
+  const selKind = fe.querySelector('[name="kind"]');
+  selKind.value = "Trabajo";
+  selKind.dispatchEvent(new env.window.Event("change", { bubbles: true }));
+  fe.querySelector('[name="title"]').value = "Práctica de DHCP";
+  fe.querySelector('[name="grade"]').value = "4";
+  const c1id = A.evalDe(s1).componentes[0].id;
+  check(!!fe.querySelector('[name="componenteId"]') && fe.querySelector("#ex-trabajo") && !fe.querySelector("#ex-trabajo").hidden,
+    "agenda: al elegir «Trabajo» sale el bloque de puntuar y el desplegable del componente");
+  fe.querySelector('[name="componenteId"]').value = c1id;
+  fe.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
+  const nuevo = A.state.exams[A.state.exams.length - 1];
+  check(A.state.exams.length === antes + 1 && nuevo.kind === "Trabajo" && nuevo.componenteId === c1id && nuevo.puntua === true,
+    "agenda: el trabajo guarda su componente y que puntúa");
+  check(A.notaDeComponente(A.state.subjects.find((x) => x.id === "s1"), A.evalDe(s1).componentes[0]).nota === 4,
+    "agenda: la nota del trabajo entra sola en el componente");
+
+  // ————— El esquema que ya me pasó el usuario (Servicios en red) se pone solo
+  const env2 = boot({ seed: JSON.stringify({ settings: { onboarded: true, demo: false }, subjects: [{ id: "sr", name: "Servicios en red" }], exams: [] }) });
+  ready(env2.A);
+  const sr = env2.A.state.subjects.find((x) => x.name === "Servicios en red");
+  const evSr = env2.A.evalDe(sr);
+  check(!!evSr && evSr.componentes.length === 3 && evSr.componentes.map((c) => c.peso).join("/") === "40/40/20",
+    "servicios en red: 40 % teoría, 40 % práctico y 20 % prácticas, sin tener que montarlo a mano");
+  check(evSr.reglas.ra.activo === true && evSr.reglas.ra.lista.length === 0,
+    "servicios en red: la regla de aprobar todos los RA viene activada (la lista de RA la pones tú)");
+  check(env2.A.state.progress.flags["eval-servicios-red-v1"] === 1, "servicios en red: el esquema se aplica una sola vez");
+
+  check(env.errors.length === 0, "v67.5: sin errores de consola (" + env.errors.slice(0, 2).join(" · ") + ")");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -2187,6 +2399,7 @@ async function testOllama() {
     await testSinRed();
     await testAuditoria();
     await testOllama();
+    await testEsquema();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");
   }

@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.4.2";
+  const APP_VERSION = "v67.5.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -707,8 +707,11 @@
       room: asText(s.room),
       credits: Number(s.credits) || 0,
       color: asColor(s.color, "#64748b"),
-      // Nota del módulo (0..nota máxima). "" = todavía sin nota
+      // Nota del módulo (0..nota máxima). "" = todavía sin nota.
+      // Si el módulo tiene esquema de evaluación (v67.5), esta nota es la de los que no lo usan:
+      // con esquema, la nota final la calcula estadoModulo() a partir de los componentes.
       grade: (s.grade === "" || s.grade == null || !Number.isFinite(Number(s.grade))) ? "" : clamp(Number(s.grade), 0, Number(settings.gradeMax) || 10),
+      eval: saneEval(s.eval, Number(settings.gradeMax) || 10),
     }));
     out.subjects = subjects;
     const hasSub = (id) => subjects.some((s) => s.id === id);
@@ -780,8 +783,17 @@
       date: asISO(e.date) || todayISO(), time: /^\d{1,2}:\d{2}$/.test(String(e.time)) ? String(e.time) : "",
       room: asText(e.room), topics: asText(e.topics),
       grade: (e.grade === "" || e.grade == null || !Number.isFinite(Number(e.grade))) ? "" : clamp(Number(e.grade), 0, maxNota),
+      // Agenda (v67.5): los trabajos pueden puntuar y apuntar a un componente del esquema
+      puntua: e.puntua !== false,
+      componenteId: asText(e.componenteId),
       createdAt: Number(e.createdAt) || Date.now(),
     }));
+    // Un componente que ya no existe (se borró o se cambió el esquema) deja de apuntar a nada
+    out.exams.forEach((e) => {
+      if (!e.componenteId) return;
+      const ev = saneEval((subjects.find((s) => s.id === e.subjectId) || {}).eval, maxNota);
+      if (!ev || !ev.componentes.some((c) => c.id === e.componenteId)) e.componenteId = "";
+    });
 
     const prog = isObj(src.progress) ? src.progress : {};
     out.progress = {
@@ -805,6 +817,40 @@
     return out;
   }
 
+  /* Esquemas de evaluación que ya me ha pasado el usuario (v67.5). Se aplican solos la primera
+     vez que la app arranca con ese módulo, y solo si no tiene ya un esquema montado a mano.
+     Los RA van sin lista: los nombres los pone él (no me los invento). */
+  const ESQUEMAS_CONOCIDOS = [
+    {
+      sello: "eval-servicios-red-v1",
+      coincide: ["servicios en red"],
+      componente: [["Examen de teoría", 40], ["Examen práctico", 40], ["Prácticas", 20]],
+      raTodos: true,
+      nota: "Servicios en red ya tiene su esquema: 40 % teoría · 40 % práctico · 20 % prácticas (y hay que aprobar todos los RA).",
+    },
+  ];
+
+  function aplicarEsquemasConocidos(st) {
+    if (!asArray(st.subjects).length) return "";
+    st.progress = isObj(st.progress) ? st.progress : { flags: {} };
+    st.progress.flags = isObj(st.progress.flags) ? st.progress.flags : {};
+    const hechos = st.progress.flags;
+    const max = Number(st.settings && st.settings.gradeMax) || 10;
+    let aviso = "";
+    ESQUEMAS_CONOCIDOS.forEach((k) => {
+      if (hechos[k.sello]) return;
+      const sub = st.subjects.find((x) => x && x.name && k.coincide.some((m) => String(x.name).toLowerCase().includes(m)));
+      if (!sub || evalDe(sub)) { hechos[k.sello] = 1; return; }   // ya hay uno puesto: no se toca
+      sub.eval = saneEval({
+        componentes: k.componente.map(([nombre, peso]) => ({ id: uid(), nombre, peso, sobre: max, nota: "" })),
+        reglas: { ra: { activo: !!k.raTodos, lista: [] }, min: { activo: false } },
+      }, max);
+      hechos[k.sello] = 1;
+      aviso = k.nota;
+    });
+    return aviso;
+  }
+
   function load() {
     let raw = null;
     try { raw = localStorage.getItem(KEY); } catch { return seedDemo(); }
@@ -825,6 +871,9 @@
     if (sinHorario && !asText(out.settings.timetableId)) applyOfficialTimetable(out);
     // El horario del centro cambió (v67.2): se pone al día solo, conservando asistencia y avisos.
     actualizarHorarioOficial(out, out.settings.timetableKind);
+    // Los esquemas de evaluación que ya me ha pasado el usuario (v67.5)
+    const avisoEsquema = aplicarEsquemasConocidos(out);
+    if (avisoEsquema) setTimeout(() => toast(avisoEsquema), 1200);
     return out;
   }
 
@@ -919,6 +968,7 @@
   let deferredInstall = null, wakeLock = null;
   let schView = "week";
   let examFilter = "proximos";          // proximos · todos · pasados
+  let examTipo = "";                    // "" · examenes · trabajos (la Agenda mezcla ambos)
   let schWeek = 0;                       // 0 = semana actual; -1 y +1 las de al lado
   const plantillaAuto = syncPlantilla(state);
   let exDate = "";
@@ -1080,13 +1130,164 @@
   }
   function dueCards() { const t = todayISO(); return state.cards.filter((c) => !c.due || c.due <= t); }
   // Nota media del ciclo: la nota de cada modulo (se pone a mano en Modulos o en Notas)
+  /* —————————————— Esquema de evaluación por módulo (v67.5) ——————————————
+     Cada módulo puede tener su propio reparto de notas: componentes con nombre y peso, notas
+     que no siempre son sobre 10, y reglas especiales (aprobar todos los RA, nota mínima en un
+     componente...) que pueden suspender aunque la media pondere bien.
+
+     Todo lo que decide la nota final y el aprobado vive aquí, para que el boletín, el radar, la
+     ficha del módulo y la media del ciclo solo tengan que preguntar. Un módulo SIN esquema se
+     comporta exactamente como antes: su `grade` a mano. */
+
+  function evalDe(sub) {
+    return sub && isObj(sub.eval) && Array.isArray(sub.eval.componentes) && sub.eval.componentes.length ? sub.eval : null;
+  }
+
+  // Los trabajos de la Agenda que puntúan y apuntan a este componente
+  function trabajosDeComponente(sub, c) {
+    if (!sub || !c) return [];
+    return asArray(state.exams).filter((e) => e && e.componenteId === c.id && e.puntua !== false
+      && e.grade !== "" && e.grade != null && Number.isFinite(Number(e.grade)));
+  }
+
+  /* Nota que cuenta para un componente: si tiene trabajos de la Agenda que puntúan, la media de
+     esos trabajos (así no hay que meterla dos veces); si no, la que hayas escrito a mano.
+     `modo: "manual"` fuerza tu nota aunque haya trabajos. */
+  function notaDeComponente(sub, c) {
+    const sobre = Number(c && c.sobre) > 0 ? Number(c.sobre) : (Number(state.settings.gradeMax) || 10);
+    const trabajos = trabajosDeComponente(sub, c);
+    const bruta = c.nota === "" || c.nota == null || !Number.isFinite(Number(c.nota)) ? null : clamp(Number(c.nota), 0, sobre);
+    if ((c.modo || "auto") === "manual" || !trabajos.length) {
+      return { nota: bruta, sobre, origen: bruta == null ? "" : "mano", trabajos };
+    }
+    const media = trabajos.reduce((a, e) => a + clamp(Number(e.grade), 0, sobre), 0) / trabajos.length;
+    return { nota: Math.round(media * 100) / 100, sobre, origen: "agenda", trabajos };
+  }
+
+  function pesoTotal(ev) {
+    return (ev ? ev.componentes : []).reduce((a, c) => a + (Number(c.peso) || 0), 0);
+  }
+
+  // Media ponderada en escala 0-10. Un componente sin nota NO cuenta (no es un 0): así ves
+  // «lo que llevas» mientras el curso avanza, igual que la media del ciclo con los módulos.
+  function mediaEsquema(sub) {
+    const ev = evalDe(sub);
+    if (!ev) return null;
+    let suma = 0, peso = 0;
+    ev.componentes.forEach((c) => {
+      const n = notaDeComponente(sub, c);
+      if (n.nota == null) return;
+      const p = clamp(Number(c.peso) || 0, 0, 100);
+      if (p <= 0) return;
+      suma += (n.nota / n.sobre) * 10 * p;
+      peso += p;
+    });
+    return peso ? suma / peso : null;
+  }
+
+  /* Estado del módulo: nota final (en la escala de la app), aprobado/suspendido y el porqué.
+     Con esquema, la nota sale de la media ponderada; sin esquema, de la nota a mano. */
+  function estadoModulo(sub) {
+    const max = Number(state.settings.gradeMax) || 10;
+    const ev = evalDe(sub);
+    if (!ev) {
+      const n = sub.grade === "" || sub.grade == null || !Number.isFinite(Number(sub.grade)) ? null : clamp(Number(sub.grade), 0, max);
+      return { nota: n, aprobado: n == null ? null : n >= max / 2, motivo: "", tieneEsquema: false, conNota: 0, total: 0 };
+    }
+    const m10 = mediaEsquema(sub);
+    const nota = m10 == null ? null : Math.round((m10 * max / 10) * 100) / 100;
+    const conNota = ev.componentes.filter((c) => notaDeComponente(sub, c).nota != null).length;
+    let motivo = "";
+    if (nota != null && nota < max / 2) motivo = "La media no llega al " + (max / 2).toFixed(1).replace(".0", "");
+    // Reglas especiales: pueden suspender aunque la media dé aprobado
+    const ra = ev.reglas && ev.reglas.ra;
+    if (nota != null && ra && ra.activo && Array.isArray(ra.lista)) {
+      const fallan = ra.lista.filter((x) => !x.ok);
+      if (fallan.length) {
+        motivo = fallan.length === 1
+          ? "Sin aprobar: " + (fallan[0].nombre || "un RA")
+          : fallan.length + " RA sin aprobar";
+      }
+    }
+    if (nota != null && !motivo && ev.reglas && ev.reglas.min && ev.reglas.min.activo) {
+      const malo = ev.componentes.find((c) => {
+        const n = notaDeComponente(sub, c);
+        return n.nota != null && Number(c.min) > 0 && n.nota < Number(c.min);
+      });
+      if (malo) motivo = "«" + malo.nombre + "» por debajo del mínimo (" + Number(malo.min).toFixed(1) + ")";
+    }
+    return { nota, aprobado: nota == null ? null : (nota >= max / 2 && !motivo), motivo, tieneEsquema: true, conNota, total: ev.componentes.length };
+  }
+
+  function notaModulo(sub) { return estadoModulo(sub).nota; }
+
+  // Componente al que apunta una entrada de la Agenda (para enseñarlo en la tarjeta)
+  function componenteDe(e) {
+    const sub = subjectById(e && e.subjectId);
+    const ev = evalDe(sub);
+    if (!ev || !e || !e.componenteId) return null;
+    const c = ev.componentes.find((x) => x.id === e.componenteId);
+    return c ? { componente: c, sub } : null;
+  }
+
+  // Reparto del esquema listo para el usuario ("" si no hay nada que avisar)
+  function avisoPesos(ev) {
+    if (!ev) return "";
+    const t = Math.round(pesoTotal(ev) * 100) / 100;
+    if (!ev.componentes.length) return "Añade al menos un componente.";
+    if (Math.abs(t - 100) > 0.01) return "Los pesos suman " + t.toFixed(t % 1 ? 1 : 0) + " % (lo normal es 100 %).";
+    return "";
+  }
+
+  // Valida lo que llega (del editor o de una copia antigua) y devuelve un esquema limpio
+  /* Números tal como los escribe una persona: con coma (9,5) y con espacios. Declarado como
+     función para que esté disponible ya al cargar el estado (saneEval corre al arrancar). */
+  function numEs(v) {
+    if (typeof v === "string") v = v.trim().replace(",", ".");
+    if (v === "" || v == null || (typeof v === "boolean")) return NaN;
+    return Number(v);
+  }
+
+  function saneEval(raw, maxNota) {
+    if (!isObj(raw) || !Array.isArray(raw.componentes)) return undefined;
+    const max = Number(maxNota) || 10;
+    const componentes = raw.componentes.filter(isObj).slice(0, 24).map((c) => {
+      const sobre = clamp(numEs(c.sobre) || max, 1, 100);
+      const bruta = c.nota === "" || c.nota == null || !Number.isFinite(numEs(c.nota)) ? "" : clamp(numEs(c.nota), 0, sobre);
+      return {
+        id: asText(c.id) || uid(),
+        nombre: asText(c.nombre, "Componente").trim().slice(0, 60),
+        peso: clamp(numEs(c.peso) || 0, 0, 100),
+        sobre,
+        nota: bruta,
+        min: Number.isFinite(numEs(c.min)) && numEs(c.min) > 0 ? clamp(numEs(c.min), 0, sobre) : 0,
+        modo: c.modo === "manual" ? "manual" : "auto",
+      };
+    });
+    if (!componentes.length) return undefined;
+    const reglas = isObj(raw.reglas) ? raw.reglas : {};
+    const raRaw = isObj(reglas.ra) ? reglas.ra : {};
+    const lista = asArray(raRaw.lista).filter(isObj).slice(0, 40).map((x) => ({
+      id: asText(x.id) || uid(), nombre: asText(x.nombre).slice(0, 80), ok: !!x.ok,
+    })).filter((x) => x.nombre);
+    return {
+      v: 1,
+      componentes,
+      reglas: {
+        ra: { activo: !!raRaw.activo, lista },
+        min: { activo: !!(isObj(reglas.min) && reglas.min.activo) },
+      },
+    };
+  }
+
   function weightedGPA() {
     // Solo cuentan los módulos CON nota: un módulo sin nota no es un 0.
     // (Antes, Number("") === 0 colaba los seis módulos y la media salía por los suelos.)
     const max = Number(state.settings.gradeMax) || 10;
     const notas = state.subjects
-      .filter((s) => s.grade !== "" && s.grade != null && Number.isFinite(Number(s.grade)))
-      .map((s) => clamp(Number(s.grade), 0, max));
+      .map((s) => notaModulo(s))
+      .filter((n) => n != null && Number.isFinite(Number(n)))
+      .map((n) => clamp(Number(n), 0, max));
     if (!notas.length) return null;
     return notas.reduce((a, b) => a + b, 0) / notas.length;
   }
@@ -1263,7 +1464,7 @@
     quickreview: ["Repaso rápido", "Un módulo a fondo"],
     admin: ["Datos locales", "Copias y estado"],
     rendimiento: ["Calificaciones", "Boletín de cada módulo"],
-    exams: ["Exámenes", "Fechas y temario de cada prueba"],
+    exams: ["Agenda", "Exámenes, trabajos y entregas"],
     notes: ["Apuntes", "Texto del ciclo"],
     tools: ["Herramientas", "Hub técnico, estudio y sistema"],
   };
@@ -2444,6 +2645,40 @@
     if (!s) return `<div class="empty">No encontrado. <button class="btn" data-action="go" data-to="subjects">Volver</button></div>`;
     const notes = state.notes.filter((n) => n.subjectId === s.id);
     const sesiones = state.sessions.filter((x) => x.subjectId === s.id).length;
+    const max = Number(state.settings.gradeMax) || 10;
+    const est = estadoModulo(s);
+    const ev = evalDe(s);
+    const notaFicha = est.nota == null ? "—" : est.nota.toFixed(2);
+    /* Con esquema, la nota del módulo ya no se escribe a mano: sale de los componentes. Sin
+       esquema, todo queda como siempre. */
+    const bloqueNota = ev ? `
+      <div class="card" style="margin-top:16px">
+        <div class="card-head"><div><b>Evaluación por componentes</b>
+          <div class="hint" style="margin:4px 0 0">${est.conNota} de ${est.total} componentes con nota${est.motivo ? " · " + esc(est.motivo) : ""}</div></div></div>
+        <div class="eval-lista">${ev.componentes.map((c) => {
+          const nc = notaDeComponente(s, c);
+          const col = nc.nota == null ? "var(--muted-2)" : nc.nota >= nc.sobre / 2 ? "var(--green)" : "var(--red)";
+          return `<div class="eval-fila"><i style="background:${col}"></i>
+            <span class="eval-n">${esc(c.nombre)}${nc.origen === "agenda" ? `<small> · Agenda (${nc.trabajos.length})</small>` : ""}</span>
+            <span class="eval-p">${Number(c.peso).toFixed(Number(c.peso) % 1 ? 1 : 0)} %</span>
+            <b class="eval-v">${nc.nota == null ? "—" : nc.nota.toFixed(2) + "<span>/" + nc.sobre + "</span>"}</b></div>`;
+        }).join("")}</div>
+        ${est.nota == null ? "" : `<p class="eval-pie ${est.aprobado ? "is-ok" : "is-bad"}">Nota final: <b>${est.nota.toFixed(2)}</b> / ${max} · ${est.aprobado ? "Aprobado" : "Suspenso"}</p>`}
+        <div class="eval-acciones">
+          <button class="btn btn-sm btn-primary" data-action="eval-notas" data-id="${s.id}">Meter notas</button>
+          <button class="btn btn-sm" data-action="eval-editar" data-id="${s.id}">Editar esquema</button>
+        </div>
+        <p class="hint" style="margin:10px 0 0">Reparto: <b>${esc(ev.componentes.map((c) => c.nombre + " " + Number(c.peso).toFixed(Number(c.peso) % 1 ? 1 : 0) + "%").join(" · "))}</b>${avisoPesos(ev) ? " · " + esc(avisoPesos(ev)) : ""}</p>
+      </div>` : `
+      <div class="card" style="margin-top:16px">
+        <div class="card-head"><div><b>Nota del módulo</b><div class="hint" style="margin:4px 0 0">${sesiones} ${sesiones === 1 ? "sesión de estudio" : "sesiones de estudio"} · profesor ${esc(s.teacher || "—")}</div></div>
+          <button class="btn btn-sm btn-primary" data-action="edit-grade" data-id="${s.id}">${s.grade === "" || s.grade == null ? "Poner nota" : "Cambiar"}</button></div>
+        <p class="hint" style="margin:10px 0 0">La nota es la del módulo, la que te sale al final. Con todas puestas, en <b>Calificaciones</b> ves la media del ciclo.</p>
+        <div class="eval-acciones">
+          <button class="btn btn-sm btn-ghost" data-action="eval-nuevo" data-id="${s.id}">Esquema de evaluación</button>
+        </div>
+        <p class="hint" style="margin:6px 0 0">Si este módulo se evalúa por partes (exámenes, prácticas…), monta su esquema y la nota se calcula sola.</p>
+      </div>`;
     return `
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <button class="btn" data-action="go" data-to="subjects">← Módulos</button>
@@ -2452,15 +2687,11 @@
       </div>
       <div class="grid grid-4">
         <div class="stat"><div class="k">Estudio</div><div class="v">${fmtHours(studiedFor(s.id))}</div></div>
-        <div class="stat"><div class="k">Nota</div><div class="v">${s.grade === "" || s.grade == null ? "—" : Number(s.grade).toFixed(1)}</div></div>
+        <div class="stat"><div class="k">Nota</div><div class="v">${notaFicha}</div></div>
         <div class="stat"><div class="k">Apuntes</div><div class="v">${notes.length}</div></div>
         <div class="stat"><div class="k">Fichas</div><div class="v">${state.cards.filter((c) => c.subjectId === s.id).length}</div></div>
       </div>
-      <div class="card" style="margin-top:16px">
-        <div class="card-head"><div><b>Nota del módulo</b><div class="hint" style="margin:4px 0 0">${sesiones} ${sesiones === 1 ? "sesión de estudio" : "sesiones de estudio"} · profesor ${esc(s.teacher || "—")}</div></div>
-          <button class="btn btn-sm btn-primary" data-action="edit-grade" data-id="${s.id}">${s.grade === "" || s.grade == null ? "Poner nota" : "Cambiar"}</button></div>
-        <p class="hint" style="margin:10px 0 0">La nota es la del módulo, la que te sale al final. Con todas puestas, en <b>Calificaciones</b> ves la media del ciclo.</p>
-      </div>
+      ${bloqueNota}
       ${notes.length ? `<div class="card" style="margin-top:16px"><h3>Apuntes de ${esc(s.name)}</h3>
         ${notes.slice(0, 6).map((n) => `<button class="row is-tap" data-action="open-note" data-id="${n.id}">
           <span class="dot" style="background:${safeColor(s.color)}"></span><div>${esc(n.title)}</div><div class="meta">${esc(fmtDate(localISO(new Date(n.updatedAt || Date.now()))))}</div>
@@ -2469,23 +2700,54 @@
   }
 
   // ————————————————— Pruebas y exámenes (pestaña de la barra desde la v61)
-  const EXAM_KINDS = ["Examen", "Prueba", "Práctico", "Recuperación"];
+  const EXAM_KINDS = ["Examen", "Prueba", "Práctico", "Recuperación", "Trabajo"];
+
+  // Opciones del desplegable de componentes del esquema de un módulo
+  function componenteOptions(sub, sel) {
+    const ev = evalDe(sub);
+    if (!ev) return "";
+    return `<option value="">— sin componente —</option>` + ev.componentes.map((c) =>
+      `<option value="${c.id}"${c.id === sel ? " selected" : ""}>${esc(c.nombre)} · ${Number(c.peso).toFixed(Number(c.peso) % 1 ? 1 : 0)} %</option>`).join("");
+  }
+
+  /* El desplegable del componente (o el aviso de que ese módulo aún no tiene esquema).
+     Es una función porque el formulario la repinta al cambiar de módulo. */
+  function campoComponente(sub, sel) {
+    const ev = evalDe(sub);
+    if (ev) {
+      return `<label for="ex-comp">Componente del esquema de ese módulo</label>
+        <select id="ex-comp" name="componenteId">${componenteOptions(sub, sel)}</select>
+        <p class="hint" id="ex-comp-hint">Al poner la nota del trabajo, entra sola en ese componente.</p>`;
+    }
+    return `<p class="hint" id="ex-comp-hint"><b>${esc(sub ? sub.name : "Este módulo")}</b> todavía no tiene esquema de evaluación.
+      <button type="button" class="btn btn-sm btn-ghost" data-action="eval-nuevo" data-id="${esc((sub || {}).id || "")}">Crear su esquema</button></p>`;
+  }
 
   function examForm(e = {}) {
     const max = Number(state.settings.gradeMax) || 10;
     const tipo = String(e.kind || "Examen");
+    const esTrabajo = tipo.toLowerCase() === "trabajo";
+    const puntua = e.puntua !== false;
+    const sub = subjectById(e.subjectId || subjectFocus || (state.subjects[0] || {}).id);
+    const ev = evalDe(sub);
+    // El trabajo puede llenar un componente del esquema (así la nota no se mete dos veces)
+    const bloqueTrabajo = `
+      <label class="switch" id="ex-puntua-wrap"><span class="switch-t">¿Puntúa para la nota?</span>
+        <input id="ex-puntua" name="puntua" type="checkbox" role="switch" ${puntua ? "checked" : ""}/></label>
+      <div class="field" id="ex-comp-campo"${puntua ? "" : " hidden"}>${campoComponente(sub, e.componenteId)}</div>`;
     return `
-      <div class="field"><label>Módulo</label><select name="subjectId">${subjectOptions(e.subjectId || subjectFocus || (state.subjects[0] || {}).id)}</select></div>
-      <div class="field"><label>Título</label><input name="title" required value="${esc(e.title || "")}" placeholder="Tema 3 · Subnetting" /></div>
+      <div class="field"><label>Módulo</label><select name="subjectId" id="ex-subject">${subjectOptions(e.subjectId || subjectFocus || (state.subjects[0] || {}).id)}</select></div>
+      <div class="field"><label>Título</label><input name="title" required value="${esc(e.title || "")}" placeholder="${esTrabajo ? "Práctica 3 · Configurar DHCP" : "Tema 3 · Subnetting"}" /></div>
       <div class="form-row">
-        <div class="field"><label>Tipo</label><select name="kind">${EXAM_KINDS.map((k) => `<option${k.toLowerCase() === tipo.toLowerCase() ? " selected" : ""}>${k}</option>`).join("")}</select></div>
+        <div class="field"><label>Tipo</label><select name="kind" id="ex-kind">${EXAM_KINDS.map((k) => `<option${k.toLowerCase() === tipo.toLowerCase() ? " selected" : ""}>${k}</option>`).join("")}</select></div>
         <div class="field"><label>Fecha</label><input name="date" type="date" required value="${esc(e.date || todayISO())}" /></div>
       </div>
+      <div id="ex-trabajo"${esTrabajo ? "" : " hidden"}>${bloqueTrabajo}</div>
       <div class="form-row">
         <div class="field"><label>Hora</label><input name="time" type="time" value="${esc(e.time || "")}" /></div>
         <div class="field"><label>Aula</label><input name="room" value="${esc(e.room || "")}" /></div>
       </div>
-      <div class="field"><label>Temas que entran</label><textarea name="topics" rows="2" placeholder="Tema 1 y 2, práctica de VLSM…">${esc(e.topics || "")}</textarea></div>
+      <div class="field"><label>${esTrabajo ? "Qué hay que entregar" : "Temas que entran"}</label><textarea name="topics" rows="2" placeholder="${esTrabajo ? "Memoria en PDF con las capturas…" : "Tema 1 y 2, práctica de VLSM…"}">${esc(e.topics || "")}</textarea></div>
       <div class="field"><label>Nota (si ya la sabes)</label><input name="grade" type="number" min="0" max="${max}" step="0.1" value="${e.grade === "" || e.grade == null ? "" : esc(String(e.grade))}" /></div>
     `;
   }
@@ -2500,6 +2762,8 @@
         if (!titulo) { toast("Ponle un título a la prueba"); return; }
         const max = Number(state.settings.gradeMax) || 10;
         const bruto = String(data.grade || "").trim();
+        const esTrabajo = String(data.kind || "").toLowerCase() === "trabajo";
+        const puntua = !esTrabajo || data.puntua !== false;
         const row = {
           id: (e && e.id) || uid(),
           subjectId: data.subjectId || "",
@@ -2510,6 +2774,9 @@
           room: String(data.room || "").trim(),
           topics: String(data.topics || "").trim(),
           grade: bruto === "" || !Number.isFinite(Number(bruto)) ? "" : clamp(Number(bruto), 0, max),
+          // Solo los trabajos pueden puntuar y apuntar a un componente del esquema
+          puntua,
+          componenteId: esTrabajo && puntua ? String(data.componenteId || "") : "",
           createdAt: (e && e.createdAt) || Date.now(),
         };
         if (e) state.exams = state.exams.map((x) => (x.id === e.id ? row : x));
@@ -2518,7 +2785,10 @@
           grantXP(4, "Prueba apuntada"); checkAchievements();
         }
         closeModal(); render();
-        toast(e ? "Prueba actualizada" : "Apuntada: " + row.title);
+        toast(e ? "Guardado: " + row.title
+          : (esTrabajo
+            ? (row.puntua ? (row.componenteId ? "Trabajo apuntado · cuenta en la nota" : "Trabajo apuntado") : "Entrega apuntada (no puntúa)")
+            : "Apuntada: " + row.title));
       },
     });
   }
@@ -2528,9 +2798,13 @@
     const todos = asArray(state.exams).slice().sort((a, b) => String(a.date + (a.time || "")).localeCompare(String(b.date + (b.time || ""))));
     const proximos = todos.filter((e) => e.date >= hoy);
     const pasados = todos.filter((e) => e.date < hoy).reverse();
-    const lista = examFilter === "todos" ? todos : examFilter === "pasados" ? pasados : proximos;
+    const esTrabajo = (e) => String(e.kind || "").toLowerCase() === "trabajo";
+    const porTipo = examTipo === "trabajos" ? todos.filter(esTrabajo)
+      : examTipo === "examenes" ? todos.filter((e) => !esTrabajo(e))
+      : todos;
+    const lista = examFilter === "todos" ? porTipo : examFilter === "pasados" ? porTipo.filter((e) => e.date < hoy).reverse() : porTipo.filter((e) => e.date >= hoy);
     const nota = (e) => (e.grade === "" || e.grade == null ? null : Number(e.grade));
-    const conNota = todos.filter((e) => nota(e) != null);
+    const conNota = todos.filter((e) => nota(e) != null);   // exámenes y trabajos, juntos
     const media = conNota.length ? conNota.reduce((a, e) => a + nota(e), 0) / conNota.length : null;
     const next = proximos[0];
     const dNext = next ? daysUntil(next.date) : null;
@@ -2551,6 +2825,8 @@
         <span class="exam-body">
           <b>${esc(e.title)}</b>
           <small>${esc(sub ? sub.name : "Sin módulo")} · ${esc(e.kind || "Examen")}${e.time ? " · " + esc(e.time) : ""}${e.room ? " · " + esc(e.room) : ""}</small>
+          ${esTrabajo(e) ? `<small class="exam-topics">${e.puntua === false ? "No puntúa para la nota"
+            : (componenteDe(e) ? "Cuenta en «" + esc(componenteDe(e).componente.nombre) + "»" : "Puntúa (sin componente del esquema)")}</small>` : ""}
           ${e.topics ? `<small class="exam-topics">${esc(e.topics)}</small>` : ""}
         </span>
         <span class="exam-right">
@@ -2561,14 +2837,14 @@
     };
     const hero = next
       ? `<div class="exam-hero${dNext === 0 ? " is-hoy" : ""}">
-          <span class="k">${dNext === 0 ? "Es hoy" : dNext === 1 ? "Es mañana" : "Próxima prueba"}</span>
+          <span class="k">${dNext === 0 ? "Es hoy" : dNext === 1 ? "Es mañana" : (String(next.kind || "").toLowerCase() === "trabajo" ? "Próxima entrega" : "Próxima prueba")}</span>
           <b>${esc(next.title)}</b>
           <small>${esc(subjectName(next.subjectId))} · ${esc(fmtDateLong(next.date))}${next.time ? " · " + esc(next.time) : ""}${next.room ? " · " + esc(next.room) : ""}</small>
           <div class="exam-count"><b>${dNext}</b><span>${dNext === 1 ? "día" : "días"}</span></div>
           ${next.topics ? `<p class="hint exam-topics-hero">Entra: ${esc(next.topics)}</p>` : ""}
         </div>`
       : `<div class="exam-hero vacio">
-          <span class="k">Sin pruebas apuntadas</span>
+          <span class="k">Sin nada apuntado</span>
           <b>Nada a la vista</b>
           <small>Cuando el profe diga fecha, la apuntas aquí y te cuenta los días.</small>
         </div>`;
@@ -2581,8 +2857,8 @@
       return `
         <div class="empty empty-hero">
           <div class="empty-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg></div>
-          <b>Aún no hay ningún examen apuntado</b>
-          <p>Cuando el profe diga la fecha del examen, la apuntas aquí y la app te lleva la cuenta: días que quedan, aviso la tarde antes y una hora antes.</p>
+          <b>Aún no hay nada apuntado</b>
+          <p>Apunta aquí cada examen, práctica o entrega con su fecha: la app te lleva la cuenta (días que quedan, aviso la tarde antes y una hora antes). Si es un trabajo, puedes enlazarlo con el componente de la nota que le toque.</p>
           <button class="btn btn-primary" data-action="add-exam">Añadir el primero</button>
         </div>`;
     }
@@ -2595,6 +2871,10 @@
       </div>
       <div class="filters">
         ${filtros.map(([id, txt, n]) => `<button class="chip ${examFilter === id ? "is-on" : ""}" data-action="exam-filter" data-f="${id}">${txt} · ${n}</button>`).join("")}
+      </div>
+      <div class="filters filters-tipo">
+        ${[["", "Todo", todos.length], ["examenes", "Exámenes", todos.filter((e) => !esTrabajo(e)).length], ["trabajos", "Trabajos", todos.filter(esTrabajo).length]]
+          .map(([id, txt, n]) => `<button class="chip ${examTipo === id ? "is-on" : ""}" data-action="exam-tipo" data-f="${id}">${txt} · ${n}</button>`).join("")}
       </div>
       <div class="exam-list">
         ${lista.length ? lista.map(tarjeta).join("")
@@ -3814,7 +4094,7 @@
     acc("Temporizador", () => go("timer"));
     acc("Calendario y horario", () => go("schedule"));
     acc("Calificaciones", () => go("rendimiento"));
-    acc("Exámenes", () => go("exams"));
+    acc("Agenda", () => go("exams"));
     acc("Apuntar un examen", () => addExam());
     acc("Apuntes", () => go("notes"));
     acc("Chat con Ollama", () => go("chatbot"));
@@ -4330,7 +4610,21 @@
     if (action === "add-exam") addExam();
     if (action === "edit-exam") addExam(state.exams.find((x) => x.id === id));
     if (action === "exam-filter") { examFilter = btn.dataset.f || "proximos"; render(); }
-    if (action === "delete-exam") ask("Eliminar prueba", "Se quita de la lista y de la cuenta atrás.", () => {
+    if (action === "exam-tipo") { examTipo = btn.dataset.f || ""; render(); }
+    if (action === "eval-nuevo" || action === "eval-editar") abrirEsquema(subjectById(id));
+    if (action === "eval-notas") abrirNotas(subjectById(id));
+    if (action === "eval-modo-notas") {
+      const sub = subjectById(subjectFocus);
+      const c = sub && evalDe(sub) && evalDe(sub).componentes.find((x) => x.id === id);
+      if (c) { c.modo = "manual"; save(); }
+      closeModal();
+      abrirNotas(sub);
+    }
+    if (action === "eval-add-comp" || action === "eval-del-comp" || action === "eval-add-ra"
+      || action === "eval-del-ra" || action === "eval-modo" || action === "eval-plantilla") {
+      tocarEsquema(subjectById(evalDraftSub), action, id, btn.dataset.modo);
+    }
+    if (action === "delete-exam") ask("Eliminar de la Agenda", "Se quita de la lista y de la cuenta atrás.", () => {
       pushUndo(); state.exams = state.exams.filter((x) => x.id !== id); closeModal(); render(); toast("Prueba eliminada");
     });
     if (action === "add-event") addEvent();
@@ -4543,6 +4837,19 @@
       return;
     }
     if (e.target.id === "ex-date") { exDate = e.target.value; render(); return; }
+    // Agenda: el bloque «¿puntúa?» solo sale en los trabajos, y el componente depende del módulo
+    if (e.target.id === "ex-kind") {
+      const caja = $("#ex-trabajo");
+      if (caja) caja.hidden = e.target.value.toLowerCase() !== "trabajo";
+    }
+    if (e.target.id === "ex-puntua") {
+      const campo = $("#ex-comp-campo");
+      if (campo) campo.hidden = !e.target.checked;
+    }
+    if (e.target.id === "ex-subject") {
+      const campo = $("#ex-comp-campo");
+      if (campo) campo.innerHTML = campoComponente(subjectById(e.target.value), "");
+    }
     if (e.target.id === "timer-subject") timer.subjectId = e.target.value;
     if (e.target.dataset.action === "note-subject" && noteId) {
       const n = state.notes.find((x) => x.id === noteId);
@@ -4749,10 +5056,12 @@
       <div class="bars-lbl">${DAYS_SHORT.map((d) => `<span>${d[0]}</span>`).join("")}</div>`;
   }
   function radarSVG() {
-    // Antes se cortaba en 8 módulos: con 10 asignaturas el radar enseñaba 8 vértices y el texto
-    // de arriba decía «10 de 10 módulos con nota». Ahora entran todos.
-    const mods = state.subjects.slice(0, 12);
-    const has = mods.some((s) => s.grade !== "" && Number.isFinite(Number(s.grade)));
+    /* Sin tope: entran todos los módulos que haya (antes se cortaba en 12 y, más atrás, en 8, así
+       que los últimos desaparecían del radar sin avisar). El polígono ya se calcula con el número
+       real de módulos. */
+    const mods = state.subjects.slice();
+    const nota = (x) => notaModulo(x);
+    const has = mods.some((x) => nota(x) != null);
     if (!has) {
       // Misma forma que el resto de estados vacíos (icono, título, texto y un botón).
       return `<div class="empty-hero">
@@ -4774,21 +5083,22 @@
       rings += `<polygon points="${Array.from({ length: n }, (_, i) => pt(i, R * k).join(",")).join(" ")}" fill="none" stroke="currentColor" opacity=".18"/>`;
     });
     const maxNota = Number(state.settings.gradeMax) || 10;
-    const data = mods.map((sub, i) => pt(i, R * (Number(sub.grade) || 0) / maxNota));
+    const data = mods.map((sub, i) => pt(i, R * (Number(nota(sub)) || 0) / maxNota));
     while (data.length < 3) data.push(pt(data.length, 0));
     const poly = data.map((x) => x.join(",")).join(" ");
+    const apretado = mods.length > 8;
     const labels = mods.map((sub, i) => {
-      const [x, y] = pt(i, R + 16);
-      const short = sub.name.split(" ").map((w) => w.slice(0, 3)).join("").slice(0, 6).toUpperCase();
-      return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-size="9.5" font-weight="700" fill="currentColor" opacity=".6">${esc(short)}</text>`;
+      const [x, y] = pt(i, R + (apretado ? 18 : 16));
+      const short = sub.name.split(" ").map((w) => w.slice(0, 3)).join("").slice(0, apretado ? 5 : 6).toUpperCase();
+      return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-size="${apretado ? 8.5 : 9.5}" font-weight="700" fill="currentColor" opacity=".6">${esc(short)}</text>`;
     }).join("");
     // Cada punto lleva su nombre completo y su nota: en pantalla pequeña los rótulos del radar
     // no caben, así que al tocar (o pasar por encima) el punto sale el dato.
     const puntos = mods.map((sub, i) => {
       const [x, y] = data[i];
-      const n = Number(sub.grade);
-      const col = n >= 9 ? "#10b981" : n >= 5 ? "#38bdf8" : "#ef4444";
-      return `<circle cx="${x}" cy="${y}" r="7" fill="${col}" stroke="var(--paper, #fff)" stroke-width="1.5"><title>${esc(sub.name)}: ${Number.isFinite(n) ? n.toFixed(1) : "sin nota"} / ${maxNota}</title></circle>`;
+      const n = nota(sub);
+      const col = n == null ? "#94a3b8" : n >= maxNota * 0.9 ? "#10b981" : n >= maxNota / 2 ? "#38bdf8" : "#ef4444";
+      return `<circle cx="${x}" cy="${y}" r="7" fill="${col}" stroke="var(--paper, #fff)" stroke-width="1.5"><title>${esc(sub.name)}: ${n == null ? "sin nota" : n.toFixed(2)} / ${maxNota}</title></circle>`;
     }).join("");
     return `<svg viewBox="0 0 280 280" class="radar-box" role="img" aria-label="Perfil de notas por módulo">${rings}<polygon points="${poly}" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="2"/>${puntos}${labels}</svg>
       <p class="hint radar-hint">Toca un punto del radar y sale el módulo con su nota.</p>`;
@@ -4812,34 +5122,298 @@
       },
     });
   }
+  // ————————————————————— Esquema de evaluación: editor y notas (v67.5)
+  /* El editor trabaja sobre una copia (`evalDraft`): así se puede añadir o quitar filas sin
+     tocar el módulo hasta que se guarda. Los botones del modal releen antes los campos para no
+     perder lo que hayas escrito. */
+  let evalDraft = null, evalDraftSub = "";
+
+  function esquemaVacio(sub) {
+    const max = Number(state.settings.gradeMax) || 10;
+    const ev = evalDe(sub);
+    if (ev) {
+      return {
+        v: 1,
+        componentes: ev.componentes.map((c) => ({ ...c })),
+        reglas: {
+          ra: { activo: !!(ev.reglas && ev.reglas.ra && ev.reglas.ra.activo), lista: ((ev.reglas && ev.reglas.ra && ev.reglas.ra.lista) || []).map((x) => ({ ...x })) },
+          min: { activo: !!(ev.reglas && ev.reglas.min && ev.reglas.min.activo) },
+        },
+      };
+    }
+    return {
+      v: 1,
+      componentes: [{ id: uid(), nombre: "Nota del módulo", peso: 100, sobre: max, nota: "", min: 0, modo: "auto" }],
+      reglas: { ra: { activo: false, lista: [] }, min: { activo: false } },
+    };
+  }
+
+  // Lo que llevas con el reparto que se ve ahora mismo en el editor
+  function borradorComoModulo(sub) {
+    return { id: sub.id, name: sub.name, teacher: sub.teacher, grade: sub.grade, eval: evalDraft };
+  }
+
+  function evalFormHTML(sub) {
+    const max = Number(state.settings.gradeMax) || 10;
+    const ev = evalDraft;
+    const filas = ev.componentes.map((c) => {
+      const n = notaDeComponente(sub, c);
+      const agenda = n.origen === "agenda" && n.trabajos.length;
+      const aManoConAgenda = (c.modo || "auto") === "manual" && n.trabajos.length;
+      const cola = agenda
+        ? `<p class="hint eval-origen">Lo llena la Agenda: ${n.trabajos.length} ${n.trabajos.length === 1 ? "entrega" : "entregas"} · media <b>${n.nota.toFixed(2)}</b>
+             <button type="button" class="link-btn" data-action="eval-modo" data-id="${c.id}" data-modo="manual">escribirla a mano</button></p>`
+        : aManoConAgenda
+          ? `<p class="hint eval-origen">A mano (en la Agenda hay ${n.trabajos.length} ${n.trabajos.length === 1 ? "entrega" : "entregas"} para este componente)
+               <button type="button" class="link-btn" data-action="eval-modo" data-id="${c.id}" data-modo="auto">volver a usar la Agenda</button></p>`
+          : "";
+      return `
+      <div class="eval-row">
+        <div class="eval-row-top">
+          <input name="c:${c.id}:nombre" value="${esc(c.nombre)}" placeholder="Examen de teoría" aria-label="Nombre del componente" />
+          <button type="button" class="icon-btn eval-x" data-action="eval-del-comp" data-id="${c.id}" title="Quitar este componente" aria-label="Quitar ${esc(c.nombre)}">✕</button>
+        </div>
+        <div class="eval-nums">
+          <label>Peso <input name="c:${c.id}:peso" type="number" inputmode="decimal" min="0" max="100" step="1" value="${Number(c.peso) || 0}" /> %</label>
+          <label>Nota <input name="c:${c.id}:nota" type="number" inputmode="decimal" min="0" max="${c.sobre}" step="0.01" value="${c.nota === "" || c.nota == null ? "" : Number(c.nota)}" placeholder="—" /></label>
+          <label>Sobre <input name="c:${c.id}:sobre" type="number" inputmode="decimal" min="1" max="100" step="1" value="${Number(c.sobre) || max}" /></label>
+          ${ev.reglas.min.activo ? `<label>Mín. <input name="c:${c.id}:min" type="number" inputmode="decimal" min="0" max="${c.sobre}" step="0.01" value="${Number(c.min) > 0 ? Number(c.min) : ""}" placeholder="—" /></label>` : ""}
+        </div>
+        ${cola}
+      </div>`;
+    }).join("");
+
+    const total = Math.round(pesoTotal(ev) * 100) / 100;
+    const aviso = avisoPesos(ev);
+    const est = estadoModulo(borradorComoModulo(sub));
+    const resumen = est.nota == null
+      ? "Todavía sin notas: en cuanto pongas la primera, aquí sale la nota que llevas."
+      : `Con lo que llevas: <b>${est.nota.toFixed(2)}</b> / ${max} · ` +
+        (est.aprobado ? `<b class="is-ok">Aprobado</b>` : `<b class="is-bad">Suspenso</b>${est.motivo ? " · " + esc(est.motivo) : ""}`);
+    const ras = ev.reglas.ra.lista.map((r) => `
+      <div class="eval-ra">
+        <input name="ra:${r.id}:nombre" value="${esc(r.nombre)}" placeholder="RA1 · Pone en servicio DHCP" aria-label="Nombre del RA" />
+        <label class="switch switch-mini"><span class="switch-t">Aprobado</span><input type="checkbox" name="ra:${r.id}:ok" role="switch" ${r.ok ? "checked" : ""}/></label>
+        <button type="button" class="icon-btn eval-x" data-action="eval-del-ra" data-id="${r.id}" title="Quitar este RA" aria-label="Quitar ${esc(r.nombre)}">✕</button>
+      </div>`).join("");
+
+    return `
+      <p class="hint" style="margin-top:0">Reparte el peso de cada parte y ve metiendo sus notas. La nota final del módulo se calcula sola; los módulos sin esquema siguen con su nota a mano.</p>
+      <div class="eval-total${aviso ? " is-warn" : ""}">
+        <span>Peso total</span><b>${total.toFixed(total % 1 ? 1 : 0)} %</b>
+        ${aviso ? `<small>${esc(aviso)}</small>` : `<small>Cuadra.</small>`}
+      </div>
+      <div class="eval-rows">${filas}</div>
+      <div class="hero-actions" style="margin:10px 0 4px">
+        <button type="button" class="btn btn-sm" data-action="eval-add-comp">+ Añadir componente</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-action="eval-plantilla">40 / 40 / 20 (teoría, práctico, prácticas)</button>
+      </div>
+      <div class="eval-reglas">
+        <label class="switch"><span class="switch-t">Hay que aprobar todos los RA</span><input type="checkbox" name="regla-ra" role="switch" ${ev.reglas.ra.activo ? "checked" : ""}/></label>
+        <div class="eval-ra-lista">
+          ${ev.reglas.ra.lista.length ? ras : `<p class="hint">Sin RA en la lista: añádelos y marca los aprobados. Mientras la lista esté vacía, esta regla no suspende nada.</p>`}
+          <button type="button" class="btn btn-sm btn-ghost" data-action="eval-add-ra">+ Añadir RA</button>
+        </div>
+        <label class="switch"><span class="switch-t">Exigir la nota mínima de cada componente</span><input type="checkbox" name="regla-min" role="switch" ${ev.reglas.min.activo ? "checked" : ""}/></label>
+      </div>
+      <div class="eval-pie ${est.nota == null ? "" : est.aprobado ? "is-ok" : "is-bad"}">${resumen}</div>`;
+  }
+
+  // Lee lo que hay puesto en el modal (para no perderlo al añadir/quitar filas)
+  function leerEsquema(form) {
+    if (!form || !evalDraft) return;
+    const fd = new FormData(form);
+    const val = (k) => { const v = fd.get(k); return v == null ? "" : String(v).trim(); };
+    const num = (k) => { const v = val(k).replace(",", "."); return v === "" ? null : Number(v); };
+    evalDraft.componentes.forEach((c) => {
+      const nombre = val("c:" + c.id + ":nombre");
+      if (nombre) c.nombre = nombre.slice(0, 60);
+      const p = num("c:" + c.id + ":peso");
+      c.peso = clamp(p == null ? 0 : p, 0, 100);
+      const s = num("c:" + c.id + ":sobre");
+      c.sobre = clamp(s == null ? (Number(state.settings.gradeMax) || 10) : s, 1, 100);
+      const n = num("c:" + c.id + ":nota");
+      c.nota = n == null ? "" : clamp(n, 0, c.sobre);
+      const m = num("c:" + c.id + ":min");
+      c.min = m == null ? 0 : clamp(m, 0, c.sobre);
+    });
+    evalDraft.reglas.ra.lista.forEach((r) => {
+      const nombre = val("ra:" + r.id + ":nombre");
+      if (nombre) r.nombre = nombre.slice(0, 80);
+    });
+    $$("#modal-form input[type=checkbox]").forEach((c) => {
+      const m = /^ra:(.+):ok$/.exec(c.name || "");
+      if (m) { const r = evalDraft.reglas.ra.lista.find((x) => x.id === m[1]); if (r) r.ok = c.checked; }
+      if (c.name === "regla-ra") evalDraft.reglas.ra.activo = c.checked;
+      if (c.name === "regla-min") evalDraft.reglas.min.activo = c.checked;
+    });
+  }
+
+  function pintarEsquema(sub) {
+    openModal("Esquema de evaluación · " + sub.name, evalFormHTML(sub), {
+      confirm: "Guardar esquema",
+      onSubmit() {
+        leerEsquema($("#modal-form"));
+        const max = Number(state.settings.gradeMax) || 10;
+        const limpio = saneEval(evalDraft, max);
+        if (!limpio) { toast("Añade al menos un componente"); return; }
+        sub.eval = limpio;
+        const aviso = avisoPesos(limpio);
+        save(); closeModal(); render();
+        toast(aviso ? "Esquema guardado · " + aviso : "Esquema de " + sub.name + " guardado");
+      },
+    });
+  }
+
+  function abrirEsquema(sub) {
+    if (!sub) return;
+    // La copia de trabajo parte SIEMPRE de lo guardado (antes se borraba el esquema antes de
+    // copiarlo y el editor abría en blanco: al guardar, se perdía lo que había).
+    evalDraft = esquemaVacio(sub);
+    evalDraftSub = sub.id;
+    pintarEsquema(sub);
+  }
+
+  // Sin salir del editor: añadir/quitar filas y RA, o pasar una nota a mano
+  function tocarEsquema(sub, accion, id, extra) {
+    leerEsquema($("#modal-form"));
+    if (accion === "eval-add-comp") {
+      const sobre = Number(state.settings.gradeMax) || 10;
+      evalDraft.componentes.push({ id: uid(), nombre: "Componente " + (evalDraft.componentes.length + 1), peso: 0, sobre, nota: "", min: 0, modo: "auto" });
+    }
+    if (accion === "eval-del-comp") {
+      if (evalDraft.componentes.length <= 1) { toast("Deja al menos un componente"); return; }
+      evalDraft.componentes = evalDraft.componentes.filter((c) => c.id !== id);
+      if (evalDraft.reglas.ra.lista.length && !evalDraft.componentes.length) evalDraft.reglas.ra.activo = false;
+    }
+    if (accion === "eval-add-ra") evalDraft.reglas.ra.lista.push({ id: uid(), nombre: "RA" + (evalDraft.reglas.ra.lista.length + 1), ok: false });
+    if (accion === "eval-del-ra") evalDraft.reglas.ra.lista = evalDraft.reglas.ra.lista.filter((r) => r.id !== id);
+    if (accion === "eval-modo") {
+      const c = evalDraft.componentes.find((x) => x.id === id);
+      if (c) c.modo = extra === "manual" ? "manual" : "auto";
+    }
+    if (accion === "eval-plantilla") {
+      const sobre = Number(state.settings.gradeMax) || 10;
+      if (evalDraft.componentes.length > 1 || evalDraft.componentes[0].nota !== "") {
+        ask("Cambiar el reparto", "Esto sustituye los componentes que hay ahora en el editor (nada se guarda hasta que pulses Guardar esquema).", () => {
+          evalDraft.componentes = plantilla40(sobre);
+          evalDraft.reglas.ra.activo = true;
+          pintarEsquema(sub);
+        });
+        return;
+      }
+      evalDraft.componentes = plantilla40(sobre);
+      evalDraft.reglas.ra.activo = true;
+    }
+    pintarEsquema(sub);
+  }
+
+  function plantilla40(sobre) {
+    return [
+      { id: uid(), nombre: "Examen de teoría", peso: 40, sobre, nota: "", min: 0, modo: "auto" },
+      { id: uid(), nombre: "Examen práctico", peso: 40, sobre, nota: "", min: 0, modo: "auto" },
+      { id: uid(), nombre: "Prácticas", peso: 20, sobre, nota: "", min: 0, modo: "auto" },
+    ];
+  }
+
+  /* Meter la nota de los componentes sin abrir el esquema entero: es lo que harás cada vez que
+     el profe devuelva un examen. Lo que venga de la Agenda se enseña, pero no se toca aquí. */
+  function abrirNotas(sub) {
+    const ev = evalDe(sub);
+    if (!ev) { abrirEsquema(sub); return; }
+    const max = Number(state.settings.gradeMax) || 10;
+    const filas = ev.componentes.map((c) => {
+      const n = notaDeComponente(sub, c);
+      const deAgenda = n.origen === "agenda" && n.trabajos.length;
+      return `<div class="field eval-nota-fila">
+        <label for="n:${c.id}">${esc(c.nombre)} <span class="eval-peso">${Number(c.peso).toFixed(Number(c.peso) % 1 ? 1 : 0)} %</span></label>
+        <div class="eval-nota-in">
+          <input id="n:${c.id}" name="n:${c.id}" type="number" inputmode="decimal" step="0.01" min="0" max="${n.sobre}" value="${n.nota == null ? "" : n.nota}" placeholder="—" ${deAgenda ? `disabled` : ""} />
+          <span class="eval-sobre">/ ${n.sobre}</span>
+        </div>
+        ${deAgenda ? `<p class="hint eval-origen">Lo llena la Agenda: ${n.trabajos.length} ${n.trabajos.length === 1 ? "entrega" : "entregas"} · media <b>${n.nota.toFixed(2)}</b>.
+          <button type="button" class="link-btn" data-action="eval-modo-notas" data-id="${c.id}">escribirla a mano</button></p>` : ""}
+      </div>`;
+    }).join("");
+    const est = estadoModulo(sub);
+    openModal("Notas de " + sub.name, `
+      <p class="hint" style="margin-top:0">Escribe la nota de cada componente sobre su máximo. La nota final del módulo se recalcula sola.</p>
+      ${filas}
+      <div class="eval-pie ${est.nota == null ? "" : est.aprobado ? "is-ok" : "is-bad"}">
+        ${est.nota == null ? "Todavía sin notas." : `Nota final: <b>${est.nota.toFixed(2)}</b> / ${max} · ` + (est.aprobado ? `<b class="is-ok">Aprobado</b>` : `<b class="is-bad">Suspenso</b>${est.motivo ? " · " + esc(est.motivo) : ""}`)}
+      </div>
+      ${avisoPesos(ev) ? `<p class="hint">${esc(avisoPesos(ev))} Puedes cuadrarlo en «Esquema».</p>` : ""}`, {
+      confirm: "Guardar notas",
+      onSubmit(data) {
+        let cambiadas = 0;
+        (evalDe(sub) || { componentes: [] }).componentes.forEach((c) => {
+          const bruto = data["n:" + c.id];
+          if (bruto == null) return;
+          const txt = String(bruto).trim().replace(",", ".");
+          const antes = notaDeComponente(sub, c);
+          if (txt === "") {
+            c.nota = "";
+            if (antes.origen !== "agenda") cambiadas++;
+            return;
+          }
+          const v = clamp(Number(txt) || 0, 0, Number(c.sobre) || max);
+          const igual = antes.nota != null && Math.abs(v - antes.nota) < 0.001;
+          c.nota = v;
+          // Si lo que había venía de la Agenda y ahora escribes otra cosa, manda tu nota
+          c.modo = antes.origen === "agenda" && !igual ? "manual" : (c.modo || "auto");
+          if (!igual) cambiadas++;
+        });
+        save(); closeModal(); render();
+        toast(cambiadas ? "Notas guardadas" : "Sin cambios");
+      },
+    });
+  }
+
   function renderRendimiento() {
     const gpa = weightedGPA();
     const max = Number(state.settings.gradeMax) || 10;
-    const clsOf = (avg) => avg == null ? "g-na" : avg >= 9 ? "g-top" : avg >= 5 ? "g-ok" : "g-bad";
+    const clsOf = (avg) => avg == null ? "g-na" : avg >= max * 0.9 ? "g-top" : avg >= max / 2 ? "g-ok" : "g-bad";
     const boletin = state.subjects.map((sub) => {
-      const n = sub.grade === "" || sub.grade == null ? null : Number(sub.grade);
-      const gcls = n == null ? "g-na" : n >= 9 ? "g-top" : n >= 5 ? "g-ok" : "g-bad";
+      const est = estadoModulo(sub);
+      const n = est.nota;
+      const gcls = clsOf(n);
       const mins = studiedFor(sub.id);
       // El punto de color era el del módulo (y alguno es rojo), así que un 7,50 salía con un
       // punto rojo al lado: parecía suspenso. Ahora el punto habla de la nota.
-      const puntoNota = n == null ? "var(--muted-2)" : n >= max / 2 ? "var(--green)" : "var(--red)";
+      const puntoNota = n == null ? "var(--muted-2)" : est.aprobado ? "var(--green)" : "var(--red)";
+      const queDice = n == null ? "Sin nota" : est.aprobado ? "Aprobado" : (est.motivo || "Suspenso");
+      // Con esquema, los componentes con su nota (la que manda) y su peso
+      const lista = est.tieneEsquema ? `<div class="eval-lista">${evalDe(sub).componentes.map((c) => {
+        const nc = notaDeComponente(sub, c);
+        const col = nc.nota == null ? "var(--muted-2)" : nc.nota >= nc.sobre / 2 ? "var(--green)" : "var(--red)";
+        return `<div class="eval-fila">
+          <i style="background:${col}"></i>
+          <span class="eval-n">${esc(c.nombre)}${nc.origen === "agenda" ? `<small> · Agenda (${nc.trabajos.length})</small>` : ""}</span>
+          <span class="eval-p">${Number(c.peso).toFixed(Number(c.peso) % 1 ? 1 : 0)} %</span>
+          <b class="eval-v">${nc.nota == null ? "—" : nc.nota.toFixed(2) + "<span>/" + nc.sobre + "</span>"}</b>
+        </div>`;
+      }).join("")}</div>` : "";
       return `<section class="boletin-mod">
         <div class="boletin-head">
-          <i style="background:${puntoNota}" title="${n == null ? "Sin nota" : n >= max / 2 ? "Aprobado" : "Suspenso"}"></i>
+          <i style="background:${puntoNota}" title="${esc(queDice)}"></i>
           <div>
             <b>${esc(sub.name)}</b>
             <small>${fmtHours(mins)} de estudio · ${esc(sub.teacher || "sin profesor")}</small>
           </div>
           <div class="g ${gcls}">${n == null ? "—" : n.toFixed(2)}<span class="g-max">/${max}</span></div>
         </div>
-        <button type="button" class="grade-row" data-action="edit-grade" data-id="${sub.id}">
-          <span class="grade-row-t"><b>${n == null ? "Poner la nota" : "Cambiar la nota"}</b>
-            <small>Nota final del módulo (0 a ${max})</small></span>
-          <span class="g ${gcls}">${n == null ? "—" : n.toFixed(1)}</span>
-        </button>
+        ${est.tieneEsquema && est.motivo && est.aprobado === false ? `<p class="eval-motivo">${esc(est.motivo)}</p>` : ""}
+        ${lista}
+        <div class="eval-acciones">
+          ${est.tieneEsquema
+            ? `<button type="button" class="btn btn-sm btn-primary" data-action="eval-notas" data-id="${sub.id}">Meter notas</button>
+               <button type="button" class="btn btn-sm" data-action="eval-editar" data-id="${sub.id}">Esquema</button>`
+            : `<button type="button" class="btn btn-sm btn-primary" data-action="edit-grade" data-id="${sub.id}">${n == null ? "Poner la nota" : "Cambiar la nota"}</button>
+               <button type="button" class="btn btn-sm btn-ghost" data-action="eval-nuevo" data-id="${sub.id}">Esquema de evaluación</button>`}
+        </div>
       </section>`;
     }).join("") || `<div class="empty"><b>Sin módulos</b>Añade tus módulos para ir apuntando notas.</div>`;
-    const conNota = state.subjects.filter((s) => s.grade !== "" && Number.isFinite(Number(s.grade))).length;
+    const conNota = state.subjects.filter((s) => estadoModulo(s).nota != null).length;
     return `
       <div class="boletin-hero">
         <span class="k">Media del ciclo</span>
@@ -4873,6 +5447,9 @@
     subjectName, subjectColor, subjectById, minutesOf, weekdayMon0, DAYS, DAYS_SHORT, MONTHS,
     pad, clamp, localISO, weekRange, streak, studiedFor, nextClass, $, $$,
     openModal, closeModal, ask, weightedGPA, grantXP, checkAchievements, needSubjects,
+    // Esquema de evaluación por módulo (v67.5): lo usan las pruebas y la Agenda
+    estadoModulo, notaModulo, evalDe, notaDeComponente, mediaEsquema, pesoTotal, avisoPesos, saneEval,
+    abrirEsquema, abrirNotas, aplicarEsquemasConocidos, EXAM_KINDS,
     pushUndo, undo, sanitize, flushSave, APP_VERSION, subjectSynonyms, matchSubject, nlpParse,
     isNativeShell, soloLocal: true,
     safeColor, sm2, cardState, nextLabel, migrateMedia, eventsOnDate, setException, exceptionsFor,

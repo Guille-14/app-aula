@@ -90,6 +90,7 @@
       dias,
       examenes: (st.exams || []).map((e) => ({
         title: e.title, subject: A.subjectName(e.subjectId), date: e.date, time: e.time, room: e.room || "",
+        kind: e.kind || "", puntua: e.puntua !== false,
       })),
       fichas: typeof A.dueCards === "function" ? A.dueCards().length : 0,
     };
@@ -120,14 +121,15 @@
     // Exámenes: la tarde anterior y una hora antes
     (d.examenes || []).forEach((e, i) => {
       if (!e.date) return;
-      const etiqueta = e.title || e.subject || "Examen";
+      const esTrabajo = String(e.kind || "").toLowerCase() === "trabajo";
+      const etiqueta = e.title || e.subject || (esTrabajo ? "Entrega" : "Examen");
       const cola = [e.subject, e.time, e.room].filter(Boolean).join(" · ");
       if (st.notifyExamEve !== false) {
-        mete("examen-vispera|" + e.date + "|" + i, "examen", "Mañana examen",
+        mete("examen-vispera|" + e.date + "|" + i, "examen", esTrabajo ? "Entrega mañana" : "Mañana examen",
           etiqueta + (cola ? " · " + cola : ""), fechaHora(e.date, "18:00", -1440), "exams");
       }
       if (st.notifyExamHour !== false && e.time) {
-        mete("examen-hora|" + e.date + "|" + i, "examen", "Examen en 1 hora", etiqueta + (e.subject ? " · " + e.subject : ""), fechaHora(e.date, e.time, -60), "exams");
+        mete("examen-hora|" + e.date + "|" + i, "examen", esTrabajo ? "Entrega en 1 hora" : "Examen en 1 hora", etiqueta + (e.subject ? " · " + e.subject : ""), fechaHora(e.date, e.time, -60), "exams");
       }
     });
 
