@@ -2942,13 +2942,76 @@ async function testV677() {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
     const lock = JSON.parse(fs.readFileSync(path.join(ROOT, "package-lock.json"), "utf8"));
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
-    // Ojo: terser convierte `const APP_VERSION = "v67.7.0"` en `APP_VERSION="v67.7.0"`, así que
+    // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.7\.0"/.test(app), "versión: js/app.js dice v67.7.0");
-    check(pkg.version === "67.7.0", "versión: package.json dice 67.7.0");
-    check(lock.version === "67.7.0" && lock.packages[""].version === "67.7.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.7\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.7\.1"/.test(app), "versión: js/app.js dice v67.7.1");
+    check(pkg.version === "67.7.1", "versión: package.json dice 67.7.1");
+    check(lock.version === "67.7.1" && lock.packages[""].version === "67.7.1", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.7\.1"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
+  }
+}
+
+// --------- 25. v67.7.1: cambiar el icono de la app (el lanzador de Android)
+/* El fallo: la plantilla de Capacitor trae MainActivity con SU PROPIO intent-filter
+   MAIN/LAUNCHER. apply.py añadía 23 activity-alias encima, así que en el escritorio convivían
+   24 lanzadores; IconSwitch solo enciende y apaga los alias y nunca toca MainActivity, cuyo
+   icono (ic_launcher) es siempre el dragón. Tocas Mewtwo, el plugin dice que sí, y el
+   escritorio no se mueve.
+
+   La lógica vive en apk-overlay/manifest.py, que es Python puro: aquí se ejecuta DE VERDAD
+   sobre la plantilla real de Capacitor (la misma que recibe el build), no sobre una copia. */
+function testIconoApp() {
+  const { execFileSync } = require("child_process");
+  const os = require("os");
+  const carpeta = fs.mkdtempSync(path.join(os.tmpdir(), "aula-manifest-"));
+  try {
+    // 1. La plantilla tal cual la genera `npx cap add android`
+    const tar = path.join(ROOT, "node_modules", "@capacitor", "cli", "assets", "android-template.tar.gz");
+    check(fs.existsSync(tar), "icono: se encuentra la plantilla de Android de Capacitor");
+    execFileSync("tar", ["xzf", tar, "-C", carpeta, "app/src/main/AndroidManifest.xml"], { stdio: "pipe" });
+    const plantilla = path.join(carpeta, "app", "src", "main", "AndroidManifest.xml");
+    const original = fs.readFileSync(plantilla, "utf8");
+    check(/android:name="\.MainActivity"[\s\S]*?android\.intent\.action\.MAIN/.test(original),
+      "icono: la plantilla de Capacitor trae MainActivity con su propio filtro de lanzador (de ahí venía el fallo)");
+
+    // 2. Se le pasa por el código que de verdad se ejecuta en el build
+    const guion = path.join(ROOT, "tests", "probar-manifest-icono.py");
+    const crudo = execFileSync("python3", [guion, path.join(ROOT, "apk-overlay"), plantilla], { encoding: "utf8" });
+    const r = JSON.parse(crudo.trim().split("\n").pop());
+
+    check(r.aliases === 23, "icono: se declaran los 23 activity-alias (leído: " + r.aliases + ")");
+    check(r.total === 23, "icono: y hay 23 lanzadores en total, no 24 (leído: " + r.total + ")");
+    check(r.main_sigue === true, "icono: MainActivity sigue declarada (los widgets la abren con un Intent explícito)");
+    check(r.main_con_lanzador === false, "icono: MainActivity YA NO declara lanzador — sin esto el icono no cambiaba nunca");
+    check(r.main_exported === true, "icono: y sigue siendo exported");
+    check(r.activos.join("|") === "IcoDragon", "icono: el único lanzador activo de salida es el dragón (leído: " + r.activos.join("|") + ")");
+    check(r.alias_dragon === "IcoDragon", "icono: alias_de('dragon') da IcoDragon");
+    check(r.idempotente === 23, "icono: pasar apply.py dos veces no duplica los alias (leído: " + r.idempotente + ")");
+
+    // 3. Las tres listas de iconos tienen que ser la misma, o el alias no existe y Android
+    //    se traga el setComponentEnabledSetting en silencio (falla sin decir nada)
+    const java = fs.readFileSync(path.join(ROOT, "apk-overlay", "java", "IconSwitch.java"), "utf8");
+    const idsJava = (java.split("IDS = {")[1].split("}")[0].match(/"[a-z]+"/g) || []).map((s) => s.replace(/"/g, ""));
+    check(idsJava.join("|") === r.iconos.join("|"),
+      "icono: IconSwitch.IDS (Java) y manifest.ICONS (Python) son la misma lista (" + idsJava.length + " y " + r.iconos.length + ")");
+    // La galería se lee del DOM, no del fuente: terser renombra `AVATAR_PACK` al minificar, así
+    // que buscarla por texto pasaría en casa y reventaría sobre el código que va en el APK.
+    // De paso se comprueba lo que de verdad ve el usuario en Ajustes.
+    const env = boot();
+    ready(env.A);
+    env.A.go("settings");
+    const galeria = [...env.doc.querySelectorAll('#view [data-action="set-app-icon"]')].map((b) => b.dataset.id);
+    check(galeria.length === r.iconos.length && r.iconos.every((x) => galeria.includes(x)),
+      "icono: la galería de Ajustes ofrece los " + r.iconos.length + " iconos que hay como alias (" + galeria.length + ")");
+    check(galeria[0] === "dragon", "icono: y el primero es el dragón (el que viene activo por defecto)");
+    const ficheros = fs.readdirSync(path.join(ROOT, "assets", "avatars"));
+    check(r.iconos.filter((x) => x !== "dragon").every((x) => ficheros.some((f) => f.startsWith(x + "."))),
+      "icono: cada criatura de la lista tiene su imagen en assets/avatars");
+    check(/aliasClass\(String id\)[\s\S]{0,120}"es\.aula\.smr\.hub\.Ico"/.test(java),
+      "icono: IconSwitch.aliasClass genera el mismo nombre que manifest.alias_de (Ico + Mayúscula)");
+  } finally {
+    fs.rmSync(carpeta, { recursive: true, force: true });
   }
 }
 
@@ -2965,6 +3028,7 @@ async function testV677() {
     await testEsquema();
     await testAgenda();
     await testV677();
+    testIconoApp();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");
   }

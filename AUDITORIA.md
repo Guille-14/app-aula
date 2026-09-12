@@ -9,6 +9,7 @@
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
 **Ronda v67.4.2:** «No funciona la IA de ollama»: el APK no podía salir por `http://` (contenido mixto y tráfico en claro), y cualquier fallo se contaba igual; ahora cada fallo se distingue y se explica cómo arreglarlo (493 pruebas ✓).
+**Ronda v67.7.1:** «no funciona lo de cambiar el icono de la app» — el manifiesto declaraba 24 lanzadores (el de MainActivity, siempre el dragón, más los 23 alias), así que cambiar de icono no servía de nada; ahora el único lanzador es el alias que eliges (680 pruebas ✓).
 **Ronda v67.7:** el contraste del modo oscuro se mide y se sube (las tarjetas ya no se funden con el negro de la OLED), los campos del esquema tienen forma de caja, la vibración la hace el motor háptico de Android, las entregas de la Agenda se deslizan con el dedo y el simulador «¿qué nota necesito?» dice lo que hace falta sacar en lo que queda —o que ya no llegas, con el máximo real— (665 pruebas ✓).
 **Ronda v67.6:** la Agenda se organiza como la del instituto —cada módulo con sus exámenes y entregas—, los exámenes van de una hora a otra y las entregas tienen plazo (se abre → se cierra) y estado (pendiente · entregado · corregido), que se cambia desde la propia fila (582 pruebas ✓).
 **Ronda v67.5:** la nota de cada módulo se calcula como la calcula tu profe — componentes con peso, notas «sobre X» y reglas que pueden suspender (aprobar todos los RA) — y Exámenes pasa a ser una Agenda con trabajos y entregas que llenan el componente solos (548 pruebas ✓).
@@ -896,6 +897,72 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+---
+
+## Ronda v67.7.1 · «No funciona lo de cambiar el icono de la app»
+
+Tenías razón, y no era un problema del móvil: era un fallo del manifiesto de Android que hacía
+que **cambiar el icono no pudiera funcionar nunca**, por más que la app dijera que sí.
+
+### El fallo
+
+Android enseña en el escritorio un icono por cada componente que declare un `intent-filter`
+con `MAIN` + `LAUNCHER`. El cambio de icono se hace con *activity-alias*: 23 alias
+(`IcoDragon`, `IcoMewtwo`, …) apuntando todos a `MainActivity`, cada uno con su icono, y
+`IconSwitch` (Java) enciende el que eliges y apaga los demás.
+
+El problema es que **la plantilla de Capacitor trae `MainActivity` con SU PROPIO filtro de
+lanzador**, y `apply.py` añadía los 23 alias encima sin quitárselo. El manifiesto final
+declaraba **24 lanzadores**:
+
+```
+ANTES  (v67.7.0)  lanzadores totales: 24  (1 de MainActivity + 23 alias)   MainActivity con lanzador: True
+DESPUÉS (v67.7.1) lanzadores totales: 23  (0 de MainActivity + 23 alias)   MainActivity con lanzador: False
+```
+
+`IconSwitch` solo enciende y apaga alias; **nunca toca `MainActivity`**. Y el icono de
+`MainActivity` es `@mipmap/ic_launcher`, que `write_icons()` reescribe con el dragón. Así que el
+escritorio enseñaba el dragón de `MainActivity` para siempre: tocabas Mewtwo, el alias se
+activaba, el plugin respondía `{ok: true}`, la app decía «Icono del escritorio cambiado»… y el
+escritorio no se movía. En algunos lanzadores además aparecía un segundo icono.
+
+### El arreglo
+
+`apk-overlay/manifest.py` (módulo nuevo) hace las dos cosas juntas: pone los 23 alias **y** le
+quita a `MainActivity` su `intent-filter` de lanzador, dejando la actividad intacta y
+`exported`. El único lanzador pasa a ser el alias activo, que es justo lo que `IconSwitch`
+controla.
+
+No se rompe nada más: los widgets abren la app con un Intent **explícito**
+(`new Intent(ctx, MainActivity.class)` en `WidgetStore.openApp`), que no depende del filtro de
+lanzador. Y es idempotente: `apply.py` se ejecuta en cada compilación y no duplica los alias.
+
+### Por qué esto no se había visto, y cómo se prueba ahora
+
+`apply.py` necesita Pillow y un proyecto Android entero, así que el runner de `Pruebas` (que
+solo hace `npm install && npm test`) nunca lo ejecutaba. Por eso la lógica del manifiesto se ha
+sacado a un módulo **sin dependencias** y hay una prueba que:
+
+1. extrae la plantilla real de Capacitor (`node_modules/@capacitor/cli/assets/android-template.tar.gz`),
+   que es la entrada exacta que recibe el build, y confirma que trae `MainActivity` con su filtro;
+2. la pasa por `preparar_manifest()` de verdad y comprueba **23 lanzadores, ninguno en
+   `MainActivity`**, que `MainActivity` sigue declarada y `exported`, que el único alias activo
+   de salida es `IcoDragon`, y que pasarla dos veces no duplica nada;
+3. compara las **tres listas de iconos** —`manifest.ICONS` (Python), `IconSwitch.IDS` (Java) y
+   `AVATAR_PACK` + dragón (JS)— porque si se desincronizan el alias no existe y Android se
+   traga el `setComponentEnabledSetting` **sin decir nada**; y que cada criatura tiene su imagen
+   en `assets/avatars`.
+
+Verificado con mutaciones: si `preparar_manifest` deja de quitar el filtro, la prueba falla
+diciendo «leído: 24»; si se quita una criatura de la lista, fallan la cuenta de alias y la
+comparación con el Java.
+
+**Para que lo veas:** instala la v67.7.1 encima. Si el escritorio se queda con el icono viejo,
+mantén pulsado el icono → *Desinstalar* y vuelve a abrir el APK: al cambiar el manifiesto,
+algunos lanzadores no refrescan el acceso directo hasta que se reinstala.
+
+**Pruebas: 665 → 680 ✓** (15 nuevas), y las mismas pasan sobre el código minificado del APK.
 
 ---
 

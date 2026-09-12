@@ -12,13 +12,9 @@ if not ANDROID.exists():
     print("android dir missing", ANDROID)
     sys.exit(1)
 
-ICONS = [
-    "dragon",
-    "arcanine", "arceus", "blastoise", "charizard", "gyarados", "garchomp",
-    "deoxys", "espeon", "gengar", "giratina", "groudon", "kyogre",
-    "lucario", "lugia", "metagross", "mewtwo", "rayquaza", "salamence",
-    "tyranitar", "umbreon", "venusaur", "zekrom",
-]
+# La lista de iconos vive en manifest.py, junto a la lógica del manifiesto, para que haya un
+# solo sitio donde cambiarla (la comparten el .py, el Java de IconSwitch y la galería del JS).
+from manifest import ICONS, preparar_manifest
 
 # id, Java class, kind, size, picker name, description
 WIDGETS = [
@@ -242,26 +238,11 @@ for wid, cls, _kind, _size, _name, _desc in WIDGETS:
 if recv_bits:
     mt = mt.replace("</application>", "\n".join(recv_bits) + "\n    </application>")
 
-aliases = []
-for name in ICONS:
-    alias = "Ico" + name[:1].upper() + name[1:]
-    enabled = "true" if name == "dragon" else "false"
-    aliases.append(f"""
-        <activity-alias
-            android:name=".{alias}"
-            android:enabled="{enabled}"
-            android:exported="true"
-            android:icon="@mipmap/ic_{name}"
-            android:roundIcon="@mipmap/ic_{name}"
-            android:label="@string/app_name"
-            android:targetActivity=".MainActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>""")
-if "IcoDragon" not in mt:
-    mt = mt.replace("</application>", "\n".join(aliases) + "\n    </application>")
+# Los activity-alias (uno por icono) y —lo que faltaba— quitarle a MainActivity su propio
+# intent-filter de lanzador. Los dos van juntos: con los alias puestos pero MainActivity aún
+# declarada como lanzador, en el escritorio convivían 24 iconos y el de MainActivity (siempre
+# el dragón) no lo tocaba nadie, así que cambiar de icono no se veía nunca.
+mt = preparar_manifest(mt, ICONS)
 
 # icono por defecto de la aplicación
 mt = re.sub(r'android:icon="[^"]*"', 'android:icon="@mipmap/ic_launcher"', mt, count=1)
