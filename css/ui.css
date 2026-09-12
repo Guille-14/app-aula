@@ -808,16 +808,19 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
 }
 .sheet-card h3 { margin: 0 0 6px; font-size: 21px; font-weight: 660; letter-spacing: -0.03em; }
 .sheet-hint { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
-.sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 8px 0 4px; }
+/* La hoja «Más»: tarjetas pequeñas, dos por fila, el icono encima del nombre (como siempre
+   fueron). La v59 las agrandó a 92 px de alto y 10 px de hueco — se veían cuatro apartados por
+   pantalla y la lista se hacía interminable. Aquí manda el tamaño pequeño: 68 px y 6 px. */
+.sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 6px 0 2px; }
 .sheet-wide { grid-template-columns: minmax(0, 1fr); }
 .sheet-grid button {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
-  padding: 14px;
-  min-height: 92px;
-  border-radius: 18px;
+  gap: 4px;
+  padding: 9px 11px;
+  min-height: 0;
+  border-radius: 15px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
@@ -827,17 +830,18 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
 .sheet-grid button:hover { background: var(--surface-2); border-color: var(--line-2); }
 .sheet-grid button:active { transform: scale(.975); }
 .sheet-ico {
-  width: 38px; height: 38px;
+  width: 26px; height: 26px;
+  flex: 0 0 26px;
   display: grid; place-items: center;
-  border-radius: 13px;
+  border-radius: 9px;
   background: color-mix(in srgb, var(--c, var(--ink)) 14%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--ink)) 24%, transparent);
   color: var(--c, var(--ink));
 }
-.sheet-ico svg { width: 19px; height: 19px; }
-.sheet-txt { display: block; font-size: 13.5px; font-weight: 600; line-height: 1.3; }
-.sheet-txt small { display: block; margin-top: 2px; color: var(--muted); font-size: 11.5px; font-weight: 480; }
-.more-capture { width: 100%; margin-top: 14px; }
+.sheet-ico svg { width: 15px; height: 15px; }
+.sheet-txt { display: block; min-width: 0; font-size: 12px; font-weight: 620; line-height: 1.2; letter-spacing: -0.015em; }
+.sheet-txt small { display: block; margin-top: 1px; color: var(--muted); font-size: 10px; font-weight: 480; line-height: 1.25; }
+.more-capture { width: 100%; margin-top: 12px; }
 
 /* ------------------------------------------------------ 16. Buscador y captura */
 .cmdk {
@@ -1733,7 +1737,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 /* En un móvil estrecho, una tarjeta con texto y cifras no cabe a media anchura:
    las rejillas de contenido pasan a una sola columna (las de cifras siguen a dos). */
 @media (max-width: 460px) {
-  .stack-phone, .review-grid, .tools-grid, .sheet-grid { grid-template-columns: minmax(0, 1fr); }
+  .stack-phone, .review-grid, .tools-grid { grid-template-columns: minmax(0, 1fr); }
 }
 /* Etiqueta dentro de una fila (el módulo de un término del glosario): va debajo del
    texto. Antes era una columna a la derecha que se comía la definición (55 px de ancho). */

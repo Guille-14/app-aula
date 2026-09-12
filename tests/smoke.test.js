@@ -1516,6 +1516,36 @@ async function testAuditoria() {
     check(r3.permiso === false && r3.programados === 0, "avisos: sin permiso de Android no se programa nada");
   }
 
+  // --- v67.1: la hoja «Más» vuelve a verse pequeña (cada apartado, una tarjeta compacta) ---
+  {
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+    // El bloque de declaraciones de la primera regla de cada selector, en texto plano
+    const regla = (sel) => {
+      const plano = String(ui).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ");
+      const i = plano.indexOf(sel);
+      if (i < 0) return "";
+      const abre = plano.indexOf("{", i);
+      const cierra = plano.indexOf("}", abre);
+      // Solo la primera regla de ese selector exacto: ni `.sheet-txt small` ni `:hover`
+      if (abre < 0 || cierra < 0 || plano.slice(i, abre).trim() !== sel) return "";
+      return plano.slice(abre, cierra);
+    };
+    const boton = regla(".sheet-grid button");
+    const ico = regla(".sheet-ico");
+    const txt = regla(".sheet-txt");
+    // El minificador quita los espacios tras «:», así que las dos formas valen
+    const alto = (b) => Number((b.match(/min-height:\s*(\d+)px/) || [0, 0])[1]);
+    const px = (b, prop) => Number((b.match(new RegExp(prop + ":\\s*(\\d+)px")) || [0, 0])[1]);
+    check(boton !== "" && alto(boton) <= 40, "«Más»: cada apartado vuelve a ser una tarjeta pequeña (sin alto mínimo de 92 px)");
+    check(boton !== "" && px(boton, "padding") <= 12, "«Más»: el relleno del apartado es de 12 px o menos (antes 14)");
+    check(ico !== "" && px(ico, "width") >= 22 && px(ico, "width") <= 32, "«Más»: el icono mide entre 22 y 32 px (antes 38, tamaño de tarjeta grande)");
+    check(txt !== "" && /font-size:\s*(1[0-2](\.\d)?)px/.test(txt), "«Más»: el nombre del apartado se lee a 10–12 px (antes 13,5)");
+    check(casa(".sheet-grid {[^}]*gap: 8px", ui), "«Más»: las tarjetas van juntas (8 px), no con el hueco de 10 px de la v59");
+    check(/gap: 8px|gap:8px/.test(regla(".sheet-grid")), "«Más»: y el hueco entre filas también es de 8 px");
+    const enEstrecho = compacto(ui).match(/@media\(max-width:460px\)\{[^}]*\}/);
+    check(!!enEstrecho && !/\.sheet-grid/.test(enEstrecho[0]), "«Más»: en un móvil de 360 px las tarjetas siguen a dos columnas");
+  }
+
   // --- v62: nada se sale de la tarjeta en un móvil estrecho (360 px) ---
   {
     const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");

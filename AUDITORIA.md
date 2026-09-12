@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v67.1:** la hoja «Más» vuelve a verse pequeña, como antes del rediseño (401 pruebas ✓).
 **Ronda v67:** el bloque de estudio avisa con la app cerrada, «Compartir horario» en texto y recordatorio de copia de seguridad (394 pruebas ✓).
 **Ronda v66:** «Compartir» un apunte con sus fotos desde el propio apunte, y el comprobador del APK vigila también el FileProvider del que depende (365 pruebas ✓).
 **Ronda v65:** los botones de exportar (copia JSON, calendario, Markdown y Anki) funcionan dentro del APK con la hoja de compartir de Android — antes no hacían nada—, el .ics lleva avisos para el calendario del móvil y el comprobador del APK vigila los plugins (356 pruebas ✓).
@@ -890,6 +891,41 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.1 · La hoja «Más» vuelve a verse pequeña
+
+Queja del usuario, palabra por palabra: «En el apartado de "más" no me gusta que se vea tan grande,
+antes que estaba con cada apartado más pequeño estaba genial eso». Tenía razón y el culpable era el
+rediseño de la v59.
+
+### Qué había pasado
+En la versión original cada apartado de «Más» era una tarjeta pequeña (icono de 36 px, texto de
+13,5 px, 8 px de hueco). Al rediseñar la interfaz en la v59 se agrandó todo: icono de 38 px, texto de
+13,5 px con nombre y descripción más separados, relleno de 14 px, **alto mínimo de 92 px** y hueco de
+10 px. Además, en un móvil de 360 px la rejilla pasaba a **una sola columna**: cada apartado ocupaba
+todo el ancho y la lista se hacía interminable.
+
+Medido en el navegador, en un móvil de 360 × 780: antes se veían **1,75 apartados por pantalla** (en
+dos columnas) y la hoja medía **2.204 px** de recorrido; con el CSS de la v59 se veían **1 por
+pantalla** (una columna) y llegaba a **2.204 px**. Ahora: **2 apartados por pantalla**, **78 px** por
+tarjeta, **1.146 px** de recorrido y los 15 apartados sin desbordes ni con texto grande.
+
+### Qué se ha hecho
+Volver al tamaño pequeño de siempre, sin perder el icono de color:
+
+* Tarjetas de **9 px de relleno, hueco de 4 px** y **sin alto mínimo** (78 px reales), icono de 26 px
+  y nombre a 12 px con la descripción a 10 px pegada debajo.
+* **Dos columnas también en móvil estrecho**: el nombre de cada apartado es corto, no necesita el
+  ancho entero. (La regla de «una columna por debajo de 460 px» sigue valiendo para las tarjetas de
+  texto largas: `.stack-phone`, `.review-grid`, `.tools-grid`.)
+* Huecos de 8 px entre tarjetas y 6 px de margen antes de cada sección.
+
+Comprobado en Chromium a 360 y 320 px: ningún texto se corta ni se sale de su tarjeta, y se ve bien
+en tema oscuro, en tema claro y con «Tamaño del texto: grande» (ahí las tarjetas crecen a 82 px y
+siguen sin desbordar).
+
+**Pruebas: 394 → 401 ✓** (7 nuevas que fijan el tamaño de la hoja «Más», para que no vuelva a
+agrandarse por descuido). Pasan también sobre el CSS minificado del APK.
 
 ## Ronda v67 · El bloque avisa aunque cierres la app, horario para compartir y «haz copia»
 
