@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v67:** el bloque de estudio avisa con la app cerrada, «Compartir horario» en texto y recordatorio de copia de seguridad (394 pruebas ✓).
 **Ronda v66:** «Compartir» un apunte con sus fotos desde el propio apunte, y el comprobador del APK vigila también el FileProvider del que depende (365 pruebas ✓).
 **Ronda v65:** los botones de exportar (copia JSON, calendario, Markdown y Anki) funcionan dentro del APK con la hoja de compartir de Android — antes no hacían nada—, el .ics lleva avisos para el calendario del móvil y el comprobador del APK vigila los plugins (356 pruebas ✓).
 **Ronda v64:** los avisos se pueden tocar (abren su pantalla), se puede probar que suenan, se explica el permiso de Android y la app avisa cuando hay versión nueva (336 pruebas ✓).
@@ -889,6 +890,58 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67 · El bloque avisa aunque cierres la app, horario para compartir y «haz copia»
+
+### 1. El bloque de estudio avisa con la app cerrada
+Hasta ahora el pomodoro solo sonaba **si la app estaba en pantalla**: si empezabas los 25 minutos y
+te ibas a hacer otra cosa (que es exactamente lo que se hace), no te enterabas de que había
+terminado. Dentro del APK los avisos ya los programa Android desde la v63, pero el temporizador no
+los usaba. Ahora sí:
+
+* Al empezar el bloque se programan **dos avisos**: uno al segundo («Enfocado hasta las 21:00 · 25
+  min de estudio. Puedes cerrar la app: te aviso al terminar») y el importante, **a la hora exacta
+  del final** («Bloque terminado · +25 min. Toca para el descanso»).
+* Se cancelan al pausar, al reiniciar, al darle a «Terminar» y al cambiar de modo — nada de avisos
+  fantasma de bloques que abandonaste.
+* Al tocar la notificación se abre el temporizador (`extra.vista`).
+* Si el móvil se reinicia en mitad del bloque, al volver a abrir la app el aviso se **reprograma**
+  con el tiempo que queda.
+* Se respeta el interruptor de Ajustes: sin «avisos del móvil» activados, el temporizador no
+  programa nada.
+
+Comprobado en el navegador con un Capacitor de mentira: al pulsar INICIAR salen los dos avisos
+(2147483002 a +1 s y 2147483001 a los 25 min) y al pausar se cancelan los dos.
+
+### 2. Compartir el horario
+Botón **Compartir horario** en la pestaña Semana del Horario: genera el horario en texto plano
+(días, horas, módulos y aulas, con la nota de septiembre-junio si es el horario temporal y la firma
+del centro) y lo manda por la hoja de Android o el portapapeles del navegador. Sirve para el grupo
+de clase entero: 45 líneas con todo, sin abrir la app.
+
+De paso, el código de compartir de la v66 se generalizó (`compartirTexto`), así que el apunte y el
+horario usan la misma senda: un solo sitio donde arreglar el día que cambie algo.
+
+### 3. Recordatorio de copia de seguridad
+Los datos viven **solo en el móvil**: no hay nube que los salve. La app no lo exigía en ninguna
+parte. Ahora:
+
+* Guarda la fecha de la última copia (y la de instalación) cada vez que exportas JSON.
+* Si pasan **14 días** sin guardar una copia y hay datos que merecen la pena (3 apuntes, 5 sesiones
+  o 10 fichas), aparece una tarjeta en Inicio: «Hace 30 días de tu última copia» + botón **Guardar
+  copia ahora**. Al guardarla, la tarjeta **se va en el acto** (si no, parece que no ha pasado nada).
+* Ajustes → Datos dice siempre cuándo fue la última copia («hoy mismo», «ayer», «hace 30 días»).
+* Quien acaba de instalar la app **no recibe la bronca el primer día**: el contador arranca al
+  abrirla, y el aviso llega a las dos semanas de uso real.
+
+### Detalle que salió en la comprobación
+Al probar el botón de la tarjeta en el navegador, el aviso desaparecía del estado pero **seguía en
+pantalla** (el guardado no repintaba). Corregido: al guardar la copia, la vista de Inicio se
+refresca sola.
+
+**Pruebas: 365 → 394 ✓** (29 nuevas: avisos del bloque arriba/abajo, cancelación, bloque ya
+terminado; texto del horario y su botón; días desde la copia, tarjeta sí/no, reset al exportar y
+sitio en Ajustes). Barrido de las 22 vistas: ninguna con problemas. Sin errores de JavaScript.
 
 ## Ronda v66 · Compartir un apunte (y una comprobación que faltaba)
 

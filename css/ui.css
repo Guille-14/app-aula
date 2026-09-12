@@ -757,6 +757,8 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
   letter-spacing: -0.03em;
 }
 .hint.warn-text { color: var(--red); }
+/* Tarjeta que solo aparece cuando toca («Guardar copia»): un borde de aviso, sin gritar */
+.copia-card { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 /* Aviso con botón (p. ej. «Nueva versión lista → Actualizar»): el texto y el botón en fila */
 .toast-accion { display: flex; align-items: center; gap: 10px; pointer-events: auto; }
 .toast-accion span { flex: 1; min-width: 0; }

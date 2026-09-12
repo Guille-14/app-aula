@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v66";
+  const APP_VERSION = "v67";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -1751,6 +1751,11 @@
       ${courseHtml}
       ${(startD != null && startD > 0) ? "" : liveHtml}
       ${proxExamenHtml}
+      ${tocaAvisarCopia() ? `<div class="card copia-card">
+        <div class="sec-head"><h2>Copia de seguridad</h2></div>
+        <p class="hint" style="margin-top:0">${nuncaCopiada() ? "Nunca has guardado una copia" : "Hace " + diasDesdeCopia() + " días de tu última copia"}. Tus apuntes viven solo en este móvil: si se pierde o se rompe, se van con él.</p>
+        <button class="btn btn-sm btn-primary" data-action="export">Guardar copia ahora</button>
+      </div>` : ""}
       ${todayList}
       ${state.settings.onboarded && typeof Notification !== "undefined" && Notification.permission !== "granted" ? `<div class="idle-note note-action">
         <span>Activa avisos: clase y fichas de repaso.</span>
@@ -1940,6 +1945,7 @@
       </div>
       <div class="filters" style="margin-top:10px">
         <button class="btn btn-sm" data-action="csv-import">Importar CSV</button>
+        <button class="btn btn-sm" data-action="share-timetable">Compartir</button>
         <button class="btn btn-sm" data-action="sch-view" data-mode="month">Ver el calendario escolar</button>
       </div>
       <input type="file" id="csv-file" accept=".csv,.txt" hidden aria-label="Archivo CSV del horario" />`;
@@ -2980,6 +2986,7 @@
       </div>
 
       <p class="tools-kicker">Datos (este dispositivo)</p>
+      <p class="hint">${(() => { const d = diasDesdeCopia(); return nuncaCopiada() ? "Todavía no has guardado ninguna copia." : d === 0 ? "Última copia: hoy mismo." : d === 1 ? "Última copia: ayer." : "Última copia: hace " + d + " días."; })()}</p>
       <div class="card" style="display:flex;flex-direction:column;gap:8px">
         ${avisoEspacio}
         <p class="hint" style="margin:0">Apuntes, módulos y estudio: <b>${kb} KB</b> ${mediaOk() ? `· fotos en el almacén de archivos: <b>${fotosKb} KB</b> (${mediaInfo.n})` : "· las fotos se guardan dentro del estado (este navegador no tiene almacén de archivos)"}.</p>
@@ -3119,6 +3126,29 @@
     save();
   }
 
+  // El final del bloque tiene que sonar aunque el móvil esté en el bolsillo: dentro del APK se
+  // programa el aviso (y el de «enfocado hasta las…»), y se quita al pausar, parar o cambiar.
+  let bloqueNativoTimer = null;
+  function avisarBloqueNativo() {
+    if (!avisosProgramados() || !window.AulaAvisos) return;
+    clearTimeout(bloqueNativoTimer);
+    bloqueNativoTimer = setTimeout(() => {
+      bloqueNativoTimer = null;
+      if (!timer.running || !timer.endsAt) return;
+      const sub = state.subjects.find((x) => x.id === timer.subjectId);
+      window.AulaAvisos.programarBloque({
+        fin: new Date(timer.endsAt),
+        minutos: Math.max(1, Math.round(timer.total / 60)),
+        etiqueta: timer.mode === "work" ? (sub ? sub.name : "") : "descanso",
+      }).catch(() => {});
+    }, 800);
+  }
+  function quitarAvisoBloque() {
+    clearTimeout(bloqueNativoTimer);
+    bloqueNativoTimer = null;
+    if (avisosProgramados() && window.AulaAvisos) window.AulaAvisos.cancelarBloque().catch(() => {});
+  }
+
   function modeMinutes(mode) {
     if (mode === "break") return state.settings.pomodoroBreak;
     if (mode === "long") return state.settings.pomodoroLong;
@@ -3127,6 +3157,7 @@
   function setMode(mode, reset = true) {
     timer.mode = mode;
     if (reset) {
+      quitarAvisoBloque();
       timer.running = false; clearInterval(timer.tick);
       timer.endsAt = 0;
       timer.remaining = modeMinutes(mode) * 60; timer.total = timer.remaining;
@@ -3182,6 +3213,9 @@
       startTimerLoop();
       const sub = state.subjects.find((s) => s.id === timer.subjectId);
       toast("Bloque en curso: " + fmtRemain(Math.round(left / 60)) + (sub ? " · " + sub.name : ""));
+      // El aviso del final se vuelve a programar por si el móvil se reinició (los de Android
+      // se pierden al apagar) o por si la app se cerró a mitad.
+      avisarBloqueNativo();
     } else {
       timer.remaining = clamp(Number(saved.remaining) || modeMinutes(timer.mode) * 60, 0, 24 * 3600);
       if (timer.remaining < timer.total) updateTimerChrome();
@@ -3203,8 +3237,10 @@
       try { navigator.wakeLock.request("screen").then((s) => { wakeLock = s; }).catch(() => {}); } catch {}
     }
     timerPersist();
+    avisarBloqueNativo();
   }
   function completeTimer(desdeFuera) {
+    quitarAvisoBloque();
     timer.running = false; clearInterval(timer.tick); beep();
     try { wakeLock?.release(); } catch {} wakeLock = null;
     if (timer.mode === "work") {
@@ -3220,6 +3256,7 @@
   }
   function toggleTimer() {
     if (timer.running) {
+      quitarAvisoBloque();
       timer.running = false; clearInterval(timer.tick);
       try { wakeLock?.release(); } catch {} wakeLock = null;
       timer.remaining = Math.max(0, Math.round(((timer.endsAt || Date.now()) - Date.now()) / 1000));
@@ -3355,58 +3392,101 @@
     const cuerpo = ((n && n.content) || "").trim();
     return { titulo: (n && n.title) || "Apunte", texto: cabecera.join(" · ") + (cuerpo ? "\n\n" + cuerpo : "") };
   }
+  /** Comparte un texto (y hasta 6 fotos en base64) por donde se pueda. */
+  async function compartirTexto(datos) {
+    const o = datos || {};
+    const titulo = o.titulo || "Aula SMR";
+    const texto = o.texto || "";
+    const fotos = (o.fotos || []).slice(0, 6);
+    const C = window.Capacitor;
+    const nativo = !!(C && typeof C.isNativePlatform === "function" && C.isNativePlatform() && C.Plugins && C.Plugins.Share);
+    if (nativo) {
+      const files = [];
+      if (C.Plugins.Filesystem) {
+        for (const f of fotos) {
+          try {
+            const m = /^data:([^;,]+)?;base64,([\s\S]*)$/.exec(String(f.base64 || ""));
+            if (!m) continue;
+            const ext = /png/i.test(m[1] || "") ? "png" : "jpg";
+            const path = "compartir-" + (files.length + 1) + "." + ext;
+            await C.Plugins.Filesystem.writeFile({ path, data: m[2], directory: "CACHE" });
+            const { uri } = await C.Plugins.Filesystem.getUri({ path, directory: "CACHE" });
+            files.push(uri);
+          } catch { /* un archivo que no se puede leer no impide compartir el texto */ }
+        }
+      }
+      try {
+        const carga = { title: titulo, text: texto, dialogTitle: "Compartir" };
+        if (files.length) carga.files = files;
+        await C.Plugins.Share.share(carga);
+        return { ok: true, nativo: true, archivos: files.length };
+      } catch {
+        return { ok: false, nativo: true };
+      }
+    }
+    try {
+      if (navigator.share) { await navigator.share({ title: titulo, text: texto }); return { ok: true, nativo: false, via: "share" }; }
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(texto); return { ok: true, nativo: false, via: "portapapeles" }; }
+    } catch { /* el usuario puede haber cancelado: no es un fallo que haya que gritar */ }
+    return { ok: false, nativo: false, via: "ninguna" };
+  }
+
   async function compartirNota(datos) {
     const o = datos || {};
     const n = state.notes.find((x) => x.id === (o.id || noteId));
     if (!n) { toast("Abre un apunte para compartirlo"); return { ok: false }; }
     persistNoteNow();
     const { titulo, texto } = textoDeNota(n);
-    const C = window.Capacitor;
-    const nativo = !!(C && typeof C.isNativePlatform === "function" && C.isNativePlatform() && C.Plugins && C.Plugins.Share);
-
-    if (nativo) {
-      // Las fotos se escriben en la caché de la app para poder adjuntarlas (base64 directo)
-      const files = [];
-      if (C.Plugins.Filesystem && mediaOk() && (n.attachments || []).length) {
-        for (const att of n.attachments.slice(0, 6)) {
-          try {
-            const data = att.data || (await Media().dataURL(att.id));
-            const m = /^data:([^;,]+)?;base64,([\s\S]*)$/.exec(String(data || ""));
-            if (!m) continue;
-            const ext = /png/i.test(m[1] || "") ? "png" : "jpg";
-            const path = "apunte-" + n.id + "-" + (files.length + 1) + "." + ext;
-            await C.Plugins.Filesystem.writeFile({ path, data: m[2], directory: "CACHE" });
-            const { uri } = await C.Plugins.Filesystem.getUri({ path, directory: "CACHE" });
-            files.push(uri);
-          } catch { /* una foto que no se puede leer no impide compartir el texto */ }
-        }
-      }
-      try {
-        const carga = { title: titulo, text: texto, dialogTitle: "Compartir apunte" };
-        if (files.length) carga.files = files;
-        await C.Plugins.Share.share(carga);
-        toast("Apunte compartido" + (files.length ? " con " + files.length + (files.length === 1 ? " foto" : " fotos") : ""));
-        return { ok: true, nativo: true, archivos: files.length };
-      } catch {
-        toast("No se pudo compartir el apunte");
-        return { ok: false, nativo: true };
+    // Las fotos del apunte se adjuntan si el WebView las conoce (en base64)
+    const fotos = [];
+    if (mediaOk() && (n.attachments || []).length) {
+      for (const att of n.attachments.slice(0, 6)) {
+        try {
+          const data = att.data || (await Media().dataURL(att.id));
+          if (data) fotos.push({ base64: data });
+        } catch { /* sin esa foto, se comparte el resto */ }
       }
     }
+    const r = await compartirTexto({ titulo, texto, fotos });
+    if (r.ok) {
+      toast(r.nativo
+        ? "Apunte compartido" + (r.archivos ? " con " + r.archivos + (r.archivos === 1 ? " foto" : " fotos") : "")
+        : (r.via === "portapapeles" ? "Apunte copiado al portapapeles" : "Apunte compartido"));
+    } else if (r.via === "ninguna") {
+      toast("Este navegador no sabe compartir; usa Exportar Markdown");
+    } else if (r.nativo) {
+      toast("No se pudo compartir el apunte");
+    }
+    return r;
+  }
 
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: titulo, text: texto });
-        toast("Apunte compartido");
-        return { ok: true, nativo: false, via: "share" };
-      }
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(texto);
-        toast("Apunte copiado al portapapeles");
-        return { ok: true, nativo: false, via: "portapapeles" };
-      }
-    } catch { /* el usuario puede haber cancelado: no es un fallo que haya que gritar */ }
-    toast("Este navegador no sabe compartir; usa Exportar Markdown");
-    return { ok: false, nativo: false };
+  /** El horario en texto, para pasárselo a un compañero: días, horas y aulas. */
+  function horarioTexto() {
+    const clases = state.events.filter((e) => !e.type || e.type === "clase");
+    if (!clases.length) return "";
+    const plantilla = state.settings.timetableKind === "temporal" ? " (septiembre y junio: de 16:00 a 21:45)" : "";
+    const lineas = ["Horario · " + (state.settings.courseName || "2.º SMR") + plantilla, ""];
+    DAYS.forEach((dia, i) => {
+      const delDia = clases.filter((e) => Number(e.day) === i).sort((a, b) => String(a.start).localeCompare(String(b.start)));
+      if (!delDia.length) return;
+      lineas.push(dia + ":");
+      delDia.forEach((e) => {
+        const sub = subjectById(e.subjectId);
+        const aula = e.room ? " (" + e.room + ")" : "";
+        lineas.push("  " + e.start + "–" + e.end + "  " + (sub ? sub.name : "Clase") + aula);
+      });
+      lineas.push("");
+    });
+    lineas.push("IES La Canal · Aula SMR");
+    return lineas.join("\n");
+  }
+  async function compartirHorario() {
+    const texto = horarioTexto();
+    if (!texto) { toast("Todavía no hay clases en el horario"); return { ok: false }; }
+    const r = await compartirTexto({ titulo: "Horario · " + (state.settings.courseName || "2.º SMR"), texto });
+    if (r.ok) toast(r.nativo || r.via === "share" ? "Horario compartido" : "Horario copiado al portapapeles");
+    else if (r.via === "ninguna") toast("Este navegador no sabe compartir");
+    return r;
   }
 
   // Apuntes a Markdown y fichas a CSV (Anki): texto puro, para exportarlo desde donde haga falta
@@ -3538,9 +3618,46 @@
     if (!r.ok) return;
     state.progress = state.progress || {}; state.progress.flags = state.progress.flags || {};
     state.progress.flags.exported = true;
+    state.progress.flags.lastExportAt = Date.now();
     save();
     const resumen = nClases + " clases + " + nSinClase + " días sin clase" + (nPruebas ? " + " + nPruebas + " pruebas" : "");
     toast(r.nativo ? "Calendario listo (" + resumen + "): elige dónde guardarlo" : "Calendario exportado (" + resumen + ")");
+  }
+
+  // ---------------------------------------------------------------- copia de seguridad
+  // Los datos viven solo en este móvil: si se pierde, se pierden. A partir de la v67 la app
+  // lleva la cuenta de cuándo se guardó la última copia y lo recuerda cuando toca.
+  const DIAS_AVISO_COPIA = 14;
+  function flags() { return (state.progress && state.progress.flags) || {}; }
+  function nuncaCopiada() { return !(Number(flags().lastExportAt) > 0); }
+  // Días desde la última copia. Si todavía no hay ninguna, se cuenta desde que se instaló la
+  // app: así quien acaba de instalarla no recibe la bronca el primer día, y quien lleva dos
+  // semanas estudiando sin guardar nada sí se entera.
+  function diasDesdeCopia() {
+    const t = Number(flags().lastExportAt) || Number(flags().firstRunAt) || 0;
+    if (!t) return null;
+    return Math.floor((Date.now() - t) / 86400000);
+  }
+  function hayDatosQueSalvar() {
+    const n = (state.notes || []).length;
+    const s = (state.sessions || []).length;
+    const c = (state.cards || []).length;
+    return n >= 3 || s >= 5 || c >= 10;
+  }
+  function tocaAvisarCopia() {
+    if (!hayDatosQueSalvar()) return false;
+    const d = diasDesdeCopia();
+    return d !== null && d >= DIAS_AVISO_COPIA;
+  }
+  function initCopia() {
+    ensureProgress();
+    state.progress.flags = state.progress.flags || {};
+    const f = state.progress.flags;
+    if (!f.firstRunAt) f.firstRunAt = Date.now();
+    // Compatibilidad: quien ya había exportado antes de la v67 no tiene fecha apuntada; se
+    // cuenta desde hoy para no meterle prisa por un aviso que la app nunca le dio.
+    if (!f.lastExportAt && f.exported) f.lastExportAt = Date.now();
+    save();
   }
 
   function noteToCards() {
@@ -3742,7 +3859,9 @@
     const json = JSON.stringify(copia, null, 2);
     const r = await guardarArchivo("aula-smr.json", json, "application/json");
     if (!r.ok) return;
-    ensureProgress(); state.progress.flags = { ...(state.progress.flags || {}), exported: true }; checkAchievements(); save();
+    ensureProgress(); state.progress.flags = { ...(state.progress.flags || {}), exported: true, lastExportAt: Date.now() }; checkAchievements(); save();
+    // Al guardar, la tarjeta de «haz copia» desaparece en el sitio (si no, parece que no ha pasado nada)
+    if (view === "dashboard") render();
     const mb = json.length / (1024 * 1024);
     const cola = mb > 20 ? ` de ${mb.toFixed(1)} MB (incluye ${fotos} fotos)` : (fotos ? ` con ${fotos} fotos` : "");
     toast(r.nativo ? "Copia lista" + cola + ": elige dónde guardarla" : "Copia descargada" + cola);
@@ -4287,6 +4406,7 @@
     if (action === "export-ics") exportICS();
     if (action === "note-to-cards") noteToCards();
     if (action === "note-share") compartirNota({ id });
+    if (action === "share-timetable") compartirHorario();
     if (action === "toggle-focus") document.body.classList.toggle("focus-mode");
     if (action === "jump-day") jumpDay(btn.dataset.date);
     if (action === "undo") undo();
@@ -4628,7 +4748,8 @@
     get saveProblem() { return saveProblem; },
     subjectOptions, md, dueCards, attStats, addNote, addCard, addGrade, gradeCard, diasSinClase,
     guardarArchivo, nativoFicheros, icsTexto, markdownApuntes, ankiCSV, exportMarkdown, exportAnki,
-    compartirNota, textoDeNota,
+    compartirNota, textoDeNota, compartirTexto, horarioTexto, compartirHorario,
+    diasDesdeCopia, tocaAvisarCopia, initCopia, nuncaCopiada, DIAS_AVISO_COPIA,
     persistNote, buzz, confetti, levelInfo,
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },
@@ -4680,6 +4801,7 @@
   }
   escucharToquesAvisos();
   mirarPermisoAvisos();
+  initCopia();
   dailyCheckIn();
   checkAchievements();
   render();

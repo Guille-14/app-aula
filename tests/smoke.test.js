@@ -1257,9 +1257,9 @@ async function testAuditoria() {
       };
       const nat = await A2.compartirNota({ id: "n1" });
       check(nat.ok && nat.nativo && nat.archivos === 1, "compartir: en el APK se comparte con la hoja de Android (" + JSON.stringify(llamadas) + ")");
-      check(llamadas.some((l) => l[0] === "escribe" && /^apunte-n1-1\.png$/.test(l[1]) && l[2] === "AAAA"),
+      check(llamadas.some((l) => l[0] === "escribe" && /^compartir-1\.png$/.test(l[1]) && l[2] === "AAAA"),
         "compartir: la foto se escribe en la caché en base64 para poder adjuntarla");
-      check(llamadas.some((l) => l[0] === "comparte" && l[1] === "Subredes" && /file:\/\/\/cache\/apunte-n1-1\.png/.test(l[2]) && l[3] === true),
+      check(llamadas.some((l) => l[0] === "comparte" && l[1] === "Subredes" && /file:\/\/\/cache\/compartir-1\.png/.test(l[2]) && l[3] === true),
         "compartir: la hoja recibe el texto y la foto adjunta");
 
       // Una foto ilegible no impide compartir el texto
@@ -1278,6 +1278,124 @@ async function testAuditoria() {
     A.state.notes = [];
     await A.exportMarkdown();
     check(/No hay apuntes/.test(env.doc.querySelector("#toast-root").textContent), "exportar: sin apuntes, el botón de Markdown también avisa");
+  }
+
+  // --- v67: el bloque de estudio avisa con la app cerrada, se comparte el horario y se
+  //           recuerda guardar copia ---
+  {
+    // 1) El aviso del bloque (dos notificaciones: la de «enfocado» y la del final)
+    const env = boot();
+    ready(env.A);
+    const AV = env.window.AulaAvisos;
+    const llamadas = [];
+    env.window.Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { LocalNotifications: {
+        checkPermissions: async () => ({ display: "granted" }),
+        schedule: async (o) => llamadas.push(...o.notifications.map((n) => ({ id: n.id, titulo: n.title, cuando: new Date(n.schedule.at).getTime(), vista: n.extra && n.extra.vista }))),
+        cancel: async (o) => llamadas.push({ cancelado: o.notifications.map((n) => n.id) }),
+      } },
+    };
+    const fin = new Date("2026-09-14T18:35:00");
+    const r = await AV.programarBloque({ fin, minutos: 25, etiqueta: "Seguridad" });
+    const enfoca = llamadas.find((l) => l.id === AV.idEnfoque);
+    const termina = llamadas.find((l) => l.id === AV.idBloque);
+    check(r.ok && !!enfoca && !!termina, "bloque: se programan el aviso de enfoque y el de «bloque terminado»");
+    check(!!termina && termina.cuando === fin.getTime() && /\+25 min · Seguridad/.test(termina.titulo + termina.titulo + (termina.vista || "") + (termina.titulo || "")) === false,
+      "bloque: el aviso del final cae justo al terminar el bloque");
+    check(!!termina && termina.cuando === fin.getTime(), "bloque: y a la hora exacta de fin (18:35 → " + new Date(termina ? termina.cuando : 0).toISOString().slice(11, 16) + ")");
+    check(!!termina && termina.vista === "timer" && !!enfoca && enfoca.vista === "timer",
+      "bloque: los dos abren el temporizador al tocarlos");
+    check(llamadas.some((l) => l.cancelado && l.cancelado.includes(AV.idBloque) && l.cancelado.includes(AV.idEnfoque)),
+      "bloque: antes de programar se quitan los del bloque anterior (por si el móvil se reinició)");
+    llamadas.length = 0;
+    await AV.cancelarBloque();
+    check(llamadas.length === 1 && llamadas[0].cancelado.length === 2, "bloque: al pausar o parar se cancelan los dos avisos");
+    const sinFin = await AV.programarBloque({ fin: new Date(Date.now() - 1000), minutos: 25 });
+    check(sinFin.ok === false, "bloque: un bloque que ya ha terminado no programa nada");
+
+    // El temporizador de la app usa esos avisos (con «avisos del móvil» activados)
+    env.A.state.settings.notifyNative = true;
+    env.A.save();
+    env.A.go("timer");
+    const disp = env.doc.getElementById("timer-display");
+    check(!!disp, "bloque: la vista del temporizador está en pie");
+    llamadas.length = 0;
+    act(env, "timer-toggle");                           // arranca el bloque (botón INICIAR)
+    await new Promise((res) => setTimeout(res, 1200));
+    check(llamadas.some((l) => l.id === AV.idBloque), "bloque: al darle a empezar, la app programa el aviso del final (" + JSON.stringify(llamadas.map((l) => l.id || l.cancelado)) + ")");
+    llamadas.length = 0;
+    act(env, "timer-toggle");                           // pausa
+    await new Promise((res) => setTimeout(res, 250));
+    check(llamadas.some((l) => l.cancelado), "bloque: al pausar, la app quita los avisos");
+    act(env, "timer-mode", { mode: "break" });
+    await new Promise((res) => setTimeout(res, 300));
+    check(llamadas.filter((l) => l.cancelado).length >= 1, "bloque: y al cambiar de modo también");
+
+    // 2) Compartir el horario
+    const env3 = boot();
+    ready(env3.A);
+    const A3 = env3.A;
+    const lunes = A3.state.events.filter((e) => Number(e.day) === 0).sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    const texto = A3.horarioTexto();
+    check(/^Horario · /.test(texto), "horario: el texto empieza con el curso");
+    check(lunes.length > 0 && texto.includes("Lunes:") && texto.includes(lunes[0].start), "horario: cada día con clase lleva su lista de horas");
+    check(texto.split("\n").filter((l) => /^ {2}\d{2}:\d{2}–\d{2}:\d{2} {2}/.test(l)).length === A3.state.events.filter((e) => !e.type || e.type === "clase").length,
+      "horario: salen todas las clases, con hora de inicio y de fin");
+    check(texto.includes("IES La Canal"), "horario: lleva el centro al final (para saber de dónde viene)");
+    let compartido = null;
+    env3.window.navigator.share = async (o) => { compartido = o; };
+    const rc = await A3.compartirHorario();
+    check(rc.ok && compartido && /Lunes:/.test(compartido.text), "horario: el botón «Compartir» manda el horario por la hoja del sistema");
+    A3.state.events = [];
+    check(A3.horarioTexto() === "", "horario: sin clases no hay texto que compartir");
+    await A3.compartirHorario();
+    check(/no hay clases/i.test(env3.doc.querySelector("#toast-root").textContent), "horario: y el botón lo dice en vez de mandar un mensaje vacío");
+
+    // 3) Recordatorio de copia de seguridad
+    const env4 = boot();
+    ready(env4.A);
+    const A4 = env4.A;
+    A4.state.notes = Array.from({ length: 4 }, (_, i) => ({ id: "n" + i, subjectId: A4.state.subjects[0].id, title: "Nota " + i, content: "x", attachments: [], versions: [], createdAt: Date.now(), updatedAt: Date.now() }));
+    A4.state.progress = { bonusXp: 0, unlocked: {}, daily: "", log: [], flags: { exported: true, lastExportAt: Date.now() - 20 * 86400000 } };
+    check(A4.diasDesdeCopia() === 20, "copia: la app sabe cuántos días pasaron desde la última copia (" + A4.diasDesdeCopia() + ")");
+    check(A4.tocaAvisarCopia() === true, "copia: con 20 días y datos que merecen la pena, toca avisar");
+    A4.render();
+    const conAviso = env4.doc.getElementById("view").textContent;
+    check(/Copia de seguridad/.test(conAviso) && /Hace 20 días/.test(conAviso) && /Guardar copia ahora/.test(conAviso),
+      "copia: en Inicio aparece la tarjeta con los días y el botón");
+    const btn = [...env4.doc.querySelectorAll("#view [data-action='export']")][0];
+    check(!!btn, "copia: la tarjeta trae su botón de guardar copia");
+    A4.state.progress.flags.lastExportAt = Date.now() - 3 * 86400000;
+    A4.render();
+    check(!/Copia de seguridad/.test(env4.doc.getElementById("view").textContent), "copia: con una copia reciente, la tarjeta desaparece (no da la lata)");
+    A4.go("settings");
+    check(/Última copia: hace 3 días/.test(env4.doc.getElementById("view").textContent), "copia: Ajustes dice cuándo fue la última copia");
+    // Guardar de verdad una copia (Capacitor de mentira, la senda del APK) apunta la fecha
+    env4.window.Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {
+        Filesystem: { writeFile: async () => ({}), getUri: async () => ({ uri: "file:///cache/aula-smr.json" }) },
+        Share: { share: async (o) => { guardado = o; } },
+      },
+    };
+    let guardado = null;
+    A4.state.progress.flags.lastExportAt = Date.now() - 30 * 86400000;
+    A4.go("dashboard");
+    check(/Copia de seguridad/.test(env4.doc.getElementById("view").textContent), "copia: con 30 días, Inicio vuelve a recordarlo");
+    act(env4, "export");
+    await new Promise((res) => setTimeout(res, 200));
+    check(!!guardado && /aula-smr\.json/.test(guardado.title || ""), "copia: el botón de la tarjeta guarda el archivo (aula-smr.json)");
+    check(A4.diasDesdeCopia() === 0 && A4.tocaAvisarCopia() === false, "copia: guardarla reinicia el contador a cero");
+    check(!/Copia de seguridad/.test(env4.doc.getElementById("view").textContent), "copia: y la tarjeta se va sola tras guardar");
+    // Recién instalada: no se avisa el primer día (la cuenta empieza al arrancar)
+    const env5 = boot();
+    ready(env5.A);
+    env5.A.state.notes = A4.state.notes.slice();
+    env5.A.state.progress = undefined;
+    env5.A.initCopia();
+    check(env5.A.diasDesdeCopia() === 0 && env5.A.tocaAvisarCopia() === false,
+      "copia: en una instalación nueva no se avisa el primer día (el contador empieza al abrir)");
   }
 
   // --- v63: los avisos que se programan en Android (clases, exámenes, resumen) ---

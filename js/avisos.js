@@ -11,6 +11,8 @@
  *   · la víspera de cada examen a las 18:00 y una hora antes (cada uno se puede apagar)
  *   · resumen por la mañana (hora configurable, 8 por defecto)
  *   · fichas de repaso pendientes (a las 18:00)
+ *   · el bloque de estudio: uno al empezar («enfocado hasta las HH:MM») y otro al terminar,
+ *     de forma que el final del bloque suena aunque hayas cerrado la app o apagado la pantalla
  *
  * Cada aviso lleva a qué vista pertenece: al tocar la notificación, la app se abre en
  * Exámenes, Horario, Fichas o Inicio. También hay una prueba de 5 segundos para comprobar
@@ -24,6 +26,8 @@
   const DIAS = 14; // se programan dos semanas; al abrir la app se vuelve a calcular
   const MAX = 64; // tope de avisos vivos (Android admite muchos más, pero así sobra)
   const ID_PRUEBA = 2147483000; // id reservado para el aviso de prueba
+  const ID_BLOQUE = 2147483001; // id reservado para el «bloque terminado»
+  const ID_ENFOQUE = 2147483002; // id reservado para el «enfocado hasta las…»
   const FICHAS_HORA = "18:00";
   const DIAS_SEMANA = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
   // Qué vista se abre al tocar cada tipo de aviso
@@ -207,6 +211,52 @@
     return { nativo: true, programados: avisos.length, permiso: true };
   }
 
+  /** Avisos del bloque de estudio: el de «enfocado» y el del final (que suena con la app cerrada).
+   *  `fin` es el instante en que acaba el bloque; `minutos` solo se usa para el texto. */
+  async function programarBloque(datos) {
+    const o = datos || {};
+    const P = plugin();
+    if (!P) return { nativo: false, ok: false };
+    const fin = o.fin && typeof o.fin.getTime === "function" ? o.fin : null;
+    if (!fin || fin.getTime() <= Date.now()) return { nativo: true, ok: false };
+    const minutos = Math.max(1, Math.round(Number(o.minutos) || (fin.getTime() - Date.now()) / 60000));
+    const etiqueta = o.etiqueta ? " · " + o.etiqueta : "";
+    const hhmm = dos(fin.getHours()) + ":" + dos(fin.getMinutes());
+    try {
+      const p = await P.checkPermissions();
+      if (p.display !== "granted") return { nativo: true, ok: false, permiso: false };
+      await cancelarBloque();   // fuera los del bloque anterior (o de un móvil reiniciado)
+      await P.schedule({
+        notifications: [
+          {
+            id: ID_ENFOQUE, title: "Enfocado hasta las " + hhmm,
+            body: minutos + " min de estudio" + etiqueta + ". Puedes cerrar la app: te aviso al terminar.",
+            channelId: CANAL, extra: { vista: "timer" }, autoCancel: true,
+            schedule: { at: new Date(Date.now() + 1000) },
+          },
+          {
+            id: ID_BLOQUE, title: "Bloque terminado", body: "+" + minutos + " min" + etiqueta + ". Toca para el descanso.",
+            channelId: CANAL, extra: { vista: "timer" },
+            schedule: { at: fin },
+          },
+        ],
+      });
+      return { nativo: true, ok: true, fin };
+    } catch {
+      return { nativo: true, ok: false };
+    }
+  }
+
+  /** Quita los avisos del bloque (al pausar, terminar o cambiar de modo). */
+  async function cancelarBloque() {
+    const P = plugin();
+    if (!P) return { nativo: false, ok: false };
+    try {
+      await P.cancel({ notifications: [{ id: ID_BLOQUE }, { id: ID_ENFOQUE }] });
+      return { nativo: true, ok: true };
+    } catch { return { nativo: true, ok: false }; }
+  }
+
   /** Estado del permiso de Android, para poder enseñarlo en Ajustes. */
   async function permiso() {
     const P = plugin();
@@ -278,6 +328,7 @@
 
   window.AulaAvisos = {
     plan, datos, resumen, sincronizar, activar, apagar, permiso, probar, escucharToques,
-    disponible, nativo, maxAvisos: MAX, idPrueba: ID_PRUEBA,
+    programarBloque, cancelarBloque,
+    disponible, nativo, maxAvisos: MAX, idPrueba: ID_PRUEBA, idBloque: ID_BLOQUE, idEnfoque: ID_ENFOQUE,
   };
 })();
