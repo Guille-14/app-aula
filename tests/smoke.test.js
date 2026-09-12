@@ -2012,6 +2012,16 @@ async function testAuditoria() {
     const puntos = r.querySelectorAll('.radar-box circle[r="7"]').length;
     check(puntos === Math.min(A.state.subjects.length, 12), "radar: un punto por módulo (" + puntos + " de " + A.state.subjects.length + ")");
 
+    // 5-bis. El color de la nota manda: un 7,50 no puede salir con punto rojo
+    const ui2 = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+    A.state.subjects.forEach((sub, i) => { sub.grade = i === 0 ? 7.5 : i === 1 ? 3 : 8; sub.color = "red"; });
+    A.go("rendimiento");
+    const puntosNota = [...r.querySelectorAll("#view .boletin-head i")].map((i) => i.getAttribute("style"));
+    const cajasNota = [...r.querySelectorAll("#view .boletin-head .g")].map((g) => g.className);
+    check(puntosNota[0].includes("green") && puntosNota[1].includes("red"), "calificaciones: el punto dice la nota (verde aprobado, rojo suspenso), no el color del módulo");
+    check(/g-ok/.test(cajasNota[0]) && /g-bad/.test(cajasNota[1]) && !/g-bad/.test(cajasNota[0]), "calificaciones: un 7,50 no lleva la marca de suspenso");
+    check(tienePropiedad(".boletin-head .g-bad", "color: var(--red)", ui2), "calificaciones: el rojo está reservado al suspenso");
+
     // 6. Hoja «Más»: sin subtítulo, con la última tarjeta a todo lo ancho y una sola pestaña activa
     check(!/sheet-hint/.test(fs.readFileSync(path.join(ROOT, "index.html"), "utf8")),
       "más: fuera el subtítulo que repetía lo de la barra de abajo");

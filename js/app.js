@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.4";
+  const APP_VERSION = "v67.4.1";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -4815,9 +4815,12 @@
       const n = sub.grade === "" || sub.grade == null ? null : Number(sub.grade);
       const gcls = n == null ? "g-na" : n >= 9 ? "g-top" : n >= 5 ? "g-ok" : "g-bad";
       const mins = studiedFor(sub.id);
+      // El punto de color era el del módulo (y alguno es rojo), así que un 7,50 salía con un
+      // punto rojo al lado: parecía suspenso. Ahora el punto habla de la nota.
+      const puntoNota = n == null ? "var(--muted-2)" : n >= max / 2 ? "var(--green)" : "var(--red)";
       return `<section class="boletin-mod">
         <div class="boletin-head">
-          <i style="background:${safeColor(sub.color)}"></i>
+          <i style="background:${puntoNota}" title="${n == null ? "Sin nota" : n >= max / 2 ? "Aprobado" : "Suspenso"}"></i>
           <div>
             <b>${esc(sub.name)}</b>
             <small>${fmtHours(mins)} de estudio · ${esc(sub.teacher || "sin profesor")}</small>

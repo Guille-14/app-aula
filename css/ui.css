@@ -1540,6 +1540,11 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .boletin-head b { display: block; font-size: 15px; font-weight: 620; }
 .boletin-head small { color: var(--muted); font-size: 12px; }
 .boletin-head .g { font-size: 22px; font-weight: 680; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* v67.4: el color de la nota es el que informa (rojo solo si está suspensa; verde si es alta).
+   Antes el rojo venía del color del módulo y una nota aprobada parecía un suspenso. */
+.boletin-hero .g-top, .boletin-head .g-top, .grade-row .g-top { color: var(--green); }
+.boletin-hero .g-bad, .boletin-head .g-bad, .grade-row .g-bad { color: var(--red); }
+.boletin-head .g.g-ok { color: var(--ink); }
 .grade-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 18px; border: 0; border-top: 1px solid var(--line); background: none; color: inherit; text-align: left; }
 .grade-row:hover { background: var(--surface-2); }
 .grade-row .g { font-size: 18px; font-weight: 660; font-variant-numeric: tabular-nums; }

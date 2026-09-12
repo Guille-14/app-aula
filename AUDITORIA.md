@@ -8,7 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
-**Ronda v67.4:** la auditoría de interfaz del usuario: la barra de abajo vuelve y no se queda escondida, el calendario, la semana y los exámenes dejan de mentir (473 pruebas ✓).
+**Ronda v67.4 (y v67.4.1):** la auditoría de interfaz del usuario: la barra de abajo vuelve y no se queda escondida, el calendario, la semana, los exámenes y las notas dejan de mentir (476 pruebas ✓).
 **Ronda v67.3:** el horario del centro cuadro a cuadro (31 clases, Sistemas 7 h y el jueves sin última hora) (440 pruebas ✓).
 **Ronda v67.2:** el horario del centro definitivo (15:10–22:15), sin «huecos libres» inventados, la foto de perfil que no cambiaba y los botones de Ajustes flotando (437 pruebas ✓).
 **Ronda v67.1:** la hoja «Más» vuelve a verse pequeña, como antes del rediseño (401 pruebas ✓).
@@ -948,12 +948,18 @@ Sin ninguna prueba apuntada salían a la vez la tarjeta «Nada a la vista», tre
 (icono, explicación y un botón «Añadir el primero»); con exámenes, la tarjeta de la próxima prueba
 sigue arriba y el botón de abajo es el único.
 
-### 5. Calificaciones: el radar dibujaba 8 módulos de 10
+### 5. Calificaciones: el radar dibujaba 8 módulos de 10 (y el punto rojo de un 7,50)
 
 El texto decía «10 de 10 módulos con nota» y el radar solo pintaba 8 vértices: el código cortaba en
 `slice(0, 8)`. Ahora entran todos los módulos (hasta 12), cada punto lleva su color según la nota
 (verde aprobado alto, azul aprobado, rojo suspenso) y al tocar un punto sale el módulo con su nota.
-La nota de cada módulo ya enseña su escala («7.50**/10**»).
+La nota de cada módulo ya enseña su escala («7.50**/10**») y el punto que la acompaña habla de la
+nota, no del módulo: antes llevaba el color del módulo (y alguno es rojo), así que un 7,50 salía con
+un punto rojo al lado y parecía un suspenso. El rojo queda para lo que está suspenso; el verde, para
+las notas altas.
+
+**v67.4.1** (esta misma ronda): ese punto rojo al lado de una nota aprobada. El resto del boletín
+sigue igual.
 
 ### 6. El panel «Más»
 
@@ -999,7 +1005,7 @@ ahora es un segmentado **Claro · Oscuro · Auto** en un solo control.
 * El título de la vista de Herramientas cabe en la cabecera del móvil («Herramientas» en vez de
   «Herramientas SMR»).
 
-**Pruebas: 440 → 473 ✓** más una batería nueva en el navegador (32 comprobaciones: barra visible al
+**Pruebas: 440 → 476 ✓** más una batería nueva en el navegador (32 comprobaciones: barra visible al
 abrir, bloqueo caducado que suelta el foco, bloqueo vivo que lo mantiene, salir de Concentración,
 colores de la semana, fecha sin recorte, un solo botón en Exámenes, radar con los 10 módulos,
 casillas redondas, rejilla de «Más», buscador del taller, engranaje de Ollama y control de tema
