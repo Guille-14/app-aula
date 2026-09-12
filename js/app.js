@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v65";
+  const APP_VERSION = "v66";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -2143,6 +2143,7 @@
             <button class="btn btn-sm" data-action="note-to-cards">A fichas</button>
             <button class="btn btn-sm" data-action="note-tpl">Plantilla</button>
             <button class="btn btn-sm" data-action="note-photo">Foto</button>
+            <button class="btn btn-sm" data-action="note-share">Compartir</button>
             <button class="btn btn-sm" data-action="note-lock">PIN</button>
             <button class="btn btn-sm" data-action="note-hist">Versiones</button>
             <button class="btn btn-sm" data-action="toggle-focus">Foco</button>
@@ -3345,6 +3346,69 @@
     return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
   }
   // El .ics se construye aparte (función que solo devuelve texto) para poder probarlo
+  // ---------------------------------------------------------------- compartir
+  // Un apunte, tal cual, a quien quieras: por la hoja de compartir del móvil (con sus fotos
+  // adjuntas) o por la del navegador. Si el navegador no sabe compartir, al portapapeles.
+  function textoDeNota(n) {
+    const sub = n && subjectById(n.subjectId);
+    const cabecera = [n && n.title ? n.title : "Apunte", sub ? sub.name : ""].filter(Boolean);
+    const cuerpo = ((n && n.content) || "").trim();
+    return { titulo: (n && n.title) || "Apunte", texto: cabecera.join(" · ") + (cuerpo ? "\n\n" + cuerpo : "") };
+  }
+  async function compartirNota(datos) {
+    const o = datos || {};
+    const n = state.notes.find((x) => x.id === (o.id || noteId));
+    if (!n) { toast("Abre un apunte para compartirlo"); return { ok: false }; }
+    persistNoteNow();
+    const { titulo, texto } = textoDeNota(n);
+    const C = window.Capacitor;
+    const nativo = !!(C && typeof C.isNativePlatform === "function" && C.isNativePlatform() && C.Plugins && C.Plugins.Share);
+
+    if (nativo) {
+      // Las fotos se escriben en la caché de la app para poder adjuntarlas (base64 directo)
+      const files = [];
+      if (C.Plugins.Filesystem && mediaOk() && (n.attachments || []).length) {
+        for (const att of n.attachments.slice(0, 6)) {
+          try {
+            const data = att.data || (await Media().dataURL(att.id));
+            const m = /^data:([^;,]+)?;base64,([\s\S]*)$/.exec(String(data || ""));
+            if (!m) continue;
+            const ext = /png/i.test(m[1] || "") ? "png" : "jpg";
+            const path = "apunte-" + n.id + "-" + (files.length + 1) + "." + ext;
+            await C.Plugins.Filesystem.writeFile({ path, data: m[2], directory: "CACHE" });
+            const { uri } = await C.Plugins.Filesystem.getUri({ path, directory: "CACHE" });
+            files.push(uri);
+          } catch { /* una foto que no se puede leer no impide compartir el texto */ }
+        }
+      }
+      try {
+        const carga = { title: titulo, text: texto, dialogTitle: "Compartir apunte" };
+        if (files.length) carga.files = files;
+        await C.Plugins.Share.share(carga);
+        toast("Apunte compartido" + (files.length ? " con " + files.length + (files.length === 1 ? " foto" : " fotos") : ""));
+        return { ok: true, nativo: true, archivos: files.length };
+      } catch {
+        toast("No se pudo compartir el apunte");
+        return { ok: false, nativo: true };
+      }
+    }
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: titulo, text: texto });
+        toast("Apunte compartido");
+        return { ok: true, nativo: false, via: "share" };
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(texto);
+        toast("Apunte copiado al portapapeles");
+        return { ok: true, nativo: false, via: "portapapeles" };
+      }
+    } catch { /* el usuario puede haber cancelado: no es un fallo que haya que gritar */ }
+    toast("Este navegador no sabe compartir; usa Exportar Markdown");
+    return { ok: false, nativo: false };
+  }
+
   // Apuntes a Markdown y fichas a CSV (Anki): texto puro, para exportarlo desde donde haga falta
   function markdownApuntes() {
     const notas = [...(state.notes || [])].sort((a, b) => String(a.subjectId).localeCompare(String(b.subjectId)) || String(a.title).localeCompare(String(b.title)));
@@ -4222,6 +4286,7 @@
     if (action === "note-photo-del") quitarFotoDeNota(id);
     if (action === "export-ics") exportICS();
     if (action === "note-to-cards") noteToCards();
+    if (action === "note-share") compartirNota({ id });
     if (action === "toggle-focus") document.body.classList.toggle("focus-mode");
     if (action === "jump-day") jumpDay(btn.dataset.date);
     if (action === "undo") undo();
@@ -4563,6 +4628,7 @@
     get saveProblem() { return saveProblem; },
     subjectOptions, md, dueCards, attStats, addNote, addCard, addGrade, gradeCard, diasSinClase,
     guardarArchivo, nativoFicheros, icsTexto, markdownApuntes, ankiCSV, exportMarkdown, exportAnki,
+    compartirNota, textoDeNota,
     persistNote, buzz, confetti, levelInfo,
     get noteId() { return noteId; }, set noteId(v) { noteId = v; },
     get cardQueue() { return cardQueue; },

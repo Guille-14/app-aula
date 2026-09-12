@@ -133,6 +133,10 @@ ok(bool(ver) and not fallos_ver, "versión de la web dentro del APK", fallos_ver
 ok(bool(esperados) and not faltan, "los %d widgets van dentro (clases en el dex)" % len(esperados),
    ("faltan: " + ", ".join(faltan)) if faltan else "todos")
 ok(paquete, "paquete es.aula.smr.hub")
+# El FileProvider es lo que permite adjuntar archivos a la hoja de compartir: sin él,
+# «Exportar copia» fallaría al compartir (o al guardar en otros sitios) en el móvil.
+ok(b"fileprovider" in man, "FileProvider para compartir archivos (autoridad .fileprovider)")
+
 for nombre_plugin, (clase, permiso) in plugins.items():
     dentro = clase in dex or any(clase in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex"))
     ok(dentro, "plugin de %s dentro del APK" % nombre_plugin, "" if dentro else "falta la clase %s (¿cap sync?)" % clase.decode())

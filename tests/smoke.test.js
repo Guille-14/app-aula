@@ -1211,6 +1211,65 @@ async function testAuditoria() {
     check(fallo.nativo === true && fallo.ok === false, "exportar: si el móvil no puede escribir, la app lo avisa (no dice que se guardó)");
     check(env.doc.querySelectorAll(".toast").length > 0, "exportar: el fallo se cuenta con un aviso en pantalla");
 
+    // v66: compartir un apunte (texto y fotos) por la hoja del móvil o la del navegador
+    {
+      const env2 = boot();
+      ready(env2.A);
+      const A2 = env2.A;
+      A2.state.subjects = [{ id: "s1", name: "Redes" }];
+      A2.state.notes = [
+        { id: "n1", subjectId: "s1", title: "Subredes", content: "CIDR y máscaras", attachments: [{ id: "f1", name: "pizarra.png", data: "data:image/png;base64,AAAA" }], versions: [], createdAt: Date.now(), updatedAt: Date.now() },
+        { id: "n2", subjectId: "s1", title: "Sin fotos", content: "", attachments: [], versions: [], createdAt: Date.now(), updatedAt: Date.now() },
+      ];
+      A2.render();
+      const tx = A2.textoDeNota(A2.state.notes[0]);
+      check(tx.titulo === "Subredes" && tx.texto === "Subredes · Redes\n\nCIDR y máscaras",
+        "compartir: el texto del apunte lleva título, módulo y contenido [" + JSON.stringify(tx.texto) + "]");
+      check(A2.textoDeNota(A2.state.notes[1]).texto === "Sin fotos · Redes",
+        "compartir: un apunte sin contenido se comparte con su título y módulo");
+
+      // Sin Capacitor y sin navigator.share: al portapapeles
+      let copiado = null;
+      env2.window.navigator.clipboard = { writeText: async (t) => { copiado = t; } };
+      const web = await A2.compartirNota({ id: "n1" });
+      check(web.ok && web.via === "portapapeles" && /CIDR y máscaras/.test(copiado || ""),
+        "compartir: en un navegador sin Web Share, el apunte va al portapapeles");
+      check(/portapapeles/.test(env2.doc.querySelector("#toast-root").textContent), "compartir: y se avisa de que se copió");
+
+      // Con navigator.share, se usa la hoja del navegador
+      let compartido = null;
+      env2.window.navigator.share = async (o) => { compartido = o; };
+      const web2 = await A2.compartirNota({ id: "n2" });
+      check(web2.ok && web2.via === "share" && compartido && compartido.title === "Sin fotos",
+        "compartir: si el navegador sabe compartir (Android, iOS), se usa su hoja");
+
+      // Dentro del APK: hoja de Android y las fotos adjuntas
+      const llamadas = [];
+      env2.window.Capacitor = {
+        isNativePlatform: () => true,
+        Plugins: {
+          Filesystem: {
+            writeFile: async (o) => llamadas.push(["escribe", o.path, String(o.data).slice(0, 6), o.encoding]),
+            getUri: async (o) => { llamadas.push(["uri", o.path]); return { uri: "file:///cache/" + o.path }; },
+          },
+          Share: { share: async (o) => llamadas.push(["comparte", o.title, (o.files || []).join(","), !!o.text]) },
+        },
+      };
+      const nat = await A2.compartirNota({ id: "n1" });
+      check(nat.ok && nat.nativo && nat.archivos === 1, "compartir: en el APK se comparte con la hoja de Android (" + JSON.stringify(llamadas) + ")");
+      check(llamadas.some((l) => l[0] === "escribe" && /^apunte-n1-1\.png$/.test(l[1]) && l[2] === "AAAA"),
+        "compartir: la foto se escribe en la caché en base64 para poder adjuntarla");
+      check(llamadas.some((l) => l[0] === "comparte" && l[1] === "Subredes" && /file:\/\/\/cache\/apunte-n1-1\.png/.test(l[2]) && l[3] === true),
+        "compartir: la hoja recibe el texto y la foto adjunta");
+
+      // Una foto ilegible no impide compartir el texto
+      env2.window.Capacitor.Plugins.Filesystem.writeFile = async () => { throw new Error("no se puede leer"); };
+      llamadas.length = 0;
+      const soloTexto = await A2.compartirNota({ id: "n1" });
+      check(soloTexto.ok && soloTexto.archivos === 0 && llamadas.some((l) => l[0] === "comparte" && !l[2]),
+        "compartir: si una foto falla, el apunte se comparte igual (sin adjuntos)");
+    }
+
     // Y los dos botones que antes no hacían nada ahora exportan de verdad
     env.window.Capacitor = undefined;
     A.state.cards = [];

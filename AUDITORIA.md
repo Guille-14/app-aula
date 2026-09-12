@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v66:** «Compartir» un apunte con sus fotos desde el propio apunte, y el comprobador del APK vigila también el FileProvider del que depende (365 pruebas ✓).
 **Ronda v65:** los botones de exportar (copia JSON, calendario, Markdown y Anki) funcionan dentro del APK con la hoja de compartir de Android — antes no hacían nada—, el .ics lleva avisos para el calendario del móvil y el comprobador del APK vigila los plugins (356 pruebas ✓).
 **Ronda v64:** los avisos se pueden tocar (abren su pantalla), se puede probar que suenan, se explica el permiso de Android y la app avisa cuando hay versión nueva (336 pruebas ✓).
 **Ronda v63:** cache-first de verdad en el Service Worker, minificado antes de publicar (y dentro del APK), avisos programados en Android, CSS sin duplicados y pantalla ancha (326 pruebas ✓).
@@ -886,6 +887,34 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+---
+
+## Ronda v66 · Compartir un apunte (y una comprobación que faltaba)
+
+### Compartir el apunte que estás leyendo
+Nuevo botón **Compartir** en la barra del apunte. Manda el texto tal cual (título · módulo +
+contenido) y, si el apunte tiene fotos, **hasta 6 adjuntas**:
+
+* **Dentro del APK**: se escribe cada foto en la caché de la app y se abre la hoja de compartir de
+  Android, con el texto y los archivos. Sirve igual para mandarlo por WhatsApp, por correo o
+  guardarlo en Drive.
+* **En el navegador**: usa la hoja del sistema (`navigator.share`) si la hay; si no, copia el
+  apunte al portapapeles y lo dice.
+
+Comprobado en el navegador con un Capacitor de mentira: el botón está en su sitio, la llamada sale
+con el título y el texto del apunte, y el aviso de confirmación aparece. En las pruebas se cubre
+también el caso feo: **si una foto no se puede leer, el apunte se comparte igual** (sin adjuntos),
+en vez de quedarse a medias.
+
+### El FileProvider también se comprueba
+Al revisar el plugin de compartir apareció que **el FileProvider lo añade `npx cap add android`**,
+no el plugin: si ese proyecto Android se regenerara con otra versión del template, compartir
+archivos fallaría. El comprobador del APK ahora verifica que exista la autoridad `.fileprovider`
+en el manifest, igual que verifica los plugins. (En el APK publicado está: se comprobó.)
+
+**Pruebas: 356 → 365 ✓** (9 nuevas: texto del apunte con y sin contenido, portapapeles,
+`navigator.share`, hoja de Android con la foto adjunta en base64, y el fallo de la foto).
 
 ## Ronda v65 · Exportar de verdad (y un fallo gordo que nadie veía)
 
