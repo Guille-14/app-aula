@@ -756,6 +756,10 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
   font-weight: 660;
   letter-spacing: -0.03em;
 }
+.hint.warn-text { color: var(--red); }
+/* Aviso con botón (p. ej. «Nueva versión lista → Actualizar»): el texto y el botón en fila */
+.toast-accion { display: flex; align-items: center; gap: 10px; pointer-events: auto; }
+.toast-accion span { flex: 1; min-width: 0; }
 .modal-card p { margin: 0 0 12px; font-size: 14.5px; color: var(--ink-2); line-height: 1.5; }
 .modal-card h3 { margin: 16px 0 8px; font-size: 15px; font-weight: 640; }
 .modal-card .hint { font-size: 13px; }

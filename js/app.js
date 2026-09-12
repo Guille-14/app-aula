@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v63";
+  const APP_VERSION = "v64";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -256,8 +256,9 @@
     window.AulaAvisos.activar().then((r) => {
       state.settings.notifyNative = !!r.permiso;
       state.settings.notify = !!r.permiso;
+      permisoAvisos = r.permiso ? "concedido" : "denegado";
       save();
-      toast(r.permiso ? "Avisos del móvil activados: " + r.programados : "Sin permiso de avisos");
+      toast(r.permiso ? "Avisos del móvil activados: " + r.programados : "Sin permiso de avisos: míralo en Ajustes del móvil");
       if (view === "settings" || view === "dashboard") render();
     }).catch(() => toast("No se pudieron programar los avisos"));
     return true;
@@ -270,6 +271,37 @@
     if (window.AulaAvisos) window.AulaAvisos.apagar().catch(() => {});
     toast("Avisos del móvil desactivados");
     render();
+  }
+  // Al tocar una notificación, la app se abre en la pantalla de ese aviso
+  let toquesAvisosListos = false;
+  function escucharToquesAvisos() {
+    if (toquesAvisosListos || !avisosNativos()) return;
+    toquesAvisosListos = window.AulaAvisos.escucharToques((vista) => {
+      if (!esVista(vista)) return;
+      closeMore();
+      persistNoteNow();
+      view = vista;
+      try { history.replaceState({ v: view }, "", "#" + view); } catch {}
+      render();
+      window.scrollTo(0, 0);
+    });
+  }
+  // Estado del permiso de Android (para explicarlo en Ajustes)
+  let permisoAvisos = "preguntar";
+  function mirarPermisoAvisos() {
+    if (!avisosNativos() || typeof window.AulaAvisos.permiso !== "function") return;
+    window.AulaAvisos.permiso().then((v) => {
+      if (v === permisoAvisos) return;
+      permisoAvisos = v;
+      if (view === "settings" || view === "dashboard") render();
+    }).catch(() => {});
+  }
+  function probarAviso() {
+    if (!avisosNativos()) { requestNotify(); return; }
+    window.AulaAvisos.probar().then((r) => {
+      if (!r.ok && r.permiso === false) { toast("Sin permiso de avisos en el móvil"); permisoAvisos = "denegado"; render(); return; }
+      toast(r.ok ? "Aviso de prueba en 5 segundos" : "No se pudo programar la prueba");
+    }).catch(() => toast("No se pudo programar la prueba"));
   }
   let avisosTimer = null;
   function reprogramarAvisos(pedirPermiso) {
@@ -896,6 +928,24 @@
     if (h === temaHoraAplicado) return false;
     applyTheme();
     return true;
+  }
+
+  // Aviso con botón: se queda en pantalla hasta que se toca (o pasan 20 s)
+  function toastAccion(msg, textoBoton, alTocar) {
+    const el = document.createElement("div");
+    el.className = "toast toast-accion";
+    const t = document.createElement("span");
+    t.textContent = msg;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn btn-sm btn-primary";
+    b.textContent = textoBoton;
+    b.addEventListener("click", () => { el.remove(); alTocar(); });
+    el.appendChild(t);
+    el.appendChild(b);
+    $("#toast-root").appendChild(el);
+    setTimeout(() => el.remove(), 20000);
+    return el;
   }
 
   function toast(msg) {
@@ -2880,8 +2930,14 @@
             : (st.notify && typeof Notification !== "undefined" && Notification.permission === "granted" ? "Avisos activos" : "Activar avisos")}
         </button>
         ${avisosProgramados() && window.AulaAvisos ? `<p class="hint">${esc(window.AulaAvisos.resumen(window.AulaAvisos.datos()))}</p>` : ""}
+        ${avisosNativos() && permisoAvisos === "denegado" ? `<p class="hint warn-text">Android tiene los avisos bloqueados para esta app. Actívalos en Ajustes del móvil → Aplicaciones → Aula SMR → Notificaciones.</p>` : ""}
+        ${avisosNativos() ? `<div class="form-row" style="margin-top:10px">
+          <button class="btn btn-sm" type="button" data-action="test-notify">Probar aviso</button>
+        </div>` : ""}
         ${chk("set-nclass", st.notifyClass !== false, "Clase (10 min antes)")}
         ${chk("set-nca", st.notifyCards !== false, "Fichas de repaso")}
+        ${chk("set-nexamev", st.notifyExamEve !== false, "Examen: la tarde anterior (18:00)")}
+        ${chk("set-nexamh", st.notifyExamHour !== false, "Examen: una hora antes")}
         ${chk("set-night", st.nightRemind !== false, "Aviso nocturno para no romper la racha")}
         ${chk("set-morn", st.morningSummary !== false, "Resumen por la mañana")}
         <div class="form-row" style="margin-top:10px">
@@ -3671,6 +3727,8 @@
     if ($("#set-remindh")) st.remindHour = num("#set-remindh", 8);
     const ncl = on("#set-nclass"); if (ncl !== undefined) st.notifyClass = ncl;
     const nc = on("#set-nca"); if (nc !== undefined) st.notifyCards = nc;
+    const ne1 = on("#set-nexamev"); if (ne1 !== undefined) st.notifyExamEve = ne1;
+    const ne2 = on("#set-nexamh"); if (ne2 !== undefined) st.notifyExamHour = ne2;
     if ($("#set-starth")) st.startHour = num("#set-starth", 8);
     if ($("#set-endh")) st.endHour = num("#set-endh", 21);
     const cd = on("#set-confirm"); if (cd !== undefined) st.confirmDelete = cd;
@@ -3955,7 +4013,11 @@
     }
     if (action === "clear-demo") { state = defaultState(); state.settings.demo = false; noteId = null; view = "subjects"; toast("Empieza por Módulos"); render(); }
     if (action === "keep-demo") { state.settings.demo = false; toast("Tus datos"); render(); }
-    if (action === "enable-notify") { if (state.settings.notifyNative === true && avisosNativos()) apagarAvisosNativos(); else requestNotify(); }
+    if (action === "enable-notify") {
+      if (state.settings.notifyNative === true && avisosNativos()) apagarAvisosNativos();
+      else { mirarPermisoAvisos(); requestNotify(); }
+    }
+    if (action === "test-notify") probarAviso();
     if (action === "skip-onboard" || action === "on-finish") {
       collectOnboard();
       const ncl = on("#set-nclass"); if (ncl !== undefined) state.settings.notifyClass = ncl;
@@ -4464,6 +4526,8 @@
   if (papeleraRecuperada) {
     setTimeout(() => toast(papeleraRecuperada === 1 ? "Recuperé 1 nota que estaba en la papelera" : "Recuperé " + papeleraRecuperada + " notas que estaban en la papelera"), 900);
   }
+  escucharToquesAvisos();
+  mirarPermisoAvisos();
   dailyCheckIn();
   checkAchievements();
   render();
@@ -4494,7 +4558,16 @@
       if (document.visibilityState !== "visible") return;
       navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
     });
-    navigator.serviceWorker.addEventListener("controllerchange", () => applyAppIcon());
+    // Con el cache-first, tras publicar una versión el service worker nuevo toma el control
+    // pero la pestaña sigue con el código viejo en memoria: aquí se avisa y se recarga al tocar.
+    let teniaControl = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      applyAppIcon();
+      if (!teniaControl) { teniaControl = true; return; }   // la primera vez solo se estrena
+      if (document.getElementById("toast-version")) return;
+      const el = toastAccion("Nueva versión lista", "Actualizar", () => location.reload());
+      el.id = "toast-version";
+    });
   }
   function tickLiveUI() {
     if (view !== "dashboard") return;
@@ -4523,6 +4596,7 @@
     updateTimerChrome();
     revisarTemaPorHora();
     tickNotify();
+    mirarPermisoAvisos();
     const cambioPlantilla = syncPlantilla(state);
     if (cambioPlantilla) { save(); toast(avisoPlantilla(cambioPlantilla)); render(); }
     tickLiveUI();

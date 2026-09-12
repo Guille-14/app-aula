@@ -1182,6 +1182,17 @@ async function testAuditoria() {
     const sinResumen = AV.plan({ ...datos, ajustes: { ...datos.ajustes, morningSummary: false } }, ahora);
     check(sinResumen.filter((a) => a.tipo === "resumen").length === 0, "avisos: el resumen de la mañana se puede apagar");
 
+    // v64: cada aviso dice qué pantalla abrir al tocarlo
+    check(con("clase").every((a) => a.vista === "schedule") && con("examen").every((a) => a.vista === "exams")
+      && con("fichas").every((a) => a.vista === "cards") && con("resumen").every((a) => a.vista === "dashboard"),
+      "avisos: al tocar el aviso se abre la pantalla que toca (clase→Horario, examen→Exámenes, fichas→Fichas, resumen→Inicio)");
+
+    // v64: los recordatorios de examen se pueden apagar por separado
+    const soloVispera = AV.plan({ ...datos, ajustes: { ...datos.ajustes, notifyExamHour: false } }, ahora).filter((a) => a.tipo === "examen");
+    const soloHora = AV.plan({ ...datos, ajustes: { ...datos.ajustes, notifyExamEve: false } }, ahora).filter((a) => a.tipo === "examen");
+    check(soloVispera.length === 1 && soloVispera[0].titulo === "Mañana examen", "avisos: se puede quitar el «una hora antes» y dejar la víspera");
+    check(soloHora.length === 1 && soloHora[0].titulo === "Examen en 1 hora", "avisos: se puede quitar la víspera y dejar el «una hora antes»");
+
     // El texto que ve el usuario en Ajustes
     check(/Programados 9 avisos · el siguiente, hoy a las 15:05/.test(AV.resumen(datos, ahora)), "avisos: Ajustes cuenta los avisos y cuándo es el siguiente (" + AV.resumen(datos, ahora) + ")");
     // Sin Capacitor no se llama a nada nativo (y no revienta)
@@ -1207,6 +1218,30 @@ async function testAuditoria() {
     check(r2.nativo === true && r2.permiso === true && r2.programados === 9, "avisos: se programan los 9 avisos del plan en Android");
     check(JSON.stringify(llamadas) === JSON.stringify([["canal", "aula-smr"], ["cancelar", 2], ["programar", 9, "aula-smr"]]),
       "avisos: antes de programar se cancelan los viejos y se prepara el canal de Android (" + JSON.stringify(llamadas) + ")");
+    // v64: aviso de prueba (suena a los 5 segundos) y toques que abren la vista
+    let programadoPrueba = null;
+    env.window.Capacitor.Plugins.LocalNotifications.schedule = async (o) => { programadoPrueba = o.notifications[0]; };
+    const prueba = await AV.probar({ ahora: new Date("2026-09-14T09:00:00") });
+    const cuandoPrueba = programadoPrueba && new Date(programadoPrueba.schedule.at).getTime();
+    check(!!prueba.ok && programadoPrueba && programadoPrueba.id === AV.idPrueba && cuandoPrueba - new Date("2026-09-14T09:00:00").getTime() === 5000,
+      "avisos: «Probar aviso» programa un aviso de prueba para dentro de 5 segundos (id reservado) [" + JSON.stringify(programadoPrueba) + " · ok=" + (prueba && prueba.ok) + "]");
+    check(programadoPrueba && programadoPrueba.extra && programadoPrueba.extra.vista === "settings",
+      "avisos: el aviso de prueba abre Ajustes al tocarlo");
+
+    let escucha = null;
+    env.window.Capacitor.Plugins.LocalNotifications.addListener = (evento, cb) => { escucha = { evento, cb }; };
+    let vistaPedida = null;
+    check(AV.escucharToques((v) => { vistaPedida = v; }) === true && escucha && escucha.evento === "localNotificationActionPerformed",
+      "avisos: la app escucha el toque de las notificaciones");
+    escucha.cb({ notification: { extra: { vista: "exams" } } });
+    check(vistaPedida === "exams", "avisos: al tocar un aviso de examen se pide abrir Exámenes");
+
+    // Permiso: concedido / denegado
+    env.window.Capacitor.Plugins.LocalNotifications.checkPermissions = async () => ({ display: "granted" });
+    check((await AV.permiso()) === "concedido", "avisos: el módulo informa del permiso concedido");
+    env.window.Capacitor.Plugins.LocalNotifications.checkPermissions = async () => ({ display: "denied" });
+    check((await AV.permiso()) === "denegado", "avisos: y del permiso denegado (para poder explicarlo en Ajustes)");
+
     // Y si el usuario dice que no al permiso, no se programa nada
     env.window.Capacitor.Plugins.LocalNotifications.checkPermissions = async () => ({ display: "denied" });
     const r3 = await AV.sincronizar({ pedirPermiso: false, datos, ahora });
@@ -1375,7 +1410,9 @@ async function testAuditoria() {
       env.A.go(v);
       const txt = env.doc.getElementById("view").textContent;
       if (/deber|tarea/i.test(txt)) conDeberes.push(v);
-      if (/examen/i.test(txt) && v !== "chatbot") conTexto.push(v);   // el chat propone «¿próximo examen?»
+      // El chat propone «¿próximo examen?» y en Ajustes están sus avisos (v64): el resto de
+      // vistas no deben hablar de exámenes.
+      if (/examen/i.test(txt) && v !== "chatbot" && v !== "exams" && v !== "settings") conTexto.push(v);
     }
     check(conDeberes.length === 0, "textos: ninguna vista habla de deberes ni tareas" + (conDeberes.length ? " (" + conDeberes.join(", ") + ")" : ""));
     check(conTexto.length === 0, "textos: los exámenes solo salen en su vista" + (conTexto.length ? " (" + conTexto.join(", ") + ")" : ""));

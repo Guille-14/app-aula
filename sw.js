@@ -1,4 +1,4 @@
-const CACHE = "aula-smr-v63";
+const CACHE = "aula-smr-v64";
 const ICON_CACHE = "aula-app-icon";
 const PRECACHE = [
   "./",

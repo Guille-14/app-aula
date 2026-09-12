@@ -8,9 +8,13 @@
  * Se programan los mismos avisos que ya existían, con las mismas reglas y los mismos
  * interruptores de Ajustes:
  *   · 10 minutos antes de cada clase (lectiva y con horario ese día)
- *   · la víspera de cada examen a las 18:00 y una hora antes
+ *   · la víspera de cada examen a las 18:00 y una hora antes (cada uno se puede apagar)
  *   · resumen por la mañana (hora configurable, 8 por defecto)
  *   · fichas de repaso pendientes (a las 18:00)
+ *
+ * Cada aviso lleva a qué vista pertenece: al tocar la notificación, la app se abre en
+ * Exámenes, Horario, Fichas o Inicio. También hay una prueba de 5 segundos para comprobar
+ * desde Ajustes que los avisos suenan de verdad en ese móvil.
  *
  * `plan()` es una función pura (datos de entrada, lista de avisos de salida) para poder
  * probarla sin móvil ni navegador; la parte nativa solo traduce ese plan a llamadas.
@@ -19,8 +23,11 @@
   const CANAL = "aula-smr";
   const DIAS = 14; // se programan dos semanas; al abrir la app se vuelve a calcular
   const MAX = 64; // tope de avisos vivos (Android admite muchos más, pero así sobra)
+  const ID_PRUEBA = 2147483000; // id reservado para el aviso de prueba
   const FICHAS_HORA = "18:00";
   const DIAS_SEMANA = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+  // Qué vista se abre al tocar cada tipo de aviso
+  const VISTA = { clase: "schedule", examen: "exams", fichas: "cards", resumen: "dashboard" };
 
   function app() { return window.Aula || null; }
 
@@ -90,9 +97,9 @@
     const ahoraMs = (ahora || new Date()).getTime();
     const st = d.ajustes;
     const lista = [];
-    const mete = (id, tipo, titulo, cuerpo, cuando) => {
+    const mete = (id, tipo, titulo, cuerpo, cuando, vista) => {
       if (!cuando || isNaN(cuando.getTime()) || cuando.getTime() <= ahoraMs) return;
-      lista.push({ id: clave(id), tipo, titulo, cuerpo, cuando });
+      lista.push({ id: clave(id), tipo, titulo, cuerpo, cuando, vista: vista || VISTA[tipo] || "dashboard" });
     };
 
     // Clases: diez minutos antes de cada una
@@ -101,7 +108,7 @@
         (dia.clases || []).forEach((c, i) => {
           const cuando = fechaHora(dia.iso, c.start, -10);
           mete("clase|" + dia.iso + "|" + i + "|" + c.start, "clase", "Clase en 10 min",
-            c.subject + (c.room ? " · " + c.room : "") + " · " + c.start, cuando);
+            c.subject + (c.room ? " · " + c.room : "") + " · " + c.start, cuando, "schedule");
         });
       });
     }
@@ -111,9 +118,13 @@
       if (!e.date) return;
       const etiqueta = e.title || e.subject || "Examen";
       const cola = [e.subject, e.time, e.room].filter(Boolean).join(" · ");
-      mete("examen-vispera|" + e.date + "|" + i, "examen", "Mañana examen",
-        etiqueta + (cola ? " · " + cola : ""), fechaHora(e.date, "18:00", -1440));
-      if (e.time) mete("examen-hora|" + e.date + "|" + i, "examen", "Examen en 1 hora", etiqueta + (e.subject ? " · " + e.subject : ""), fechaHora(e.date, e.time, -60));
+      if (st.notifyExamEve !== false) {
+        mete("examen-vispera|" + e.date + "|" + i, "examen", "Mañana examen",
+          etiqueta + (cola ? " · " + cola : ""), fechaHora(e.date, "18:00", -1440), "exams");
+      }
+      if (st.notifyExamHour !== false && e.time) {
+        mete("examen-hora|" + e.date + "|" + i, "examen", "Examen en 1 hora", etiqueta + (e.subject ? " · " + e.subject : ""), fechaHora(e.date, e.time, -60), "exams");
+      }
     });
 
     // Resumen de la mañana: cuántas clases y a qué hora empieza la primera
@@ -122,14 +133,14 @@
       (d.dias || []).forEach((dia) => {
         const n = (dia.clases || []).length;
         const cuerpo = !n ? dia.etiqueta : n + (n === 1 ? " clase" : " clases") + " · primera a las " + dia.clases[0].start;
-        mete("manana|" + dia.iso, "resumen", "Buenos días", cuerpo, fechaHora(dia.iso, hora + ":00", 0));
+        mete("manana|" + dia.iso, "resumen", "Buenos días", cuerpo, fechaHora(dia.iso, hora + ":00", 0), "dashboard");
       });
     }
 
     // Fichas de repaso pendientes (solo si hay alguna; se recalcula al abrir la app)
     if (st.notifyCards !== false && d.fichas > 0) {
       (d.dias || []).slice(0, 2).forEach((dia) => {
-        mete("fichas|" + dia.iso, "fichas", "Fichas pendientes", d.fichas + " para repasar", fechaHora(dia.iso, FICHAS_HORA, 0));
+        mete("fichas|" + dia.iso, "fichas", "Fichas pendientes", d.fichas + " para repasar", fechaHora(dia.iso, FICHAS_HORA, 0), "cards");
       });
     }
 
@@ -185,6 +196,7 @@
         await P.schedule({
           notifications: avisos.map((a) => ({
             id: a.id, title: a.titulo, body: a.cuerpo, channelId: CANAL,
+            extra: { vista: a.vista },
             schedule: { at: a.cuando, allowWhileIdle: false },
           })),
         });
@@ -193,6 +205,58 @@
       }
     }
     return { nativo: true, programados: avisos.length, permiso: true };
+  }
+
+  /** Estado del permiso de Android, para poder enseñarlo en Ajustes. */
+  async function permiso() {
+    const P = plugin();
+    if (!P) return "no-nativo";
+    try {
+      const p = await P.checkPermissions();
+      return p.display === "granted" ? "concedido" : p.display === "denied" ? "denegado" : "preguntar";
+    } catch { return "desconocido"; }
+  }
+
+  /** Aviso de prueba: suena 5 segundos después de tocarlo (para probar en el móvil). */
+  async function probar(opciones) {
+    const o = opciones || {};
+    const P = plugin();
+    if (!P) return { nativo: false, ok: false };
+    // Siempre 5 segundos después (opciones.ahora solo existe para poder probarlo con fechas fijas)
+    // (se acepta cualquier objeto con getTime: dentro del navegador, un Date de otro contexto
+    // no pasa un instanceof Date y se programaría en el momento equivocado)
+    const base = o.ahora && typeof o.ahora.getTime === "function" ? o.ahora : new Date();
+    const at = new Date(base.getTime() + 5000);
+    try {
+      const p = await P.checkPermissions();
+      if (p.display !== "granted") {
+        const pedido = await P.requestPermissions();
+        if (pedido.display !== "granted") return { nativo: true, ok: false, permiso: false };
+      }
+      await P.schedule({
+        notifications: [{
+          id: ID_PRUEBA, title: "Aula SMR", body: "Prueba de aviso: si ves esto, funciona. Te avisará en 5 segundos.",
+          channelId: CANAL, extra: { vista: "settings" }, schedule: { at },
+        }],
+      });
+      return { nativo: true, ok: true, permiso: true, cuando: at };
+    } catch {
+      return { nativo: true, ok: false, permiso: true };
+    }
+  }
+
+  /** Al tocar una notificación se llama a `cb(vista)`: la app abre esa pantalla. */
+  function escucharToques(cb) {
+    const P = plugin();
+    if (!P || typeof P.addListener !== "function" || typeof cb !== "function") return false;
+    try {
+      P.addListener("localNotificationActionPerformed", (info) => {
+        const datos = (info && (info.notification || info)) || {};
+        const extra = datos.extra || {};
+        if (extra.vista) cb(extra.vista);
+      });
+      return true;
+    } catch { return false; }
   }
 
   /** Botón de Ajustes: pide permiso (la primera vez) y deja los avisos programados. */
@@ -212,5 +276,8 @@
     return { nativo: true, programados: 0 };
   }
 
-  window.AulaAvisos = { plan, datos, resumen, sincronizar, activar, apagar, disponible, nativo, maxAvisos: MAX };
+  window.AulaAvisos = {
+    plan, datos, resumen, sincronizar, activar, apagar, permiso, probar, escucharToques,
+    disponible, nativo, maxAvisos: MAX, idPrueba: ID_PRUEBA,
+  };
 })();

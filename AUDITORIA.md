@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v64:** los avisos se pueden tocar (abren su pantalla), se puede probar que suenan, se explica el permiso de Android y la app avisa cuando hay versión nueva (336 pruebas ✓).
 **Ronda v63:** cache-first de verdad en el Service Worker, minificado antes de publicar (y dentro del APK), avisos programados en Android, CSS sin duplicados y pantalla ancha (326 pruebas ✓).
 **Ronda v62-b:** los diálogos salían desplazados media pantalla por la herencia de `styles.css`; ahora son hojas con tirador, scroll y botones alcanzables (281 pruebas ✓).
 **Tamaño analizado:** 9.225 líneas / 454 KB (189 KB de `app.js`, 148 KB de CSS).
@@ -880,6 +881,46 @@ publican también `app_esperada` y `paquete` en `.datos-apk` para poder verlo en
 acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compilar el APK.
 
 ---
+
+---
+
+## Ronda v64 · Los avisos se tocan, se prueban y se explican (y aviso de versión nueva)
+
+Cuatro cosas pequeñas que hacen que lo de la ronda anterior se sienta terminado.
+
+### 1. Tocar la notificación abre su pantalla
+Cada aviso lleva ahora su vista (`extra.vista`) y la app escucha `localNotificationActionPerformed`:
+tocas el aviso de «Clase en 10 min» y abres el **Horario**; el de examen, **Exámenes**; el de fichas
+pendientes, **Fichas**; el resumen de la mañana, **Inicio**. La app se pone en esa vista y el
+historial queda coherente (misma ruta que usar la barra de abajo). Verificado en el navegador con
+un Capacitor de mentira: simular el toque deja la app en `#exams` con la vista pintada.
+
+### 2. «Probar aviso»: saber de una vez si suenan en tu móvil
+Nuevo botón en Ajustes → Avisos (solo dentro del APK): programa un aviso real **5 segundos después**
+con un id reservado. Si suena, funciona todo el circuito de Android (permiso, canal y alarma); si
+no suena, el problema está en los ajustes del móvil y no hay que adivinar. Comprobado: el aviso
+queda programado a +5 s y el id es el reservado.
+
+### 3. El permiso de Android se ve y se explica
+Ajustes consulta el permiso de verdad (`checkPermissions`) cada vez que se pinta y al volver a la
+app. Si está **denegado**, aparece el aviso rojo «Android tiene los avisos bloqueados para esta
+app. Actívalos en Ajustes del móvil → Aplicaciones → Aula SMR → Notificaciones», en vez de un botón
+que no hace nada al pulsarlo. Probado con permiso concedido y denegado.
+
+### 4. «Nueva versión lista → Actualizar»
+El cache-first de la v63 tiene una consecuencia: tras publicar, el service worker nuevo toma el
+control pero la pestaña sigue con el código viejo en memoria (por eso hacía falta cerrar y abrir).
+Ahora, cuando eso pasa, la app muestra un **aviso que no se va solo**: «Nueva versión lista» con un
+botón **Actualizar** que recarga con el código nuevo. La primera vez que se registra el SW no sale
+(el `controllerchange` inicial solo estrena). Verificado en el navegador: aparece, se toca y la
+página recarga ya con la versión nueva.
+
+Además, los dos recordatorios de examen (víspera a las 18:00 y una hora antes) tienen ya su propio
+interruptor en Ajustes, en vez de ir los dos juntos.
+
+**Pruebas: 327 → 336 ✓** (9 nuevas: vista de cada aviso, los dos interruptores de examen por
+separado, el aviso de prueba con su id y sus 5 segundos, el permiso concedido y denegado, y el
+toque que abre la pantalla). Y las 22 vistas siguen sin errores, sin «undefined» y sin desbordes.
 
 ## Ronda v63 · Todo lo que pediste: arranque instantáneo, minificado y avisos de verdad
 
