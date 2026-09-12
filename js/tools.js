@@ -227,7 +227,7 @@
   function st() { return A().state; }
 
   const CATS = [
-    ["Red", [
+    ["Red", "blue", [
       ["subnet", "blue", "net", "Subnetting IPv4", "CIDR, broadcast y hosts"],
       ["vlsm", "sky", "calc", "Hosts → CIDR", "Prefijo mínimo para N equipos"],
       ["ipbin", "sky", "hash", "IP ↔ binario", "Octetos en bits"],
@@ -244,7 +244,7 @@
       ["macbit", "rose", "chip", "Dirección MAC", "Local/global, unicast"],
       ["dhcp", "sky", "calc", "Ámbito DHCP", "Leases de un rango"],
     ]],
-    ["Sistemas", [
+    ["Sistemas", "slate", [
       ["chmod", "violet", "lock", "Permisos CHMOD", "Octal y simbólico"],
       ["ntfs", "violet", "lock", "NTFS vs compartir", "Permisos Windows"],
       ["raid", "rose", "disk", "Calculadora RAID", "Capacidad 0/1/5/6/10"],
@@ -256,14 +256,14 @@
       ["poe", "lime", "bolt", "PoE", "802.3af / at / bt"],
       ["pass", "amber", "key", "Generador Pass", "AD y root"],
     ]],
-    ["Consulta", [
+    ["Consulta", "green", [
       ["ports", "green", "ports", "Puertos SMR", "TCP / UDP y protocolos"],
       ["http", "blue", "globe", "Códigos HTTP", "200, 404, 502…"],
       ["acro", "teal", "list", "Acrónimos SMR", "DHCP, VLAN, GPO…"],
       ["sheet", "green", "file", "Chuleta de comandos", "Linux, Cisco, PowerShell"],
       ["ascii", "grey", "list", "Tabla ASCII", "32–126"],
     ]],
-    ["Utilidades", [
+    ["Utilidades", "violet", [
       ["conv", "lime", "calc", "Bin / Dec / Hex", "Conversor de bases"],
       ["hash", "grey", "hash", "Hash SHA-256", "Huella local"],
       ["b64", "grey", "file", "Base64", "Codificar / decodificar"],
@@ -274,17 +274,41 @@
     ]],
   ];
 
+  /* Buscador del taller: filtra por nombre, explicación o sección. Antes había que bajar por una
+     lista de 30 tarjetas a ojo; ahora se escribe «chmod» o «subnet» y queda a la vista. */
+  function filtrar(q) {
+    const t = String(q || "").trim().toLowerCase();
+    if (!t) return CATS;
+    return CATS.map(([cat, color, cards]) => [cat, color, cards.filter(([id, c, ico, titulo, sub]) =>
+      (titulo + " " + sub + " " + cat + " " + id).toLowerCase().includes(t))])
+      .filter(([, , cards]) => cards.length);
+  }
+
+  function gridHTML() {
+    const q = (st()._toolsQ || "").trim();
+    const cats = filtrar(q);
+    const total = cats.reduce((n, [, , cards]) => n + cards.length, 0);
+    if (!total) return `<div class="empty"><b>Nada con «${esc(q)}»</b>
+      <p>Prueba con «subnet», «chmod», «puerto» o «cable».</p></div>`;
+    return cats.map(([cat, color, cards]) => `
+      <div class="tools-sec" style="--c:var(--acc-${color === "slate" ? "grey" : color}, var(--ink))">${esc(cat)}</div>
+      <div class="tools-grid">${cards.map(([id, c, ico, t, s]) => `<button class="tool-card${id === "sheet" ? " tool-wide" : ""}" data-action="tool-open" data-id="${id}">
+        <div class="tool-ico" style="--c:var(--acc-${color === "slate" ? "grey" : color}, var(--ink))">${ICO[ico] || ICO.net}</div>
+        <b>${esc(t)}</b><small>${esc(s)}</small>
+      </button>`).join("")}</div>
+    `).join("");
+  }
+
   function home() {
+    // La cabecera de la vista ya pone «Herramientas»: aquí no se repite el título.
     return `
-      <p class="tools-kicker">Herramientas SMR</p>
-      ${CATS.map(([cat, cards]) => `
-        <div class="tools-sec">${esc(cat)}</div>
-        <div class="tools-grid">${cards.map(([id, color, ico, t, s]) => `<button class="tool-card${id === "sheet" ? " tool-wide" : ""}" data-action="tool-open" data-id="${id}">
-          <div class="tool-ico" style="--c:var(--acc-${color}, var(--ink))">${ICO[ico] || ICO.net}</div>
-          <b>${esc(t)}</b><small>${esc(s)}</small>
-        </button>`).join("")}</div>
-      `).join("")}
-      <p class="hint" style="text-align:center;margin-top:8px">Todo corre en el móvil. Nada se envía a internet.</p>
+      <div class="tools-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="tools-q" type="search" autocomplete="off" placeholder="Buscar: subnet, chmod, puertos…" value="${esc(st()._toolsQ || "")}" aria-label="Buscar herramienta">
+        ${(st()._toolsQ || "") ? `<button type="button" class="tools-q-x" data-action="tools-clear-q" aria-label="Borrar la búsqueda">×</button>` : ""}
+      </div>
+      <div id="tools-body">${gridHTML()}</div>
+      <p class="hint tools-foot">Todo corre en el móvil. Nada se envía a internet.</p>
     `;
   }
 
@@ -490,10 +514,10 @@
       <div class="field"><label>Longitud</label>
         <input type="range" id="pw-len" min="8" max="32" value="16">
         <div id="pw-len-lbl" class="hint" style="text-align:center">16 caracteres</div></div>
-      <label class="check"><input type="checkbox" id="pw-l" checked> minúsculas</label>
-      <label class="check"><input type="checkbox" id="pw-u" checked> MAYÚSCULAS</label>
-      <label class="check"><input type="checkbox" id="pw-n" checked> números</label>
-      <label class="check"><input type="checkbox" id="pw-s"> símbolos</label>
+      <label class="switch"><span class="switch-t">minúsculas</span><input type="checkbox" role="switch" id="pw-l" checked></label>
+      <label class="switch"><span class="switch-t">MAYÚSCULAS</span><input type="checkbox" role="switch" id="pw-u" checked></label>
+      <label class="switch"><span class="switch-t">números</span><input type="checkbox" role="switch" id="pw-n" checked></label>
+      <label class="switch"><span class="switch-t">símbolos</span><input type="checkbox" role="switch" id="pw-s"></label>
       ${liveBtn("tool-pass", "Generar")}
       <div id="pw-out" class="tool-pass"></div>`));
     if (id === "ports") return wrap("Puertos SMR", `
@@ -680,6 +704,7 @@
       if (btn.dataset.id === "chmod") setTimeout(() => click("tool-chmod", btn), 0);
     }
     if (action === "tool-back") { st()._tool = null; A().go("tools"); }
+    if (action === "tools-clear-q") { st()._toolsQ = ""; A().render(); }
     if (action === "tool-subnet") {
       const r = calcSubnet((document.getElementById("sn-ip") || {}).value);
       const el = document.getElementById("sn-out");
@@ -942,6 +967,12 @@
       const list = document.getElementById("ht-list");
       if (list) list.innerHTML = httpRows(e.target.value);
     }
+    if (e.target.id === "tools-q") {
+      st()._toolsQ = e.target.value;
+      const body = document.getElementById("tools-body");
+      if (body) body.innerHTML = gridHTML();
+      return;
+    }
     if (e.target.id === "ac-q") {
       const list = document.getElementById("ac-list");
       if (list) list.innerHTML = acroRows(e.target.value);
@@ -970,7 +1001,7 @@
     // Catálogo plano para el buscador global (Ctrl/Cmd + K)
     catalog() {
       const out = [];
-      (CATS || []).forEach(([cat, cards]) => {
+      (CATS || []).forEach(([cat, _color, cards]) => {
         (cards || []).forEach(([id, color, ico, title, sub]) => out.push({ id, title, sub, cat }));
       });
       return out;

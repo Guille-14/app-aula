@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v67.4:** la auditoría de interfaz del usuario: la barra de abajo vuelve y no se queda escondida, el calendario, la semana y los exámenes dejan de mentir (473 pruebas ✓).
 **Ronda v67.3:** el horario del centro cuadro a cuadro (31 clases, Sistemas 7 h y el jueves sin última hora) (440 pruebas ✓).
 **Ronda v67.2:** el horario del centro definitivo (15:10–22:15), sin «huecos libres» inventados, la foto de perfil que no cambiaba y los botones de Ajustes flotando (437 pruebas ✓).
 **Ronda v67.1:** la hoja «Más» vuelve a verse pequeña, como antes del rediseño (401 pruebas ✓).
@@ -893,6 +894,116 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.4 · La auditoría de interfaz: la barra de abajo, el calendario y las cosas que mentían
+
+El usuario mandó una revisión pantalla por pantalla (13 capturas) y la abrió con una frase:
+«**ANTES QUE TODO ESTO: No se ve la barra de abajo**». Eso fue lo primero que se miró y lo primero
+que se arregló; el resto va por orden de gravedad.
+
+### 1. La barra de abajo (lo urgente)
+
+La barra no desaparece sola: la esconden el **modo foco** y el **modo concentración**.
+
+* `body.focus-mode` oculta `.hub-nav` a propósito (es su sentido: «sin distracciones»), pero había
+  tres formas de quedarse dentro sin darse cuenta: activar Concentración (90 minutos), pulsar la
+  tecla **F** o abrir la app con un bloqueo anterior a medias.
+* Al **caducar** el bloqueo de Concentración solo se quitaba la clase `exam-lock`, no `focus-mode`:
+  el foco se quedaba pegado y, al volver a abrir la app, **no había barra de abajo ni forma evidente
+  de recuperarla**. Lo mismo al salir a mano desde la pantalla de Concentración, que quitaba el
+  bloqueo pero dejaba el foco puesto.
+
+Ahora hay un único sitio que toca esas clases (`ponFoco()`), el bloqueo caducado **suelta el foco
+solo** (y vuelve la barra), salir de Concentración devuelve la barra en el acto, y la tecla F avisa
+por un mensaje de qué está pasando. La app sigue entrando en foco si el bloqueo está vivo: eso es lo
+que pediste, pero ya no puede quedarse pegado.
+
+### 2. Inicio: la fecha que se cortaba y la semana en rojo
+
+* «14 de septie…» no era un fallo del navegador: la tarjeta del primer día de clase tenía
+  `white-space: nowrap` con puntos suspensivos. Ahora la fecha baja de línea entera y se lee
+  completa, también con «Tamaño del texto: grande».
+* La tira de la semana pintaba **en rojo todo lo que no es día lectivo**: festivos, vacaciones,
+  sábados, domingos y también los días de antes de empezar el curso. En septiembre eso dejaba la
+  semana entera en rojo, que en un boletín se lee como «suspenso». Ahora el rojo es solo para el
+  festivo; las vacaciones van en ámbar y lo de fuera del curso o el fin de semana en gris.
+* El botón «Activar» de los avisos dejaba de ser el más llamativo de la pantalla (era un botón
+  grande en negro para algo secundario) y la nota media ya enseña su escala («7.5**/10**»).
+
+### 3. Calendario: los días 9 y 12 salían ovalados
+
+La casilla del día es un círculo de 46 px como mucho, pero el CSS viejo (`css/styles.css`, de la
+época del calendario grande) le dejaba **96 px de alto** y, en pantallas táctiles, 46 px: en una
+columna de 39 px, aquello era una píldora vertical. Y las casillas de relleno (los días que faltan
+para completar la primera y la última semana) seguían pintándose como cajas vacías.
+
+Arreglado: la casilla del mes usa el círculo y nada más, el relleno es invisible pero ocupa su
+hueco, y la agenda densa tampoco hereda los 96 px. Medido en Chromium: **39,4 × 39,4 px**, todas las
+filas iguales.
+
+### 4. Exámenes: cuatro cosas diciendo lo mismo
+
+Sin ninguna prueba apuntada salían a la vez la tarjeta «Nada a la vista», tres ceros, una caja
+«Nada apuntado aquí» y **dos botones** para añadir. Ahora, sin exámenes, hay **un solo estado**
+(icono, explicación y un botón «Añadir el primero»); con exámenes, la tarjeta de la próxima prueba
+sigue arriba y el botón de abajo es el único.
+
+### 5. Calificaciones: el radar dibujaba 8 módulos de 10
+
+El texto decía «10 de 10 módulos con nota» y el radar solo pintaba 8 vértices: el código cortaba en
+`slice(0, 8)`. Ahora entran todos los módulos (hasta 12), cada punto lleva su color según la nota
+(verde aprobado alto, azul aprobado, rojo suspenso) y al tocar un punto sale el módulo con su nota.
+La nota de cada módulo ya enseña su escala («7.50**/10**»).
+
+### 6. El panel «Más»
+
+* Fuera el subtítulo «Inicio, Horario, Exámenes y Notas ya están en la barra de abajo»: repetía lo
+  que ya se ve.
+* Las secciones con número impar de apartados (Hábitos suelto) dejan de tener un hueco raro: el
+  último ocupa la fila completa.
+* Y con el panel abierto ya **no parece que haya dos pestañas activas**: el botón «Más» se enciende
+  con un punto debajo, sin el relleno de pestaña activa que compartía con la vista de debajo.
+
+### 7. Herramientas: cabecera repetida, colores de feria y buscador
+
+El título «Herramientas SMR» aparecía dos veces (cabecera y rótulo), cada tarjeta iba de un color
+distinto sin que significara nada y con 37 herramientas había que bajar a ojo. Ahora: un solo
+título, **un color por sección** (y el icono de cada tarjeta de ese color), y un **buscador** que
+filtra por nombre, explicación o sección («chmod» deja la tarjeta a la vista), con su botón para
+borrar y un estado claro cuando no hay resultados.
+
+### 8. El chat: la configuración sale de en medio
+
+Dentro del chat estaban los campos de dirección y modelo de Ollama con sus botones de probar: quien
+solo quiere preguntar tropezaba con la configuración. Ahora hay un **engranaje** en la cabecera del
+chat que abre la configuración en una hoja aparte, y en Ajustes → Datos locales la misma tarjeta
+abre ese mismo sitio (una sola fuente de verdad).
+
+### 9. Ajustes y formularios: interruptores en vez de casillas
+
+Las opciones de sí/no (Ajustes y el asistente inicial) eran casillas de escritorio. Ahora son
+**interruptores** de 50 × 30 px, con el texto a la izquierda y el mando a la derecha, y 54 px de
+alto para el dedo. El tema deja de estar duplicado (la casilla «automático» y el botón grande):
+ahora es un segmentado **Claro · Oscuro · Auto** en un solo control.
+
+### 10. Lo demás que salió en la revisión
+
+* **Leyenda de asistencia**: «P presente · R retraso · F falta» pasa a tres puntos con el color de
+  cada botón (verde, ámbar, rojo).
+* **Un solo tipo de estado vacío** (icono, título, explicación y, si toca, un botón): el de
+  Exámenes, el de un día sin clase en el Horario y el del radar usan la misma pieza.
+* **Aire al final del contenido**: `padding-bottom` = alto de la barra + 34 px (108 px reales con la
+  barra de 74), para que la barra nunca corte la última tarjeta.
+* **«Festivo local (Villena)»** se repetía tres veces en la ficha del curso; ahora la fila lleva la
+  fecha delante y el nombre detrás, así cada festivo se distingue.
+* El título de la vista de Herramientas cabe en la cabecera del móvil («Herramientas» en vez de
+  «Herramientas SMR»).
+
+**Pruebas: 440 → 473 ✓** más una batería nueva en el navegador (32 comprobaciones: barra visible al
+abrir, bloqueo caducado que suelta el foco, bloqueo vivo que lo mantiene, salir de Concentración,
+colores de la semana, fecha sin recorte, un solo botón en Exámenes, radar con los 10 módulos,
+casillas redondas, rejilla de «Más», buscador del taller, engranaje de Ollama y control de tema
+único). Sin errores de consola en ninguna vista.
 
 ## Ronda v67.3 · El horario, casilla a casilla
 

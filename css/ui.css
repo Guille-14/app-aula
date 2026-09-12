@@ -218,9 +218,14 @@ body.hub-body {
   font-weight: 680;
   letter-spacing: -0.035em;
   line-height: 1.1;
-  white-space: nowrap;
+  /* v67.4: los títulos largos («Herramientas», «Calificaciones») se cortaban con puntos
+     suspensivos en la cabecera del móvil. Ahora bajan a una segunda línea y se leen enteros;
+     el recorte se queda como red de seguridad solo si hubiera tres líneas. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .hub-header p {
   margin: 4px 0 0;
@@ -254,7 +259,7 @@ body.hub-body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: 4px var(--pad) calc(var(--nav-h) + 26px);
+  padding: 4px var(--pad) calc(var(--nav-h) + 34px);
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -548,6 +553,45 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   border-bottom: 2.2px solid var(--invert-ink);
   transform: rotate(-45deg) translateY(-1px);
 }
+
+/* Interruptor (v67.4): en Ajustes y en el asistente las opciones de sí/no son mandos, no casillas.
+   El texto va a la izquierda y el mando a la derecha, con 54 px de alto para el dedo. */
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 2px;
+  min-height: 54px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.switch .switch-t { flex: 1 1 auto; min-width: 0; }
+.switch input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 50px;
+  width: 50px; height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  position: relative;
+  transition: background .18s ease, border-color .18s ease;
+}
+.switch input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 22px; height: 22px;
+  border-radius: 999px;
+  background: var(--muted-2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
+  transition: transform .18s ease, background .18s ease;
+}
+.switch input[type="checkbox"]:checked { background: var(--invert); border-color: var(--invert); }
+.switch input[type="checkbox"]:checked::after { transform: translateX(20px); background: var(--invert-ink); }
+.switch input[type="checkbox"]:focus-visible { box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--ink) 12%, transparent); }
 input[type="range"] { width: 100%; accent-color: var(--ink); }
 
 /* ------------------------------------------------------------- 11. Listas */
@@ -812,6 +856,9 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
    fueron). La v59 las agrandó a 92 px de alto y 10 px de hueco — se veían cuatro apartados por
    pantalla y la lista se hacía interminable. Aquí manda el tamaño pequeño: 68 px y 6 px. */
 .sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 6px 0 2px; }
+/* Sección con número impar de accesos (Hábitos, Glosario…): el último ocupa la fila entera y no
+   queda un hueco suelto a la derecha. */
+.sheet-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 .sheet-wide { grid-template-columns: minmax(0, 1fr); }
 .sheet-grid button {
   display: flex;
@@ -1030,7 +1077,7 @@ body.examode .att { display: none !important; }
 .bento-ico svg { width: 18px; height: 18px; }
 .bento-ico .dot-alert { position: absolute; top: -2px; right: -2px; margin: 0; box-shadow: 0 0 0 2px var(--surface); }
 .bento-card .num { font-size: 30px; font-weight: 680; letter-spacing: -0.05em; line-height: 1; font-variant-numeric: tabular-nums; }
-.bento-card .num span { font-size: 15px; font-weight: 560; color: var(--muted); margin-left: 2px; letter-spacing: 0; }
+.bento-card .num span { font-size: 15px; font-weight: 560; color: var(--muted); margin-left: 3px; letter-spacing: 0; line-height: 1; vertical-align: baseline; }
 .bento-card .lbl { margin-top: 3px; font-size: 11.5px; font-weight: 580; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .bento-card > div:last-child { margin-top: auto; }
 
@@ -1054,8 +1101,10 @@ body.examode .att { display: none !important; }
 .week-pill b { font-size: 14.5px; font-weight: 620; color: var(--ink); margin: 0; font-variant-numeric: tabular-nums; }
 .week-pill.is-today { background: var(--invert); border-color: transparent; color: color-mix(in srgb, var(--invert-ink) 62%, transparent); }
 .week-pill.is-today b { color: var(--invert-ink); }
-.week-pill.has-hol b { color: var(--red); }
-.week-pill.is-today.has-hol b { color: var(--invert-ink); }
+.week-pill[data-tipo="fest"] b { color: var(--red); }
+.week-pill[data-tipo="vac"] b { color: color-mix(in srgb, var(--amber) 88%, var(--ink)); }
+.week-pill[data-tipo="finde"] b, .week-pill[data-tipo="fuera"] b { color: var(--muted-2); }
+.week-pill.is-today b, .week-pill.is-today[data-tipo] b { color: var(--invert-ink); }
 .week-pill:active { transform: scale(.94); }
 
 .today-list, .soon-list { display: flex; flex-direction: column; }
@@ -1088,7 +1137,7 @@ body.examode .att { display: none !important; }
 .study-rec .k { margin-bottom: 8px; }
 .study-rec p { margin: 0; font-size: 15px; font-weight: 560; letter-spacing: -0.015em; line-height: 1.45; }
 .course-soon { display: flex; gap: 10px; }
-.course-soon > div { flex: 1 1 0; min-width: 0; padding: 14px 16px; border-radius: 20px; border: 1px solid var(--line); background: var(--surface); }.course-soon .v { font-size: 24px; font-weight: 680; letter-spacing: -0.045em; font-variant-numeric: tabular-nums;; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.course-soon > div { flex: 1 1 0; min-width: 0; padding: 14px 16px; border-radius: 20px; border: 1px solid var(--line); background: var(--surface); }.course-soon .v { font-size: 22px; font-weight: 680; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; line-height: 1.15; text-wrap: balance; overflow-wrap: anywhere; }
 .course-soon .k { margin-top: 4px; }
 .demo-banner { display: flex; flex-direction: column; gap: 12px; border-color: var(--line-2); }
 
@@ -1109,7 +1158,8 @@ body.examode .att { display: none !important; }
 .sch-day-h .badge.hot { background: var(--invert); color: var(--invert-ink); }
 .sch-n { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 520; }
 .sch-day-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
-.sch-empty { padding: 14px 2px; color: var(--muted); font-size: 13.5px; }
+/* Un día sin clase usa la misma caja discontinua que el resto de estados vacíos de la app */
+.sch-empty { padding: 16px 14px; border: 1px dashed var(--line-2); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--surface) 55%, transparent); color: var(--muted); font-size: 13px; text-align: center; }
 
 .class-row {
   position: relative;
@@ -1146,6 +1196,14 @@ body.examode .att { display: none !important; }
 .att button.att-p.on { background: color-mix(in srgb, var(--green) 18%, transparent); border-color: color-mix(in srgb, var(--green) 45%, transparent); color: var(--green); }
 .att button.att-r.on { background: color-mix(in srgb, var(--amber) 18%, transparent); border-color: color-mix(in srgb, var(--amber) 45%, transparent); color: var(--amber); }
 .att button.att-f.on { background: color-mix(in srgb, var(--red) 18%, transparent); border-color: color-mix(in srgb, var(--red) 45%, transparent); color: var(--red); }
+/* Leyenda de asistencia (v67.4): tres puntos con el color de cada botón, en vez de «P presente ·
+   R retraso · F falta» en texto corrido, que no decía de qué color era cada cosa. */
+.att-key { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 11.5px; font-weight: 560; color: var(--muted); }
+.att-key > span { display: inline-flex; align-items: center; gap: 5px; }
+.att-key .k { width: 8px; height: 8px; border-radius: 999px; background: var(--muted-2); }
+.att-key .k.att-p { background: var(--green); }
+.att-key .k.att-r { background: var(--amber); }
+.att-key .k.att-f { background: var(--red); }
 .att-legend { margin: 0; font-size: 12px; color: var(--muted); }
 .att-legend b { color: var(--ink); font-weight: 620; }/* ============================================== 21. Calendario escolar
    La rejilla se dimensiona sola: cada casilla es un cuadrado de 46 px como
@@ -1214,7 +1272,10 @@ button.cal-day {
   transition: background .16s ease, transform .14s ease, box-shadow .18s ease;
 }
 button.cal-day .n { font-size: 13px; font-weight: 560; line-height: 1; font-variant-numeric: tabular-nums; }
-button.cal-day.out { visibility: hidden; }
+/* Relleno del principio y el final del mes: invisible, pero ocupando su hueco.
+   El CSS viejo le dejaba 96 px de alto y sin ocultarlo, así que salían píldoras largas
+   en la primera y la última fila (en la captura, los días 9 y 12 parecían ovalados). */
+.cal-day.is-pad { visibility: hidden; min-height: 0; }
 button.cal-day:active { transform: scale(.9); }
 button.cal-day.is-lectivo:hover, button.cal-day.is-finde:hover { background: var(--surface-2); }
 button.cal-day.is-finde { color: var(--muted-2); }
@@ -1522,6 +1583,53 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .xp-log b { color: var(--ink); font-weight: 620; font-variant-numeric: tabular-nums; }
 
 /* ========================================================== 28. Herramientas */
+/* Buscador del taller (v67.4): con 30 tarjetas, escribir el nombre es más rápido que bajar. */
+.tools-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  min-height: 48px;
+  margin-bottom: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+.tools-search svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.tools-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+}
+.tools-search input:focus { outline: none; box-shadow: none; }
+.tools-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.tools-q-x {
+  flex: 0 0 28px;
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+}
+.tools-foot { text-align: center; margin-top: 8px; }
+/* Cada sección con su color: el icono repite el de la sección y así la rejilla tiene jerarquía
+   (antes cada tarjeta iba de un color distinto y parecía una feria). */
+.tools-sec { display: flex; align-items: center; gap: 8px; }
+.tools-sec::before {
+  content: "";
+  width: 7px; height: 7px;
+  border-radius: 999px;
+  background: var(--c, var(--muted-2));
+}
 .tools-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .tool-card {
   display: flex;
@@ -1788,12 +1896,22 @@ body.guest-mode .hub-avatar { box-shadow: 0 0 0 2px var(--amber); }
 }
 .guest-chip[hidden] { display: none; }
 
-/* Panel «Más» abierto: la pestaña se marca como activa (la barra va por encima) */
+/* Panel «Más» abierto (v67.4): antes se pintaba igual que una pestaña activa y parecían dos
+   secciones abiertas a la vez. Ahora se enciende el icono y aparece un punto debajo. */
 .phone.more-open #nav-more,
 .phone.more-open #nav-more .nav-lbl { color: var(--ink); }
 .phone.more-open #nav-more {
-  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
-  box-shadow: inset 0 0 0 1px var(--line);
+  background: transparent;
+  box-shadow: none;
+}
+.phone.more-open #nav-more::after {
+  content: "";
+  position: absolute;
+  bottom: 3px; left: 50%;
+  transform: translateX(-50%);
+  width: 4px; height: 4px;
+  border-radius: 999px;
+  background: currentColor;
 }
 
 /* Mientras carga una foto de un apunte, un fondo suave en vez de un hueco */
@@ -1805,7 +1923,11 @@ img.is-loading {
 }
 
 /* En táctil: más área para pulsar y sin hover pegajoso */
-html.is-touch button.cal-day { min-height: 46px; }
+/* v67.4: la casilla del día salía ovalada porque el CSS viejo (css/styles.css) le dejaba
+   `min-height: 96px` (y 46 px en táctil) mientras el ancho es de ~40 px. Aquí manda el círculo. */
+button.cal-day { min-height: 0; }
+html.is-touch .cal, html.is-touch .cal-weekdays { gap: 2px; }
+html.is-touch .cal-day { border-radius: 999px; }
 html.is-touch .week-pill { min-height: 52px; }
 html.is-touch .btn { min-height: 42px; }
 html.is-touch .icon-btn,
@@ -1823,12 +1945,13 @@ html.is-touch :is(.btn, .sheet-grid button, .cal-day, .cal-item, .week-pill):hov
   font-family: var(--display, var(--serif, var(--font)));
 }
 .hub-nav button { color: var(--nav-fg, var(--muted-2)); border-radius: var(--nav-radius, 14px); }
-.hub-nav button.is-active,
-.phone.more-open #nav-more {
+.hub-nav button.is-active {
   color: var(--nav-active-fg, var(--ink));
   background: var(--nav-active, color-mix(in srgb, var(--surface-2) 72%, transparent));
   box-shadow: inset 0 0 0 1px var(--nav-active-line, var(--line));
 }
+/* El panel «Más» abierto se marca con el icono encendido y un punto, no con el relleno de activo */
+.phone.more-open #nav-more { color: var(--nav-active-fg, var(--ink)); background: transparent; box-shadow: none; }
 /* Ganchos de la barra lateral y la cabecera viejas, recolocados aquí */
 html[data-skin="gameboy"] .hub-title-block h1 { text-transform: uppercase; font-size: 18px; letter-spacing: .12em; }
 html[data-skin="cyberpunk"] .hub-title-block h1 { text-transform: uppercase; letter-spacing: .08em; font-size: 22px; }
@@ -1884,6 +2007,31 @@ html[data-skin="redteam"] .hub-title-block h1::before { content: "⚠ "; color: 
 }
 .empty b { font-size: 15.5px; letter-spacing: -0.02em; }
 .empty .btn { margin-top: 2px; }
+
+/* Estado vacío con icono (v67.4): una sola pieza por vista en lugar de tarjeta + ceros + caja. */
+.empty-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 26px 18px;
+}
+.empty-hero .empty-ico {
+  width: 54px; height: 54px;
+  display: grid; place-items: center;
+  border-radius: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.empty-hero .empty-ico svg { width: 26px; height: 26px; }
+.empty-hero b { font-size: 16px; font-weight: 680; }
+.empty-hero p { margin: 0; font-size: 13.5px; line-height: 1.5; max-width: 34ch; }
+.empty-hero .btn { margin-top: 4px; min-width: 190px; }
+.radar-hint { text-align: center; margin-top: 6px; }
+.g-max { font-size: 12px; font-weight: 560; color: var(--muted); margin-left: 2px; letter-spacing: 0; }
+
 
 /* — Píldoras y etiquetas — */
 .badge { letter-spacing: 0.01em; }
@@ -1987,6 +2135,7 @@ button.row { width: 100%; text-align: left; }
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   gap: 1px;
+  min-height: 0;
   aspect-ratio: 1 / 1;
   padding: 2px;
   border-radius: 12px;
@@ -2110,7 +2259,9 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 .exam-strip .exam-strip-x { grid-area: x; color: var(--muted-2); font-size: 18px; }
 
 /* — Caja de conexión del chat (details nativo, con nuestro estilo) — */
-.chat-cfg { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+/* Cabecera del chat: estado a la izquierda, engranaje de Ollama a la derecha */
+.chat-head-right { display: flex; align-items: center; gap: 8px; }
+.chat-head-right .icon-btn { flex: 0 0 auto; }
 .chat-cfg > summary {
   display: flex; align-items: center; gap: 8px;
   cursor: pointer;

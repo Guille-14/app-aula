@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.3";
+  const APP_VERSION = "v67.4";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -249,6 +249,19 @@
   // Dentro del APK, Android sabe despertarse solo: js/avisos.js programa los avisos de
   // verdad (clase, exámenes, resumen) y suenan con la app cerrada. En el navegador no es
   // posible, así que ahí se sigue avisando solo mientras la app está abierta.
+  /* ---- Modo foco / Concentración -------------------------------------------------
+     El foco esconde la barra de abajo (es lo suyo: «sin distracciones»), pero tiene que poder
+     salirse. Aquí está el único sitio que toca esas clases, para que no se quede pegado. */
+  function bloqueoActivo() {
+    const hasta = Number((state.progress && state.progress.flags && state.progress.flags.examLockUntil) || 0);
+    return hasta > Date.now();
+  }
+  function ponFoco(on, conBloqueo) {
+    document.body.classList.toggle("focus-mode", !!on);
+    document.body.classList.toggle("exam-lock", !!(on && (conBloqueo || bloqueoActivo())));
+    if (!on && state.progress && state.progress.flags) state.progress.flags.examLockUntil = 0;
+  }
+
   function avisosNativos() { return !!(window.AulaAvisos && window.AulaAvisos.disponible()); }
   function avisosProgramados() { return avisosNativos() && state.settings.notifyNative === true; }
   function activarAvisosNativos() {
@@ -1252,7 +1265,7 @@
     rendimiento: ["Calificaciones", "Boletín de cada módulo"],
     exams: ["Exámenes", "Fechas y temario de cada prueba"],
     notes: ["Apuntes", "Texto del ciclo"],
-    tools: ["Herramientas SMR", "Hub técnico, estudio y sistema"],
+    tools: ["Herramientas", "Hub técnico, estudio y sistema"],
   };
 
   function bannersHTML() {
@@ -1622,7 +1635,7 @@
         <div class="field"><label>Inicio</label><input id="on-start" type="date" value="${esc(st.startDate || COURSE.start)}"></div>
         <div class="field"><label>Fin</label><input id="on-end" type="date" value="${esc(st.endDate || COURSE.end)}"></div>
       </div>
-      <label class="check"><input id="on-sat" type="checkbox" ${st.includeSaturday ? "checked" : ""}/> Incluir sábado en el horario</label>
+      <label class="switch"><span class="switch-t">Incluir sábado en el horario</span><input id="on-sat" type="checkbox" role="switch" ${st.includeSaturday ? "checked" : ""}/></label>
       ${foot(true)}
     </div>`;
     if (onStep === 3) return `<div class="onboard-full">
@@ -1788,7 +1801,14 @@
     for (let i = 0; i < 7; i++) {
       const d = new Date(mon); d.setDate(mon.getDate() + i);
       const iso = localISO(d);
-      pills.push({ iso, n: d.getDate(), lbl: DAYS_SHORT[i], today: iso === today, hol: !isLectivo(iso) });
+      // El número en rojo era para todo lo que no es lectivo: un festivo, un día de vacaciones,
+      // un finde y también los días de antes de empezar el curso. En septiembre eso pintaba la
+      // semana entera en rojo (que en un colegio se lee como «suspenso»). Ahora el rojo es solo
+      // para los festivos de verdad; vacaciones en ámbar y lo de fuera del curso en gris.
+      const info = dayInfo(iso);
+      const fuera = iso < COURSE.start || iso > COURSE.end;
+      const tipo = fuera ? "fuera" : info.kind === "festivo" ? "fest" : info.kind === "vacaciones" ? "vac" : info.kind === "finde" ? "finde" : "";
+      pills.push({ iso, n: d.getDate(), lbl: DAYS_SHORT[i], today: iso === today, tipo });
     }
     return `
       ${state.settings.demo && state.settings.onboarded ? `<div class="card demo-banner">
@@ -1809,12 +1829,12 @@
       ${todayList}
       ${state.settings.onboarded && typeof Notification !== "undefined" && Notification.permission !== "granted" ? `<div class="idle-note note-action">
         <span>Activa avisos: clase y fichas de repaso.</span>
-        <button class="btn btn-sm btn-primary" data-action="enable-notify">Activar</button>
+        <button class="btn btn-sm" data-action="enable-notify">Activar avisos</button>
       </div>` : ""}
       <div class="bento">
         <button class="bento-card" data-action="go" data-to="rendimiento">
           <div class="bento-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6 3"/></svg></div>
-          <div><div class="num">${gpa == null ? "—" : gpa.toFixed(1)}</div><div class="lbl">Nota media</div></div>
+          <div><div class="num">${gpa == null ? "—" : gpa.toFixed(1)}<span>/10</span></div><div class="lbl">Nota media</div></div>
         </button>
         <button class="bento-card" data-action="go" data-to="timer">
           <div class="bento-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5M9 3h6"/></svg></div>
@@ -1832,7 +1852,7 @@
       </div>
       <div>
         <div class="sec-head"><h3>Tu semana</h3><button data-action="go" data-to="schedule" class="linkish">Ver todo</button></div>
-        <div class="week-pills">${pills.map((d) => `<button class="week-pill ${d.today ? "is-today" : ""} ${d.hol ? "has-hol" : ""}" data-action="jump-day" data-date="${d.iso}">${d.lbl}<b>${d.n}</b></button>`).join("")}</div>
+        <div class="week-pills">${pills.map((d) => `<button class="week-pill ${d.today ? "is-today" : ""}" data-action="jump-day" data-date="${d.iso}" data-tipo="${d.tipo}">${d.lbl}<b>${d.n}</b></button>`).join("")}</div>
       </div>
       ${sinClaseHtml}
       <div class="study-rec">
@@ -1977,7 +1997,11 @@
       <div class="chips-row">
         ${avisoAuto}
         <span class="chip is-quiet">${semanaActiva === 1 ? "1 día de clase" : semanaActiva + " días de clase"}</span>
-        ${state.settings.showAttendance !== false ? `<span class="chip is-quiet att-legend">P presente · R retraso · F falta</span>` : ""}
+        ${state.settings.showAttendance !== false ? `<span class="att-key" aria-hidden="true">
+          <span><i class="k att-p"></i>Presente</span>
+          <span><i class="k att-r"></i>Retraso</span>
+          <span><i class="k att-f"></i>Falta</span>
+        </span>` : ""}
       </div>
       <div class="week-board">
         ${dias.map((iso, i) => {
@@ -2049,7 +2073,7 @@
     while (cells.length % 7) cells.push({ out: true });
     const claseDia = (k) => k === "festivo" ? "is-hol" : k === "vacaciones" ? "is-vac" : k === "lectivo" ? "is-lectivo" : k === "finde" ? "is-finde" : "is-fuera";
     const celdas = cells.map((c) => c.out
-      ? `<div class="cal-day out" aria-hidden="true"></div>`
+      ? `<div class="cal-day out is-pad" aria-hidden="true"></div>`
       : `<button type="button" class="cal-day ${claseDia(c.info.kind)}${c.hoy ? " is-hoy" : ""}" data-action="cal-day" data-date="${c.iso}"${c.hoy ? ' aria-current="date"' : ""}
           aria-label="${esc(fmtDateLong(c.iso) + " · " + (c.info.kind === "lectivo" ? "día de clase" : c.info.label || "sin clase"))}"><span class="n">${c.n}</span></button>`).join("");
     // Si el mes toca unas vacaciones, se avisa con una píldora (nombre y fechas)
@@ -2107,7 +2131,7 @@
         <div class="info-row"><b>Empieza</b><span>${esc(fmtDateLong(COURSE.start))}</span></div>
         <div class="info-row"><b>Acaba</b><span>${esc(fmtDateLong(COURSE.end))}</span></div>
         ${VACATIONS.map((v) => `<div class="info-row"><b>${esc(v.name)}</b><span>${esc(fmtDate(v.from))} → ${esc(fmtDate(v.to))}</span></div>`).join("")}
-        ${COURSE.local.map((d) => `<div class="info-row"><b>${esc(HOLIDAYS[d] || "Festivo local")}</b><span>${esc(fmtDateLong(d))}</span></div>`).join("")}
+        ${COURSE.local.map((d) => `<div class="info-row"><b>${esc(fmtDateLong(d))}</b><span>${esc(HOLIDAYS[d] || "Festivo local (Villena)")}</span></div>`).join("")}
       </div>
     </div>`;
   }
@@ -2544,6 +2568,19 @@
           <small>Cuando el profe diga fecha, la apuntas aquí y te cuenta los días.</small>
         </div>`;
     const filtros = [["proximos", "Próximas", proximos.length], ["pasados", "Pasadas", pasados.length], ["todos", "Todas", todos.length]];
+    // Sin ninguna prueba apuntada no se enseñan tres cosas diciendo lo mismo (tarjeta + ceros +
+    // caja vacía): un solo estado, con su botón.
+    if (!todos.length) {
+      // Sin nada apuntado no se enseña la tarjeta de cabecera (que habla de «la próxima») y luego
+      // una caja repitiendo lo mismo: un único estado, con su botón.
+      return `
+        <div class="empty empty-hero">
+          <div class="empty-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg></div>
+          <b>Aún no hay ningún examen apuntado</b>
+          <p>Cuando el profe diga la fecha del examen, la apuntas aquí y la app te lleva la cuenta: días que quedan, aviso la tarde antes y una hora antes.</p>
+          <button class="btn btn-primary" data-action="add-exam">Añadir el primero</button>
+        </div>`;
+    }
     return `
       ${hero}
       <div class="mini-stats">
@@ -2557,8 +2594,7 @@
       <div class="exam-list">
         ${lista.length ? lista.map(tarjeta).join("")
           : `<div class="empty"><b>${examFilter === "pasados" ? "Todavía no hay pruebas pasadas" : "Nada apuntado aquí"}</b>
-              <p>${examFilter === "pasados" ? "Cuando pase la fecha, la prueba baja a este montón." : "Apunta la fecha del examen y la app te lleva la cuenta."}</p>
-              <button class="btn btn-primary" data-action="add-exam">Añadir prueba</button></div>`}
+              <p>${examFilter === "pasados" ? "Cuando pase la fecha, la prueba baja a este montón." : "Cambia de filtro o apunta una prueba nueva con el botón de abajo."}</p></div>`}
       </div>
       <button class="btn btn-primary btn-block" data-action="add-exam">+ Añadir prueba</button>
     `;
@@ -2625,8 +2661,10 @@
   }
 
   // (se usa en la vista de Ajustes para no repetir el HTML de cada casilla)
+  /* Interruptor, no casilla de escritorio: en el móvil se toca con el pulgar y el estado se ve
+     de un vistazo. El texto va primero y el mando a la derecha, como en los ajustes del sistema. */
   function chk(id, on, label) {
-    return `<label class="check"><input id="${id}" type="checkbox" ${on ? "checked" : ""}/> ${label}</label>`;
+    return `<label class="switch"><span class="switch-t">${label}</span><input id="${id}" type="checkbox" role="switch" ${on ? "checked" : ""}/></label>`;
   }
   function avatarSrc(ic) {
     ic = ic || state.settings.avatarIcon || "letter";
@@ -2934,15 +2972,19 @@
             ${["dashboard", "schedule", "notes", "cards", "timer", "review", "achievements"].map((v) =>
               `<option value="${v}" ${st.startView === v ? "selected" : ""}>${esc((titles[v] || [v])[0])}</option>`).join("")}
           </select></div>
+        <div class="field"><label>Tema</label>
+          <div class="seg" role="group" aria-label="Tema de la app">
+            <button type="button" class="${st.uiTheme === "light" && !st.autoTheme ? "is-on" : ""}" data-action="toggle-theme" data-id="light">Claro</button>
+            <button type="button" class="${st.uiTheme !== "light" && !st.autoTheme ? "is-on" : ""}" data-action="toggle-theme" data-id="dark">Oscuro</button>
+            <button type="button" class="${st.autoTheme ? "is-on" : ""}" data-action="toggle-theme" data-id="auto">Auto</button>
+          </div>
+          <p class="hint">Auto: claro de día, oscuro a partir de las 21:00. La luna de la cabecera hace lo mismo de un toque.</p>
+        </div>
         ${chk("set-compact", st.compact, "Modo compacto")}
         ${chk("set-motion", st.reduceMotion, "Reducir animaciones")}
-        ${chk("set-autoth", st.autoTheme, "Tema automático (claro de día)")}
         ${chk("set-showxp", st.showXp !== false, "Mostrar XP")}
         ${chk("set-showmedals", st.showMedals !== false, "Mostrar medallas")}
         ${chk("set-showweek", st.showWeekStrip !== false, "Tira de la semana en Inicio")}
-        <button class="btn btn-block mt-10 ${st.uiTheme === "dark" ? "" : "btn-primary"}" type="button" data-action="toggle-theme">
-          Cambiar a tema ${st.uiTheme === "dark" ? "claro" : "oscuro"}
-        </button>
       </div>
 
       <p class="tools-kicker">Estudio</p>
@@ -2986,7 +3028,7 @@
           <button class="btn ${st.timetableKind === "temporal" ? "btn-primary" : ""}" type="button" data-action="restore-timetable" data-kind="temporal">Septiembre y junio · 16:00–21:45</button>
         </div>
         <p class="hint" style="margin:6px 0 0">Las horas cambian <b>solas</b> en septiembre y junio (entrada a las 16:00); el resto del curso, a las 15:10. El Horario avisa de qué plantilla está puesta y solo enseña clase los días lectivos.</p>
-        <label class="check"><input type="checkbox" data-action="toggle-auto-plantilla" ${st.timetableAuto !== false ? "checked" : ""}/> Cambiar el horario solo en septiembre y junio</label>
+        <label class="switch"><span class="switch-t">Cambiar el horario solo en septiembre y junio</span><input type="checkbox" role="switch" data-action="toggle-auto-plantilla" ${st.timetableAuto !== false ? "checked" : ""}/></label>
         <p class="hint">Cargar una plantilla a mano <b>sustituye</b> tus clases actuales (pide confirmación antes) y desactiva el cambio automático. Las aulas (AULA 1NF3, AULA 2, AULA 3) vienen con cada clase.</p>
       </div>
 
@@ -4064,7 +4106,7 @@
     if ($("#set-starth")) st.startHour = num("#set-starth", 8);
     if ($("#set-endh")) st.endHour = num("#set-endh", 21);
     const cd = on("#set-confirm"); if (cd !== undefined) st.confirmDelete = cd;
-    const at = on("#set-autoth"); if (at !== undefined) st.autoTheme = at;
+    // El tema ya no es una casilla + botón: es un segmentado con data-action (ver «set-theme»).
     const nr = on("#set-night"); if (nr !== undefined) st.nightRemind = nr;
     const ms = on("#set-morn"); if (ms !== undefined) st.morningSummary = ms;
     const av = on("#set-avatar"); if (av !== undefined) st.avatarOn = av;
@@ -4205,8 +4247,12 @@
     if (action === "cmd-run") { const it = cmdItems[Number(btn.dataset.i)]; closeCmd(); it?.run(); }
     if (action === "go") go(btn.dataset.to);
     if (action === "toggle-theme") {
-      state.settings.uiTheme = (state.settings.uiTheme === "light") ? "dark" : "light";
+      const id = btn.dataset.id;
+      if (id === "auto") state.settings.autoTheme = true;          // de día claro, de noche oscuro
+      else if (id === "light" || id === "dark") { state.settings.autoTheme = false; state.settings.uiTheme = id; }
+      else state.settings.uiTheme = (state.settings.uiTheme === "light") ? "dark" : "light";   // la luna de la cabecera
       applyTheme(); save();
+      if (id) { render(); toast(id === "auto" ? "Tema automático" : id === "light" ? "Tema claro" : "Tema oscuro"); }
     }
     if (action === "set-avatar") {
       collectOnboard();
@@ -4471,7 +4517,12 @@
     if (action === "note-to-cards") noteToCards();
     if (action === "note-share") compartirNota({ id });
     if (action === "share-timetable") compartirHorario();
-    if (action === "toggle-focus") document.body.classList.toggle("focus-mode");
+    if (action === "toggle-focus") {
+      const on = !document.body.classList.contains("focus-mode");
+      ponFoco(on);
+      toast(on ? "Modo foco: sin barra ni distracciones" : "Modo foco desactivado");
+      if (!on) render();
+    }
     if (action === "jump-day") jumpDay(btn.dataset.date);
     if (action === "undo") undo();
     if (window.AulaStudio && typeof window.AulaStudio.click === "function") window.AulaStudio.click(action, btn, e);
@@ -4549,7 +4600,7 @@
     if (tag === "input" || tag === "textarea" || tag === "select") return;
     if (e.key.toLowerCase() === "n") { e.preventDefault(); quickAdd(); }
     if (e.key.toLowerCase() === "c") { e.preventDefault(); openCapture(); }
-    if (e.key.toLowerCase() === "f") { e.preventDefault(); document.body.classList.toggle("focus-mode"); }
+    if (e.key.toLowerCase() === "f") { e.preventDefault(); ponFoco(!document.body.classList.contains("focus-mode")); }
     if (e.code === "Space" && view === "timer") { e.preventDefault(); toggleTimer(); }
   });
 
@@ -4693,10 +4744,14 @@
       <div class="bars-lbl">${DAYS_SHORT.map((d) => `<span>${d[0]}</span>`).join("")}</div>`;
   }
   function radarSVG() {
-    const mods = state.subjects.slice(0, 8);
+    // Antes se cortaba en 8 módulos: con 10 asignaturas el radar enseñaba 8 vértices y el texto
+    // de arriba decía «10 de 10 módulos con nota». Ahora entran todos.
+    const mods = state.subjects.slice(0, 12);
     const has = mods.some((s) => s.grade !== "" && Number.isFinite(Number(s.grade)));
     if (!has) {
-      return `<div class="radar-empty">
+      // Misma forma que el resto de estados vacíos (icono, título, texto y un botón).
+      return `<div class="empty-hero">
+        <div class="empty-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5M12 8v8"/></svg></div>
         <b>Aún no hay notas</b>
         <p>Cuando pongas la nota de un módulo, aquí verás el radar del ciclo.</p>
         ${mods.length ? `<button class="btn btn-primary" data-action="edit-grade" data-id="${mods[0].id}">Poner una nota</button>`
@@ -4718,11 +4773,20 @@
     while (data.length < 3) data.push(pt(data.length, 0));
     const poly = data.map((x) => x.join(",")).join(" ");
     const labels = mods.map((sub, i) => {
-      const [x, y] = pt(i, R + 18);
+      const [x, y] = pt(i, R + 16);
       const short = sub.name.split(" ").map((w) => w.slice(0, 3)).join("").slice(0, 6).toUpperCase();
-      return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-size="10" font-weight="700" fill="currentColor" opacity=".55">${esc(short)}</text>`;
+      return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-size="9.5" font-weight="700" fill="currentColor" opacity=".6">${esc(short)}</text>`;
     }).join("");
-    return `<svg viewBox="0 0 280 280" class="radar-box">${rings}<polygon points="${poly}" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="2"/>${data.map((x) => `<circle cx="${x[0]}" cy="${x[1]}" r="4" fill="#10b981"/>`).join("")}${labels}</svg>`;
+    // Cada punto lleva su nombre completo y su nota: en pantalla pequeña los rótulos del radar
+    // no caben, así que al tocar (o pasar por encima) el punto sale el dato.
+    const puntos = mods.map((sub, i) => {
+      const [x, y] = data[i];
+      const n = Number(sub.grade);
+      const col = n >= 9 ? "#10b981" : n >= 5 ? "#38bdf8" : "#ef4444";
+      return `<circle cx="${x}" cy="${y}" r="7" fill="${col}" stroke="var(--paper, #fff)" stroke-width="1.5"><title>${esc(sub.name)}: ${Number.isFinite(n) ? n.toFixed(1) : "sin nota"} / ${maxNota}</title></circle>`;
+    }).join("");
+    return `<svg viewBox="0 0 280 280" class="radar-box" role="img" aria-label="Perfil de notas por módulo">${rings}<polygon points="${poly}" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="2"/>${puntos}${labels}</svg>
+      <p class="hint radar-hint">Toca un punto del radar y sale el módulo con su nota.</p>`;
   }
   function gradeForm(s) {
     const max = Number(state.settings.gradeMax) || 10;
@@ -4758,7 +4822,7 @@
             <b>${esc(sub.name)}</b>
             <small>${fmtHours(mins)} de estudio · ${esc(sub.teacher || "sin profesor")}</small>
           </div>
-          <div class="g ${gcls}">${n == null ? "—" : n.toFixed(2)}</div>
+          <div class="g ${gcls}">${n == null ? "—" : n.toFixed(2)}<span class="g-max">/${max}</span></div>
         </div>
         <button type="button" class="grade-row" data-action="edit-grade" data-id="${sub.id}">
           <span class="grade-row-t"><b>${n == null ? "Poner la nota" : "Cambiar la nota"}</b>
@@ -4807,6 +4871,7 @@
     COURSE, holidayName, OFFICIAL_MODS, OFFICIAL_SLOTS, OFFICIAL_PLAN, applyOfficialTimetable,
     dayInfo, isLectivo, plantillaDeMes, syncPlantilla, retimarHorario, semanaDe, HOLIDAYS, VACATIONS,
     PLAN_VERSION, actualizarHorarioOficial, avatarSrcPintable, OFFICIAL_SLOTS_V1, esHoraDelCentro,
+    ponFoco, bloqueoActivo,
     unlockNote(id) { unlockedNotes.delete(id); },
     lockNote(id) { unlockedNotes.add(id); },
     get loadProblem() { return loadProblem; },
@@ -4839,11 +4904,16 @@
   const hash = (location.hash || "").replace("#", "");
   if (esVista(hash)) view = hash;
   applyTheme();
-  // Concentración que sobrevive a recargas
+  /* Concentración que sobrevive a recargas.
+     OJO: el modo foco esconde la barra de abajo. Antes, cuando caducaba el bloqueo (o se salía a
+     mano desde la vista de Concentración) solo se quitaba «exam-lock» y el foco se quedaba pegado
+     para siempre: al abrir la app no se veía la barra de abajo ni forma evidente de recuperarla. */
   const _lockUntil = Number((state.progress && state.progress.flags && state.progress.flags.examLockUntil) || 0);
   if (_lockUntil > Date.now()) {
-    document.body.classList.add("focus-mode", "exam-lock");
-    setTimeout(() => document.body.classList.remove("exam-lock"), _lockUntil - Date.now());
+    ponFoco(true, true);
+    setTimeout(() => {
+      if (!bloqueoActivo()) ponFoco(false, true);
+    }, _lockUntil - Date.now());
   } else if (_lockUntil) {
     state.progress.flags.examLockUntil = 0;
   }

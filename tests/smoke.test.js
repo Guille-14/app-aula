@@ -849,8 +849,11 @@ async function testAuditoria() {
     const A = env.A, r = env.doc;
     check(Array.isArray(A.state.exams) && A.state.exams.length === 0, "exámenes: el estado trae la lista vacía");
     A.go("exams");
-    check(!!r.querySelector(".exam-hero"), "exámenes: la vista abre con su cabecera");
-    check(/Sin pruebas apuntadas/.test(r.querySelector(".exam-hero").textContent), "exámenes: sin nada apuntado lo dice claro");
+    // v67.4: sin pruebas apuntadas hay un solo estado vacío (con icono y un botón), no tarjeta + caja
+    const vacio = r.querySelector("#view .empty-hero");
+    check(!!vacio, "exámenes: la vista abre con su estado vacío");
+    check(/examen/i.test(vacio.textContent) && r.querySelectorAll('#view [data-action="add-exam"]').length === 1,
+      "exámenes: lo dice claro y solo hay un botón para añadir");
 
     // Apuntar una prueba a mano
     act(env, "add-exam", {});
@@ -933,8 +936,15 @@ async function testAuditoria() {
     check(!!entrada && /Ollama/i.test(entrada.textContent), "chat: «Más» tiene el acceso al chat de Ollama");
     check(!!r.querySelector('#more-sheet [data-view="notes"]'), "apuntes: al salir de la barra, aparece en «Más»");
     env.A.go("chatbot");
-    check(!!r.getElementById("set-ollama") && !!r.getElementById("set-omodel"), "chat: se puede poner la dirección y el modelo");
-    check(r.querySelector(".chat-cfg").open, "chat: la caja de conexión se abre sola mientras no haya servidor");
+    // v67.4: la dirección y el modelo ya no viven dentro del chat: van tras el engranaje, en un modal
+    check(!r.getElementById("set-ollama"), "chat: la config técnica no estorba dentro del chat");
+    const engranaje = r.querySelector('[data-action="ollama-config"]');
+    check(!!engranaje, "chat: hay un engranaje para los ajustes de Ollama");
+    engranaje.click();
+    check(!!r.getElementById("set-ollama") && !!r.getElementById("set-omodel"), "chat: el engranaje abre la dirección y el modelo");
+    check(!!r.getElementById("modal-form") && /Ollama/i.test(r.querySelector(".modal-card").textContent), "chat: sale en un modal, no en la pantalla del chat");
+    r.querySelector('[data-action="close-modal"]').click();
+    check(!r.getElementById("modal-form"), "chat: el modal se cierra sin dejar rastro");
     const atajos = [...r.querySelectorAll(".chat-shortcuts .chip")];
     check(atajos.length >= 3, "chat: hay atajos de preguntas (" + atajos.length + ")");
     const textoAtajo = atajos[0].textContent.trim();
@@ -1947,6 +1957,115 @@ async function testAuditoria() {
     env.window.Date = Reloj;
     check(env.doc.documentElement.getAttribute("data-theme") === "dark", "tema automático: de noche se pone en oscuro");
     check(env.doc.querySelector('meta[name="theme-color"]').content === "#000000", "tema automático: la barra del móvil también cambia de color");
+  }
+
+  // --- v67.4: la barra de abajo, la semana, el calendario y los controles duplicados ---
+  {
+    const env = boot();
+    ready(env.A);
+    const A = env.A, r = env.doc;
+    const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+
+    // 1. La barra de abajo: el foco se controla desde un único sitio y se suelta solo
+    check(typeof A.ponFoco === "function" && typeof A.bloqueoActivo === "function",
+      "barra: el foco de Concentración se controla desde un solo sitio");
+    A.state.progress.flags = Object.assign({}, A.state.progress.flags, { examLockUntil: Date.now() - 1000 });
+    check(A.bloqueoActivo() === false, "barra: un bloqueo caducado ya no cuenta como activo");
+    A.ponFoco(true, true);
+    check(r.body.classList.contains("focus-mode") && r.body.classList.contains("exam-lock"), "barra: el bloqueo vivo sigue entrando en foco");
+    A.ponFoco(false);
+    check(!r.body.classList.contains("focus-mode") && !r.body.classList.contains("exam-lock") && !A.state.progress.flags.examLockUntil,
+      "barra: salir del foco (o caducar el bloqueo) devuelve la barra de abajo");
+
+    // 2. Cabecera, fecha y semana
+    check(tienePropiedad(".hub-header h1", "-webkit-line-clamp:2", ui), "cabecera: los títulos largos bajan a una segunda línea");
+    check(!casa(".hub-header h1 {[^}]*text-overflow", ui), "cabecera: sin puntos suspensivos en el título de la vista");
+    check(!casa(".course-soon .v {[^}]*text-overflow", ui), "inicio: la fecha del primer día de clase no se recorta");
+    // El minificador quita las comillas del atributo: se admiten las dos formas
+    const rojoFestivo = tienePropiedad('.week-pill[data-tipo="fest"] b', "color: var(--red)", ui)
+      || tienePropiedad(".week-pill[data-tipo=fest] b", "color:var(--red)", ui)
+      || /data-tipo=["']?fest["']?\]\s*b\s*\{\s*color:\s*var\(--red\)/.test(ui);
+    check(rojoFestivo && !ui.includes(".week-pill.has-hol"), "semana: el rojo es solo del día festivo");
+    const pildora = { fest: false, vac: false, fuera: false };
+    A.state.settings.showWeekStrip = true;
+    A.render();
+    const pills = [...r.querySelectorAll(".week-pill")];
+    check(pills.length === 7 && pills.every((p) => p.dataset.tipo), "semana: cada día de la tira lleva su tipo (" + pills.map((p) => p.dataset.tipo).join(",") + ")");
+
+    // 3. Calendario: casillas redondas y relleno invisible
+    check(tienePropiedad("button.cal-day", "min-height: 0", ui), "calendario: el día no hereda los 96 px del CSS viejo");
+    check(tienePropiedad(".cal-day.is-pad", "visibility: hidden", ui), "calendario: el relleno del mes ni se ve ni estira la fila");
+    A.go("schedule");
+    act(env, "sch-view", { mode: "month" });
+    const dias = [...r.querySelectorAll(".cal .cal-day")];
+    check(dias.length >= 28 && dias.some((d) => d.classList.contains("is-pad")), "calendario: el mes pinta sus casillas y su relleno");
+
+    // 4. Exámenes: un solo estado vacío y un solo botón
+    A.state.exams = [];
+    A.go("exams");
+    check(r.querySelectorAll('#view [data-action="add-exam"]').length === 1 && !!r.querySelector("#view .empty-hero") && !r.querySelector("#view .mini-stats"),
+      "exámenes: sin nada apuntado hay un solo estado y un solo botón");
+
+    // 5. Radar: todos los módulos, no 8
+    A.state.subjects.forEach((sub, i) => { sub.grade = i < 11 ? 7 : ""; });
+    A.go("rendimiento");
+    const puntos = r.querySelectorAll('.radar-box circle[r="7"]').length;
+    check(puntos === Math.min(A.state.subjects.length, 12), "radar: un punto por módulo (" + puntos + " de " + A.state.subjects.length + ")");
+
+    // 6. Hoja «Más»: sin subtítulo, con la última tarjeta a todo lo ancho y una sola pestaña activa
+    check(!/sheet-hint/.test(fs.readFileSync(path.join(ROOT, "index.html"), "utf8")),
+      "más: fuera el subtítulo que repetía lo de la barra de abajo");
+    check(tienePropiedad(".sheet-grid > :last-child:nth-child(odd)", "grid-column: 1 / -1", ui), "más: la sección impar no deja huecos");
+    check(!tienePropiedad(".phone.more-open #nav-more", "background: var(--nav-active", ui) && tienePropiedad(".phone.more-open #nav-more::after", "content:", ui),
+      "más: abrirlo no pinta una segunda pestaña activa");
+
+    // 7. Herramientas: buscador y un color por sección
+    A.go("tools");
+    check(!!r.getElementById("tools-q") && !r.querySelector("#view .tools-kicker"), "herramientas: buscador sí, rótulo repetido no");
+    const puerta = r.getElementById("tools-q");
+    if (puerta) {
+      puerta.value = "chmod";
+      puerta.dispatchEvent(new env.window.Event("input", { bubbles: true }));
+      const filtradas = [...r.querySelectorAll("#view .tool-card b")].map((b) => b.textContent);
+      check(filtradas.length > 0 && filtradas.length < 10 && filtradas.every((t) => /chmod/i.test(t)), "herramientas: el buscador filtra (" + filtradas.join(", ") + ")");
+      const colores = new Set([...r.querySelectorAll("#view .tool-ico")].map((i) => i.getAttribute("style")));
+      check(colores.size === 1, "herramientas: los resultados comparten el color de su sección");
+    }
+    check((fs.readFileSync(path.join(ROOT, "js", "tools.js"), "utf8").match(/\["Red",\s*"blue",\s*\[/) || []).length === 1,
+      "herramientas: las secciones llevan su color declarado");
+
+    // 8. Chat: la configuración de Ollama detrás del engranaje
+    A.go("chatbot");
+    check(!r.getElementById("set-ollama") && !!r.querySelector('#view [data-action="ollama-config"]'), "chat: sin campos de servidor dentro del chat");
+    act(env, "ollama-config");
+    check(!!r.getElementById("set-ollama") && !!r.getElementById("set-omodel") && !!r.getElementById("modal-form"), "chat: el engranaje abre la configuración en su hoja");
+    act(env, "close-modal");
+
+    // 9. Ajustes: un solo control de tema, e interruptores en vez de casillas
+    A.go("settings");
+    const temaBtns = [...r.querySelectorAll('#view .seg [data-action="toggle-theme"]')];
+    check(temaBtns.length === 3 && !r.getElementById("set-autoth") && !/Cambiar a tema/.test(r.getElementById("view").textContent),
+      "ajustes: un único control de tema (claro · oscuro · auto)");
+    act(env, "toggle-theme", { id: "auto" });
+    check(A.state.settings.autoTheme === true, "ajustes: el modo auto se guarda");
+    act(env, "toggle-theme", { id: "light" });
+    check(A.state.settings.autoTheme === false && A.state.settings.uiTheme === "light", "ajustes: elegir claro apaga el automático");
+    const interruptor = tienePropiedad('.switch input[type="checkbox"]', "width: 50px", ui)
+      || tienePropiedad(".switch input[type=checkbox]", "width:50px", ui)
+      || /\.switch\s+input\[type=["']?checkbox["']?\]\s*\{[^}]*width:\s*50px/.test(ui);
+    check(interruptor && !!r.querySelector("#view .switch input[type=checkbox]"),
+      "ajustes: las opciones de sí/no son interruptores");
+    check(!/class="check"/.test(["js/app.js", "js/studio.js", "js/tools.js"].map((f) => fs.readFileSync(path.join(ROOT, f), "utf8")).join("")),
+      "formularios: no queda ninguna casilla de escritorio");
+
+    // 10. Leyenda de asistencia con los colores de cada botón
+    A.state.settings.showAttendance = true;
+    A.go("schedule");
+    act(env, "sch-view", { mode: "week" });
+    const leyenda = r.querySelector("#view .att-key");
+    check(!!leyenda && leyenda.querySelectorAll(".k").length === 3 && /Presente/.test(leyenda.textContent) && /Falta/.test(leyenda.textContent),
+      "asistencia: la leyenda son tres puntos con su nombre (presente, retraso, falta)");
+    check(env.errors.length === 0, "v67.4: sin errores de consola (" + env.errors.slice(0, 2).join(" · ") + ")");
   }
 }
 

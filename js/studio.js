@@ -143,7 +143,7 @@
       for (let n = 1; n <= dim; n++) cells.push(`${y}-${pad(m + 1)}-${pad(n)}`);
       body = `<div class="cal cal-dense">${DAYS_SHORT().map((x) => `<div class="dow">${x}</div>`).join("")}
         ${cells.map((iso) => {
-          if (!iso) return `<div class="cal-day out"></div>`;
+          if (!iso) return `<div class="cal-day out is-pad"></div>`;
           const inf = dayInfo(iso);
           const bloques = bloquesDe(iso);
           return `<div class="cal-day ${iso === hoyISO() ? "today" : ""} ${inf.kind === "lectivo" ? "" : "out"}" data-action="agenda-day" data-date="${iso}" title="${esc(inf.label || "Clase")}">
@@ -270,6 +270,41 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     askOllama(q).then(finish).catch(() => finish(localBrain(q) + "\n\n(Ollama no respondió; respondió el motor local.)"));
   }
 
+  /* La config técnica (dirección y modelo) vivía dentro del chat y estorbaba a quien solo quiere
+     preguntar. Ahora está detrás del engranaje de la cabecera, en un modal y en un solo sitio. */
+  function ollamaCfgHTML() {
+    const url = st().settings.ollamaUrl || "";
+    const modelo = st().settings.ollamaModel || "llama3.2";
+    return `
+      <p class="hint">Pon la dirección del ordenador donde tengas Ollama, en la misma Wi-Fi. Ejemplo: <b>http://192.168.1.10:11434</b>. Se guarda solo en este móvil: no hay ninguna nube de por medio.</p>
+      <div class="field"><label for="set-ollama">Dirección de Ollama</label><input id="set-ollama" type="url" inputmode="url" value="${esc(url)}" placeholder="http://192.168.1.10:11434" /></div>
+      <div class="field"><label for="set-omodel">Modelo</label><input id="set-omodel" list="ollama-modelos" value="${esc(modelo)}" placeholder="llama3.2" /><datalist id="ollama-modelos"></datalist></div>
+      <div class="hero-actions">
+        <button type="button" class="btn" data-action="ollama-test">Probar conexión</button>
+        <button type="button" class="btn" data-action="ollama-modelos">Ver modelos</button>
+        ${url ? `<button type="button" class="btn btn-ghost" data-action="ollama-local">Usar solo el local</button>` : ""}
+      </div>
+      <p class="hint" id="ollama-estado">${esc(textoOllama())}</p>`;
+  }
+
+  function abrirConfigOllama() {
+    const Aula = api();
+    if (!Aula || typeof Aula.openModal !== "function") return;
+    Aula.openModal("Ollama (IA local)", ollamaCfgHTML(), {
+      confirm: "Guardar",
+      onSubmit() {
+        const campo = document.getElementById("set-ollama");
+        if (campo) st().settings.ollamaUrl = campo.value.trim();
+        const modelo = document.getElementById("set-omodel");
+        if (modelo) st().settings.ollamaModel = modelo.value.trim() || "llama3.2";
+        save();
+        Aula.closeModal();
+        render();
+        toast(st().settings.ollamaUrl ? "Ollama guardado" : "Sin dirección: el chat usa el motor local");
+      },
+    });
+  }
+
   function chatbot() {
     const log = st()._chat || [];
     const url = st().settings.ollamaUrl || "";
@@ -283,21 +318,13 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
             <b>${conectado ? "Tu Ollama" : "Motor local"}</b>
             <div class="hint">${conectado ? esc(url) + " · " + esc(modelo) : "Tus apuntes y tu calendario, sin salir del móvil."}</div>
           </div>
-          <span class="badge ${conectado ? "done" : ""}">${conectado ? "Conectado" : "Sin red"}</span>
-        </div>
-        <details class="chat-cfg"${conectado ? "" : " open"}>
-          <summary>${conectado ? "Cambiar servidor o modelo" : "Conectar mi Ollama"}</summary>
-          <p class="hint">Pon la dirección del ordenador donde tengas Ollama, en la misma Wi-Fi. Ejemplo: <b>http://192.168.1.10:11434</b>. Se guarda solo en este móvil.</p>
-          <div class="field"><label for="set-ollama">Dirección de Ollama</label><input id="set-ollama" type="url" inputmode="url" value="${esc(url)}" placeholder="http://192.168.1.10:11434" /></div>
-          <div class="field"><label for="set-omodel">Modelo</label><input id="set-omodel" list="ollama-modelos" value="${esc(modelo)}" placeholder="llama3.2" /><datalist id="ollama-modelos"></datalist></div>
-          <div class="hero-actions">
-            <button class="btn btn-primary" data-action="ollama-save">Guardar</button>
-            <button class="btn" data-action="ollama-test">Probar conexión</button>
-            ${conectado ? `<button class="btn" data-action="ollama-modelos">Ver modelos</button>` : ""}
-            ${conectado ? `<button class="btn btn-ghost" data-action="ollama-local">Usar solo el local</button>` : ""}
+          <div class="chat-head-right">
+            <span class="badge ${conectado ? "done" : ""}">${conectado ? "Conectado" : "Sin red"}</span>
+            <button type="button" class="icon-btn" data-action="ollama-config" aria-label="Ajustes de Ollama" title="Ajustes de Ollama">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+            </button>
           </div>
-          <p class="hint" id="ollama-estado">${esc(textoOllama())}</p>
-        </details>
+        </div>
       </div>
       <div class="card">
         <div class="chat-log" id="chat-log">${log.map((m) => `<div class="chat-msg ${m.role}"><b>${m.role === "user" ? "Tú" : "Aula"}</b><pre>${esc(m.text)}</pre></div>`).join("") || "<div class='empty'>Prueba con una pregunta o toca un atajo.</div>"}</div>
@@ -398,15 +425,12 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     </div>
     <div class="card">
       <h3>Ollama (IA local)</h3>
-      <p class="hint">El chat funciona siempre con el motor local (tus apuntes y tu calendario, sin red). Si además tienes Ollama en tu ordenador, escribe su dirección y el chat tirará de tu modelo. <b>No hay ninguna nube de por medio.</b></p>
-      <div class="field"><label for="set-ollama">Dirección de Ollama</label><input id="set-ollama" type="url" inputmode="url" value="${esc(st().settings.ollamaUrl || "")}" placeholder="http://192.168.1.10:11434" /></div>
-      <div class="field"><label for="set-omodel">Modelo</label><input id="set-omodel" value="${esc(st().settings.ollamaModel || "llama3.2")}" /></div>
-      <div class="hero-actions">
-        <button class="btn btn-primary" data-action="ollama-save">Guardar</button>
-        <button class="btn" data-action="ollama-test">Probar conexión</button>
-        <button class="btn" data-action="ollama-local">Quitar y usar el local</button>
+      <p class="hint">El chat funciona siempre con el motor local (tus apuntes y tu calendario, sin red). Si además tienes Ollama en tu ordenador, el chat tirará de tu modelo. <b>No hay ninguna nube de por medio.</b></p>
+      <div class="row">
+        <div><b>${st().settings.ollamaUrl ? "Servidor conectado" : "Sin servidor"}</b>
+          <small class="hint">${esc(st().settings.ollamaUrl || "El chat usa el motor local del móvil")}</small></div>
+        <button class="btn btn-sm" data-action="ollama-config">Configurar</button>
       </div>
-      <p class="hint" id="ollama-estado">${esc(textoOllama())}</p>
     </div>
     <div class="card">
       <h3>Modo invitado</h3>
@@ -535,13 +559,13 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     if (action === "examode-on") {
       const hasta = Date.now() + 90 * 60 * 1000;
       st().progress.flags = Object.assign({}, st().progress.flags, { examLockUntil: hasta });
-      document.body.classList.add("focus-mode", "exam-lock");
+      window.Aula.ponFoco(true, true);
       save();
       toast("Concentración: 90 min sin distracciones");
     }
     if (action === "examode-off") {
       st().progress.flags = Object.assign({}, st().progress.flags, { examLockUntil: 0 });
-      document.body.classList.remove("exam-lock");
+      window.Aula.ponFoco(false);      // quita también el foco: si no, la barra de abajo no volvía
       save(); render();
       toast("Modo concentración desactivado");
     }
@@ -561,6 +585,7 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
         toast(msg);
       });
     }
+    if (action === "ollama-config") abrirConfigOllama();
     if (action === "ollama-save" || action === "ollama-test" || action === "ollama-local") {
       if (action === "ollama-local") {
         st().settings.ollamaUrl = "";
