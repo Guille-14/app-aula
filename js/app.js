@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.5.0";
+  const APP_VERSION = "v67.6.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -786,8 +786,24 @@
       // Agenda (v67.5): los trabajos pueden puntuar y apuntar a un componente del esquema
       puntua: e.puntua !== false,
       componenteId: asText(e.componenteId),
+      // Agenda (v67.6): un examen puede durar de una hora a otra, y una entrega tiene plazo
+      endTime: asHHMM(e.endTime, ""),
+      openDate: asISO(e.openDate),
+      openTime: asHHMM(e.openTime, ""),
+      estado: asText(e.estado),
       createdAt: Number(e.createdAt) || Date.now(),
     }));
+    /* El plazo de una entrega va de apertura a cierre. Si la apertura llega después del cierre (o
+       no hay cierre), no se enseña un plazo imposible: se descarta la apertura. */
+    out.exams.forEach((e) => {
+      if (e.openDate && e.openDate > e.date) { e.openDate = ""; e.openTime = ""; }
+      if (String(e.kind || "").toLowerCase() !== "trabajo") {
+        e.openDate = ""; e.openTime = ""; e.estado = "";
+      } else if (!["pendiente", "entregado", "corregido"].includes(e.estado)) {
+        e.estado = "pendiente";   // una entrega siempre está en uno de los tres estados
+      }
+      if (e.endTime && e.time && minutesOf(e.endTime) <= minutesOf(e.time)) e.endTime = "";
+    });
     // Un componente que ya no existe (se borró o se cambió el esquema) deja de apuntar a nada
     out.exams.forEach((e) => {
       if (!e.componenteId) return;
@@ -1995,11 +2011,16 @@
     // Próxima prueba: una tira fina, solo si hay algo apuntado por delante
     const proxExam = asArray(state.exams).filter((e) => e.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0];
     const dExam = proxExam ? daysUntil(proxExam.date) : null;
+    const proxEsTrabajo = proxExam ? esTrabajo(proxExam) : false;
     const proxExamenHtml = proxExam
       ? `<button class="exam-strip" data-action="go" data-to="exams">
-          <span class="k">${dExam === 0 ? "Prueba hoy" : dExam === 1 ? "Prueba mañana" : "En " + dExam + " días"}</span>
+          <span class="k">${proxEsTrabajo
+            ? (dExam === 0 ? "La entrega es hoy" : dExam === 1 ? "Entrega mañana" : "Entrega en " + dExam + " días")
+            : (dExam === 0 ? "Prueba hoy" : dExam === 1 ? "Prueba mañana" : "En " + dExam + " días")}</span>
           <b>${esc(proxExam.title)}</b>
-          <small>${esc(subjectName(proxExam.subjectId))} · ${esc(fmtDate(proxExam.date))}${proxExam.time ? " · " + esc(proxExam.time) : ""}</small>
+          <small>${esc(subjectName(proxExam.subjectId))} · ${proxEsTrabajo
+            ? "hasta el " + esc(fmtDate(proxExam.date)) + (proxExam.time ? " a las " + esc(proxExam.time) : "")
+            : esc(fmtDate(proxExam.date)) + (proxExam.time ? " · " + esc(proxExam.time) + (proxExam.endTime ? " – " + esc(proxExam.endTime) : "") : "")}</small>
           <span class="exam-strip-x" aria-hidden="true">›</span>
         </button>`
       : "";
@@ -2710,6 +2731,41 @@
       `<option value="${c.id}"${c.id === sel ? " selected" : ""}>${esc(c.nombre)} · ${Number(c.peso).toFixed(Number(c.peso) % 1 ? 1 : 0)} %</option>`).join("");
   }
 
+  /* ————— Agenda con apartados (v67.6) —————
+     Lo que se apunta aquí: exámenes y pruebas (con su hora de principio a fin) y trabajos o
+     entregas (con su plazo: cuándo se abre y cuándo se cierra). Todo se organiza por módulo,
+     como los temas y las actividades de Aules. */
+  const esTrabajo = (e) => String((e && e.kind) || "").toLowerCase() === "trabajo";
+  const ESTADOS = { pendiente: "Pendiente de hacer", entregado: "Entregado", corregido: "Corregido" };
+  const estadoDe = (e) => (!esTrabajo(e) ? "" : (ESTADOS[e.estado] ? e.estado : "pendiente"));
+  const etiquetaDe = (e) => (esTrabajo(e) ? (e.title || "Entrega") : (e.title || "Examen"));
+
+  // ¿Se puede entregar ya? El plazo va de la apertura al cierre (las dos son opcionales).
+  function plazoDe(e) {
+    const hoy = todayISO();
+    const desde = e.openDate || "";
+    const abierta = (!desde || desde <= hoy) && e.date >= hoy;
+    const cerrada = e.date < hoy;
+    const pendiente = estadoDe(e) === "pendiente";
+    return { desde, abierta, cerrada, pendiente };
+  }
+
+  // «lunes, 14 de septiembre de 2026, 20:30» — como lo escribe Aules
+  function cuandoTexto(iso, hhmm) {
+    if (!iso) return "";
+    return fmtDateLong(iso) + (hhmm ? ", " + hhmm : "");
+  }
+
+  // El icono de cada tipo de prueba (documento, práctica, trabajo, recuperación…)
+  function iconoExam(e) {
+    const k = String((e && e.kind) || "").toLowerCase();
+    if (k === "trabajo") return `<path d="M4 5h11l5 5v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M15 5v5h5"/><path d="M8 14h6"/>`;
+    if (k === "práctico" || k === "practico") return `<path d="M9 3v6.5L4.5 17a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L15 9.5V3"/><path d="M8 3h8M7 15h10"/>`;
+    if (k === "recuperación" || k === "recuperacion") return `<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>`;
+    if (k === "prueba") return `<path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/>`;
+    return `<rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4V3h6v1M8.5 10.5h6M8.5 14.5h4"/>`;
+  }
+
   /* El desplegable del componente (o el aviso de que ese módulo aún no tiene esquema).
      Es una función porque el formulario la repinta al cambiar de módulo. */
   function campoComponente(sub, sel) {
@@ -2726,30 +2782,52 @@
   function examForm(e = {}) {
     const max = Number(state.settings.gradeMax) || 10;
     const tipo = String(e.kind || "Examen");
-    const esTrabajo = tipo.toLowerCase() === "trabajo";
+    const trabajo = tipo.toLowerCase() === "trabajo";
     const puntua = e.puntua !== false;
     const sub = subjectById(e.subjectId || subjectFocus || (state.subjects[0] || {}).id);
-    const ev = evalDe(sub);
+    const estado = ["pendiente", "entregado", "corregido"].includes(e.estado) ? e.estado : "pendiente";
     // El trabajo puede llenar un componente del esquema (así la nota no se mete dos veces)
     const bloqueTrabajo = `
+      <div class="form-row">
+        <div class="field"><label>Se abre</label><input name="openDate" type="date" value="${esc(e.openDate || "")}" /></div>
+        <div class="field"><label>A las</label><input name="openTime" type="time" value="${esc(e.openTime || "")}" /></div>
+      </div>
+      <p class="hint" style="margin:-4px 0 10px">El plazo va de la apertura al cierre. Déjalo vacío si el profe no ha dicho cuándo se abre.</p>
+      <div class="field"><label>Estado</label><select name="estado">
+        ${Object.entries(ESTADOS).map(([k, t]) => `<option value="${k}"${estado === k ? " selected" : ""}>${t}</option>`).join("")}
+      </select></div>
       <label class="switch" id="ex-puntua-wrap"><span class="switch-t">¿Puntúa para la nota?</span>
         <input id="ex-puntua" name="puntua" type="checkbox" role="switch" ${puntua ? "checked" : ""}/></label>
       <div class="field" id="ex-comp-campo"${puntua ? "" : " hidden"}>${campoComponente(sub, e.componenteId)}</div>`;
+    /* Las mismas casillas sirven para los dos: en un examen la fecha es el día y la hora va de
+       principio a fin; en una entrega, la fecha es el cierre del plazo. Al cambiar el tipo se
+       ajustan las etiquetas y se esconden las casillas que no tocan (sin perder lo escrito). */
     return `
       <div class="field"><label>Módulo</label><select name="subjectId" id="ex-subject">${subjectOptions(e.subjectId || subjectFocus || (state.subjects[0] || {}).id)}</select></div>
-      <div class="field"><label>Título</label><input name="title" required value="${esc(e.title || "")}" placeholder="${esTrabajo ? "Práctica 3 · Configurar DHCP" : "Tema 3 · Subnetting"}" /></div>
+      <div class="field"><label>Título</label><input name="title" required value="${esc(e.title || "")}" placeholder="${trabajo ? "A1 · Red NAT" : "Tema 3 · Subnetting"}" /></div>
+      <div class="field"><label>Tipo</label><select name="kind" id="ex-kind">${EXAM_KINDS.map((k) => `<option${k.toLowerCase() === tipo.toLowerCase() ? " selected" : ""}>${k}</option>`).join("")}</select></div>
       <div class="form-row">
-        <div class="field"><label>Tipo</label><select name="kind" id="ex-kind">${EXAM_KINDS.map((k) => `<option${k.toLowerCase() === tipo.toLowerCase() ? " selected" : ""}>${k}</option>`).join("")}</select></div>
-        <div class="field"><label>Fecha</label><input name="date" type="date" required value="${esc(e.date || todayISO())}" /></div>
+        <div class="field"><label id="ex-lbl-fecha">${trabajo ? "Se entrega" : "Fecha"}</label><input name="date" type="date" required value="${esc(e.date || todayISO())}" /></div>
+        <div class="field ex-solo-examen"${trabajo ? " hidden" : ""}><label>Aula</label><input name="room" value="${esc(e.room || "")}" /></div>
       </div>
-      <div id="ex-trabajo"${esTrabajo ? "" : " hidden"}>${bloqueTrabajo}</div>
       <div class="form-row">
-        <div class="field"><label>Hora</label><input name="time" type="time" value="${esc(e.time || "")}" /></div>
-        <div class="field"><label>Aula</label><input name="room" value="${esc(e.room || "")}" /></div>
+        <div class="field"><label id="ex-lbl-hora">${trabajo ? "Hasta las" : "Empieza"}</label><input name="time" type="time" value="${esc(e.time || "")}" /></div>
+        <div class="field ex-solo-examen"${trabajo ? " hidden" : ""}><label>Acaba</label><input name="endTime" type="time" value="${esc(e.endTime || "")}" /></div>
       </div>
-      <div class="field"><label>${esTrabajo ? "Qué hay que entregar" : "Temas que entran"}</label><textarea name="topics" rows="2" placeholder="${esTrabajo ? "Memoria en PDF con las capturas…" : "Tema 1 y 2, práctica de VLSM…"}">${esc(e.topics || "")}</textarea></div>
+      <div id="ex-trabajo"${trabajo ? "" : " hidden"}>${bloqueTrabajo}</div>
+      <div class="field"><label>${trabajo ? "Qué hay que entregar" : "Temas que entran"}</label><textarea name="topics" rows="2" placeholder="${trabajo ? "Memoria en PDF con las capturas…" : "Tema 1 y 2, práctica de VLSM…"}">${esc(e.topics || "")}</textarea></div>
       <div class="field"><label>Nota (si ya la sabes)</label><input name="grade" type="number" min="0" max="${max}" step="0.1" value="${e.grade === "" || e.grade == null ? "" : esc(String(e.grade))}" /></div>
     `;
+  }
+
+  // Cambia el formulario entre «examen» y «entrega» sin repintarlo (así no se pierde nada)
+  function ajustarFormTipo(trabajo) {
+    const caja = $("#ex-trabajo");
+    if (caja) caja.hidden = !trabajo;
+    const lf = $("#ex-lbl-fecha"), lh = $("#ex-lbl-hora");
+    if (lf) lf.textContent = trabajo ? "Se entrega" : "Fecha";
+    if (lh) lh.textContent = trabajo ? "Hasta las" : "Empieza";
+    $$("#modal-form .ex-solo-examen").forEach((el) => { el.hidden = trabajo; });
   }
 
   function addExam(e, preset = {}) {
@@ -2762,8 +2840,8 @@
         if (!titulo) { toast("Ponle un título a la prueba"); return; }
         const max = Number(state.settings.gradeMax) || 10;
         const bruto = String(data.grade || "").trim();
-        const esTrabajo = String(data.kind || "").toLowerCase() === "trabajo";
-        const puntua = !esTrabajo || data.puntua !== false;
+        const trabajo = String(data.kind || "").toLowerCase() === "trabajo";
+        const puntua = !trabajo || data.puntua !== false;
         const row = {
           id: (e && e.id) || uid(),
           subjectId: data.subjectId || "",
@@ -2776,9 +2854,17 @@
           grade: bruto === "" || !Number.isFinite(Number(bruto)) ? "" : clamp(Number(bruto), 0, max),
           // Solo los trabajos pueden puntuar y apuntar a un componente del esquema
           puntua,
-          componenteId: esTrabajo && puntua ? String(data.componenteId || "") : "",
+          componenteId: trabajo && puntua ? String(data.componenteId || "") : "",
+          // El plazo de la entrega (solo trabajos) y el final del examen
+          openDate: trabajo ? asISO(data.openDate) : "",
+          openTime: trabajo && asISO(data.openDate) && /^\d{1,2}:\d{2}$/.test(String(data.openTime || "")) ? String(data.openTime) : "",
+          endTime: !trabajo && /^\d{1,2}:\d{2}$/.test(String(data.endTime || "")) ? String(data.endTime) : "",
+          estado: trabajo && ESTADOS[String(data.estado || "")] ? String(data.estado) : (trabajo ? "pendiente" : ""),
           createdAt: (e && e.createdAt) || Date.now(),
         };
+        // Un plazo imposible (se abre después de cerrarse) no se guarda
+        if (row.openDate && row.openDate > row.date) { row.openDate = ""; row.openTime = ""; }
+        if (row.endTime && row.time && minutesOf(row.endTime) <= minutesOf(row.time)) row.endTime = "";
         if (e) state.exams = state.exams.map((x) => (x.id === e.id ? row : x));
         else {
           state.exams = Array.isArray(state.exams) ? state.exams.concat(row) : [row];
@@ -2786,7 +2872,7 @@
         }
         closeModal(); render();
         toast(e ? "Guardado: " + row.title
-          : (esTrabajo
+          : (trabajo
             ? (row.puntua ? (row.componenteId ? "Trabajo apuntado · cuenta en la nota" : "Trabajo apuntado") : "Entrega apuntada (no puntúa)")
             : "Apuntada: " + row.title));
       },
@@ -2794,20 +2880,21 @@
   }
 
   function renderExams() {
+    /* La Agenda, organizada como la del instituto: lo siguiente que toca arriba, y luego cada
+       módulo con sus cosas (exámenes y entregas) en orden de fecha. Los exámenes van de una hora
+       a otra y las entregas tienen plazo (se abre → se cierra) y su estado. */
     const hoy = todayISO();
     const todos = asArray(state.exams).slice().sort((a, b) => String(a.date + (a.time || "")).localeCompare(String(b.date + (b.time || ""))));
-    const proximos = todos.filter((e) => e.date >= hoy);
-    const pasados = todos.filter((e) => e.date < hoy).reverse();
-    const esTrabajo = (e) => String(e.kind || "").toLowerCase() === "trabajo";
-    const porTipo = examTipo === "trabajos" ? todos.filter(esTrabajo)
-      : examTipo === "examenes" ? todos.filter((e) => !esTrabajo(e))
-      : todos;
-    const lista = examFilter === "todos" ? porTipo : examFilter === "pasados" ? porTipo.filter((e) => e.date < hoy).reverse() : porTipo.filter((e) => e.date >= hoy);
     const nota = (e) => (e.grade === "" || e.grade == null ? null : Number(e.grade));
     const conNota = todos.filter((e) => nota(e) != null);   // exámenes y trabajos, juntos
     const media = conNota.length ? conNota.reduce((a, e) => a + nota(e), 0) / conNota.length : null;
-    const next = proximos[0];
-    const dNext = next ? daysUntil(next.date) : null;
+    const proximos = todos.filter((e) => e.date >= hoy);
+    const pasados = todos.filter((e) => e.date < hoy);
+    const porTipo = examTipo === "examenes" ? todos.filter((e) => !esTrabajo(e))
+      : examTipo === "trabajos" ? todos.filter(esTrabajo) : todos;
+    const lista = examFilter === "todos" ? porTipo
+      : examFilter === "pasados" ? porTipo.filter((e) => e.date < hoy).reverse()
+      : porTipo.filter((e) => e.date >= hoy);
     const cuando = (e) => {
       const d = daysUntil(e.date);
       if (d === 0) return "Hoy";
@@ -2815,58 +2902,90 @@
       if (d > 1) return "En " + d + " días";
       return d === -1 ? "Ayer" : "Hace " + Math.abs(d) + " días";
     };
-    const tarjeta = (e) => {
-      const f = new Date(e.date + "T12:00:00");
+
+    // El estado se cambia desde la propia fila (como el desplegable de Aules)
+    const chip = (e) => {
+      const est = estadoDe(e);
+      return `<button type="button" class="estado-chip is-${est}" data-action="exam-estado" data-id="${e.id}" title="Cambiar el estado" aria-label="Estado: ${ESTADOS[est]}">
+        <span>${ESTADOS[est]}</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9.5l6 6 6-6"/></svg>
+      </button>`;
+    };
+
+    const fila = (e) => {
       const n = nota(e);
       const d = daysUntil(e.date);
-      const sub = subjectById(e.subjectId);
-      return `<button type="button" class="exam-card${d === 0 ? " is-hoy" : ""}${d < 0 ? " is-pasado" : ""}" data-action="edit-exam" data-id="${e.id}">
-        <span class="exam-date"><b>${f.getDate()}</b><small>${MONTHS[f.getMonth()].slice(0, 3)}</small></span>
-        <span class="exam-body">
+      const trab = esTrabajo(e);
+      const pl = plazoDe(e);
+      // «Apertura: … · Cierre: …», con las palabras clave en negrita, como en Aules
+      const meta = trab
+        ? `<span class="exam-meta">${e.openDate ? `<b>Apertura:</b> ${esc(cuandoTexto(e.openDate, e.openTime))} · ` : ""}<b>${e.openDate ? "Cierre" : "Se entrega"}:</b> ${esc(cuandoTexto(e.date, e.time))}</span>`
+        : `<span class="exam-meta">${esc(fmtDateLong(e.date))}${e.time ? " · " + esc(e.time) + (e.endTime ? " – " + esc(e.endTime) : "") : ""}${e.room ? " · " + esc(e.room) : ""}</span>`;
+      const cuenta = trab && e.puntua !== false
+        ? `<span class="exam-meta cola-nota">${componenteDe(e) ? "Cuenta en «" + esc(componenteDe(e).componente.nombre) + "»" : "Cuenta para la nota"}</span>`
+        : trab ? `<span class="exam-meta cola-nota">No puntúa para la nota</span>` : "";
+      return `<div class="exam-fila${d === 0 ? " is-hoy" : ""}${pl.cerrada && pl.pendiente ? " is-fuera" : ""}" data-action="edit-exam" data-id="${e.id}">
+        <span class="exam-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${iconoExam(e)}</svg></span>
+        <span class="exam-fila-body">
           <b>${esc(e.title)}</b>
-          <small>${esc(sub ? sub.name : "Sin módulo")} · ${esc(e.kind || "Examen")}${e.time ? " · " + esc(e.time) : ""}${e.room ? " · " + esc(e.room) : ""}</small>
-          ${esTrabajo(e) ? `<small class="exam-topics">${e.puntua === false ? "No puntúa para la nota"
-            : (componenteDe(e) ? "Cuenta en «" + esc(componenteDe(e).componente.nombre) + "»" : "Puntúa (sin componente del esquema)")}</small>` : ""}
-          ${e.topics ? `<small class="exam-topics">${esc(e.topics)}</small>` : ""}
+          ${meta}
+          ${e.topics ? `<span class="exam-meta is-topics">${esc(e.topics)}</span>` : ""}
+          ${cuenta}
+          ${trab ? chip(e) : ""}
         </span>
-        <span class="exam-right">
+        <span class="exam-fila-right">
           <span class="badge ${d < 0 ? "" : "soon"}">${esc(cuando(e))}</span>
           ${n == null ? "" : `<b class="exam-nota ${n >= 5 ? "is-ok" : "is-bad"}">${n.toFixed(1)}</b>`}
         </span>
-      </button>`;
+      </div>`;
     };
-    const hero = next
-      ? `<div class="exam-hero${dNext === 0 ? " is-hoy" : ""}">
-          <span class="k">${dNext === 0 ? "Es hoy" : dNext === 1 ? "Es mañana" : (String(next.kind || "").toLowerCase() === "trabajo" ? "Próxima entrega" : "Próxima prueba")}</span>
-          <b>${esc(next.title)}</b>
-          <small>${esc(subjectName(next.subjectId))} · ${esc(fmtDateLong(next.date))}${next.time ? " · " + esc(next.time) : ""}${next.room ? " · " + esc(next.room) : ""}</small>
-          <div class="exam-count"><b>${dNext}</b><span>${dNext === 1 ? "día" : "días"}</span></div>
-          ${next.topics ? `<p class="hint exam-topics-hero">Entra: ${esc(next.topics)}</p>` : ""}
+
+    // Lo siguiente que toca
+    const prox = lista[0];
+    const dProx = prox ? daysUntil(prox.date) : null;
+    const proxTrab = prox ? esTrabajo(prox) : false;
+    const plProx = prox ? plazoDe(prox) : null;
+    const hero = prox
+      ? `<div class="exam-hero${dProx === 0 ? " is-hoy" : ""}">
+          <span class="k">${dProx < 0 ? "La última" : dProx === 0 ? (proxTrab ? "La entrega es hoy" : "Es hoy") : dProx === 1 ? (proxTrab ? "La entrega es mañana" : "Es mañana") : (proxTrab ? "Próxima entrega" : "Próxima prueba")}</span>
+          <b>${esc(prox.title)}</b>
+          <small>${esc(subjectName(prox.subjectId))} · ${esc(cuandoTexto(prox.date, prox.time))}${prox.room ? " · " + esc(prox.room) : ""}</small>
+          ${dProx < 0 ? "" : `<div class="exam-count"><b>${dProx}</b><span>${dProx === 1 ? "día" : "días"}</span></div>`}
+          ${proxTrab && prox.openDate ? `<p class="hint exam-topics-hero">Se abre el ${esc(cuandoTexto(prox.openDate, prox.openTime))} y se entrega el ${esc(cuandoTexto(prox.date, prox.time))}.</p>`
+            : (!proxTrab && prox.endTime && prox.time ? `<p class="hint exam-topics-hero">De ${esc(prox.time)} a ${esc(prox.endTime)}.</p>` : "")}
+          ${prox.topics ? `<p class="hint exam-topics-hero">Entra: ${esc(prox.topics)}</p>` : ""}
         </div>`
       : `<div class="exam-hero vacio">
-          <span class="k">Sin nada apuntado</span>
-          <b>Nada a la vista</b>
-          <small>Cuando el profe diga fecha, la apuntas aquí y te cuenta los días.</small>
+          <span class="k">${examFilter === "pasados" ? "Sin pruebas pasadas" : "Nada a la vista"}</span>
+          <b>${examFilter === "pasados" ? "Todavía no ha pasado ninguna" : "Nada apuntado aquí"}</b>
+          <small>${examFilter === "pasados" ? "Cuando pase la fecha, baja a este montón." : "Cambia de filtro o apunta una prueba nueva."}</small>
         </div>`;
     const filtros = [["proximos", "Próximas", proximos.length], ["pasados", "Pasadas", pasados.length], ["todos", "Todas", todos.length]];
-    // Sin ninguna prueba apuntada no se enseñan tres cosas diciendo lo mismo (tarjeta + ceros +
-    // caja vacía): un solo estado, con su botón.
+
+    // Sin nada apuntado, un solo estado con su botón
     if (!todos.length) {
-      // Sin nada apuntado no se enseña la tarjeta de cabecera (que habla de «la próxima») y luego
-      // una caja repitiendo lo mismo: un único estado, con su botón.
       return `
         <div class="empty empty-hero">
           <div class="empty-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg></div>
           <b>Aún no hay nada apuntado</b>
-          <p>Apunta aquí cada examen, práctica o entrega con su fecha: la app te lleva la cuenta (días que quedan, aviso la tarde antes y una hora antes). Si es un trabajo, puedes enlazarlo con el componente de la nota que le toque.</p>
+          <p>Apunta aquí cada examen, práctica o entrega: la app te lleva la cuenta (días que quedan, aviso la tarde antes y una hora antes). Los exámenes van de una hora a otra y las entregas, con su plazo: desde cuándo se abren hasta cuándo se pueden entregar.</p>
           <button class="btn btn-primary" data-action="add-exam">Añadir el primero</button>
         </div>`;
     }
+
+    // Cada módulo, con sus cosas (el orden de los módulos, por lo que toca primero)
+    const grupos = [];
+    lista.forEach((e) => {
+      let g = grupos.find((x) => x.id === e.subjectId);
+      if (!g) { g = { id: e.subjectId, items: [] }; grupos.push(g); }
+      g.items.push(e);
+    });
+
     return `
       ${hero}
       <div class="mini-stats">
         <div><b>${proximos.length}</b><small>por delante</small></div>
-        <div><b>${conNota.length}</b><small>con nota</small></div>
+        <div><b>${todos.filter((e) => estadoDe(e) === "pendiente" && e.date >= hoy).length}</b><small>pendientes</small></div>
         <div><b>${media == null ? "—" : media.toFixed(1)}</b><small>nota media</small></div>
       </div>
       <div class="filters">
@@ -2876,12 +2995,14 @@
         ${[["", "Todo", todos.length], ["examenes", "Exámenes", todos.filter((e) => !esTrabajo(e)).length], ["trabajos", "Trabajos", todos.filter(esTrabajo).length]]
           .map(([id, txt, n]) => `<button class="chip ${examTipo === id ? "is-on" : ""}" data-action="exam-tipo" data-f="${id}">${txt} · ${n}</button>`).join("")}
       </div>
-      <div class="exam-list">
-        ${lista.length ? lista.map(tarjeta).join("")
-          : `<div class="empty"><b>${examFilter === "pasados" ? "Todavía no hay pruebas pasadas" : "Nada apuntado aquí"}</b>
-              <p>${examFilter === "pasados" ? "Cuando pase la fecha, la prueba baja a este montón." : "Cambia de filtro o apunta una prueba nueva con el botón de abajo."}</p></div>`}
-      </div>
-      <button class="btn btn-primary btn-block" data-action="add-exam">+ Añadir prueba</button>
+      ${lista.length
+        ? grupos.map((g) => `<section class="exam-sec">
+            <div class="exam-sec-head"><i style="background:${safeColor(subjectColor(g.id))}"></i><b>${esc(subjectName(g.id))}</b><span>${g.items.length}</span></div>
+            <div class="exam-grupo">${g.items.map(fila).join("")}</div>
+          </section>`).join("")
+        : `<div class="empty"><b>${examFilter === "pasados" ? "Todavía no hay pruebas pasadas" : "Nada apuntado aquí"}</b>
+            <p>${examFilter === "pasados" ? "Cuando pase la fecha, la prueba baja a este montón." : "Cambia de filtro o apunta algo nuevo con el botón de abajo."}</p></div>`}
+      <button class="btn btn-primary btn-block" data-action="add-exam">+ Añadir prueba o entrega</button>
     `;
   }
 
@@ -3334,8 +3455,10 @@
         </div>` : ""}
         ${chk("set-nclass", st.notifyClass !== false, "Clase (10 min antes)")}
         ${chk("set-nca", st.notifyCards !== false, "Fichas de repaso")}
-        ${chk("set-nexamev", st.notifyExamEve !== false, "Examen: la tarde anterior (18:00)")}
-        ${chk("set-nexamh", st.notifyExamHour !== false, "Examen: una hora antes")}
+        ${chk("set-nexamev", st.notifyExamEve !== false, "Examen o entrega: la tarde anterior (18:00)")}
+        ${chk("set-nexamh", st.notifyExamHour !== false, "Examen o entrega: una hora antes del cierre")}
+        ${chk("set-nopen", st.notifyDeliveryOpen !== false, "Entrega: el día que se abre")}
+        ${chk("set-nclose", st.notifyDeliveryClose !== false, "Entrega: el último día para entregar (a la hora del resumen)")}
         ${chk("set-night", st.nightRemind !== false, "Aviso nocturno para no romper la racha")}
         ${chk("set-morn", st.morningSummary !== false, "Resumen por la mañana")}
         <div class="form-row" style="margin-top:10px">
@@ -3972,15 +4095,19 @@
         "SUMMARY:" + icsEscape((e.kind || "Examen") + ": " + e.title + (sub ? " · " + sub.name : "")),
       ];
       if (hora) {
-        const finM = minutesOf(hora) + 90;
+        // Si el examen tiene hora de fin se respeta; si no, se le dan los 90 minutos de siempre
+        const fin = e.endTime && minutesOf(e.endTime) > minutesOf(hora) ? e.endTime : null;
+        const finM = minutesOf(fin || hora) + (fin ? 0 : 90);
         evento.push("DTSTART;TZID=Europe/Madrid:" + evDe(e.date, hora));
-        evento.push("DTEND;TZID=Europe/Madrid:" + evDe(e.date, pad(Math.floor(finM / 60) % 24) + ":" + pad(finM % 60)));
+        evento.push("DTEND;TZID=Europe/Madrid:" + evDe(e.date, fin || pad(Math.floor(finM / 60) % 24) + ":" + pad(finM % 60)));
       } else {
         const sig = new Date(e.date + "T12:00:00"); sig.setDate(sig.getDate() + 1);
         evento.push("DTSTART;VALUE=DATE:" + e.date.replace(/-/g, ""));
         evento.push("DTEND;VALUE=DATE:" + localISO(sig).replace(/-/g, ""));
       }
-      if (e.topics) evento.push("DESCRIPTION:" + icsEscape("Entra: " + e.topics));
+      const plazo = e.openDate ? "Se abre el " + fmtDateLong(e.openDate) + (e.openTime ? " a las " + e.openTime : "")
+        + " · Se entrega antes del " + fmtDateLong(e.date) + (e.time ? " a las " + e.time : "") : "";
+      if (plazo || e.topics) evento.push("DESCRIPTION:" + icsEscape([plazo, e.topics ? "Entra: " + e.topics : ""].filter(Boolean).join(" — ")));
       if (e.room) evento.push("LOCATION:" + icsEscape(e.room));
       // Avisos dentro del propio calendario del móvil: la víspera y una hora antes
       ["-P1D", "-PT1H"].forEach((cuando) => {
@@ -4388,6 +4515,8 @@
     const nc = on("#set-nca"); if (nc !== undefined) st.notifyCards = nc;
     const ne1 = on("#set-nexamev"); if (ne1 !== undefined) st.notifyExamEve = ne1;
     const ne2 = on("#set-nexamh"); if (ne2 !== undefined) st.notifyExamHour = ne2;
+    const ne3 = on("#set-nopen"); if (ne3 !== undefined) st.notifyDeliveryOpen = ne3;
+    const ne4 = on("#set-nclose"); if (ne4 !== undefined) st.notifyDeliveryClose = ne4;
     if ($("#set-starth")) st.startHour = num("#set-starth", 8);
     if ($("#set-endh")) st.endHour = num("#set-endh", 21);
     const cd = on("#set-confirm"); if (cd !== undefined) st.confirmDelete = cd;
@@ -4611,6 +4740,31 @@
     if (action === "edit-exam") addExam(state.exams.find((x) => x.id === id));
     if (action === "exam-filter") { examFilter = btn.dataset.f || "proximos"; render(); }
     if (action === "exam-tipo") { examTipo = btn.dataset.f || ""; render(); }
+    if (action === "exam-estado") {
+      const ex = asArray(state.exams).find((x) => x.id === id);
+      if (ex) {
+        const est = estadoDe(ex);
+        openModal("Estado de la entrega", `
+          <p class="hint" style="margin-top:0">«${esc(etiquetaDe(ex))}» · ${esc(subjectName(ex.subjectId))}</p>
+          <div class="estado-lista">
+            ${Object.entries(ESTADOS).map(([k, t]) => `<button type="button" class="estado-opcion is-${k}${est === k ? " is-on" : ""}" data-action="exam-set-estado" data-id="${ex.id}" data-e="${k}">
+              <span class="estado-punto"></span><b>${t}</b>${est === k ? `<span class="estado-ahora">Ahora</span>` : ""}</button>`).join("")}
+          </div>`, { confirm: "Cerrar", onSubmit() { closeModal(); } });
+      }
+    }
+    if (action === "exam-set-estado") {
+      const ex = asArray(state.exams).find((x) => x.id === id);
+      const nuevo = ESTADOS[btn.dataset.e] ? btn.dataset.e : "";
+      if (ex && nuevo) {
+        ex.estado = nuevo;
+        // Al marcar «Corregido» se pregunta la nota: es el momento en el que la sabes
+        save(); closeModal(); render();
+        toast(ESTADOS[nuevo] + ": " + etiquetaDe(ex));
+        if (nuevo === "corregido" && (ex.grade === "" || ex.grade == null)) {
+          setTimeout(() => addExam(ex), 260);
+        }
+      }
+    }
     if (action === "eval-nuevo" || action === "eval-editar") abrirEsquema(subjectById(id));
     if (action === "eval-notas") abrirNotas(subjectById(id));
     if (action === "eval-modo-notas") {
@@ -4838,10 +4992,7 @@
     }
     if (e.target.id === "ex-date") { exDate = e.target.value; render(); return; }
     // Agenda: el bloque «¿puntúa?» solo sale en los trabajos, y el componente depende del módulo
-    if (e.target.id === "ex-kind") {
-      const caja = $("#ex-trabajo");
-      if (caja) caja.hidden = e.target.value.toLowerCase() !== "trabajo";
-    }
+    if (e.target.id === "ex-kind") ajustarFormTipo(e.target.value.toLowerCase() === "trabajo");
     if (e.target.id === "ex-puntua") {
       const campo = $("#ex-comp-campo");
       if (campo) campo.hidden = !e.target.checked;

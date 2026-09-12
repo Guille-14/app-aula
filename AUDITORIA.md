@@ -9,6 +9,7 @@
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
 **Ronda v67.4.2:** «No funciona la IA de ollama»: el APK no podía salir por `http://` (contenido mixto y tráfico en claro), y cualquier fallo se contaba igual; ahora cada fallo se distingue y se explica cómo arreglarlo (493 pruebas ✓).
+**Ronda v67.6:** la Agenda se organiza como la del instituto —cada módulo con sus exámenes y entregas—, los exámenes van de una hora a otra y las entregas tienen plazo (se abre → se cierra) y estado (pendiente · entregado · corregido), que se cambia desde la propia fila (582 pruebas ✓).
 **Ronda v67.5:** la nota de cada módulo se calcula como la calcula tu profe — componentes con peso, notas «sobre X» y reglas que pueden suspender (aprobar todos los RA) — y Exámenes pasa a ser una Agenda con trabajos y entregas que llenan el componente solos (548 pruebas ✓).
 **Ronda v67.4 (y v67.4.1):** la auditoría de interfaz del usuario: la barra de abajo vuelve y no se queda escondida, el calendario, la semana, los exámenes y las notas dejan de mentir (476 pruebas ✓).
 **Ronda v67.3:** el horario del centro cuadro a cuadro (31 clases, Sistemas 7 h y el jueves sin última hora) (440 pruebas ✓).
@@ -894,6 +895,64 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+---
+
+## Ronda v67.6 · La Agenda por apartados y las entregas con plazo
+
+Lo que pediste, tal cual: «me gustaría que se viera como en Aula» y «en los trabajos que sea de tal
+día a tal día», igual que los exámenes son de tal hora a tal hora.
+
+### 1. La Agenda, organizada por módulos
+
+Cada módulo tiene su **apartado** (con su color y cuántas cosas lleva) y dentro van sus pruebas y
+entregas en orden de fecha. Cada fila es como la de Aules:
+
+* **icono** según el tipo (examen, práctica, trabajo, recuperación…),
+* el **título**,
+* la **fecha escrita entera**, con el día de la semana: «martes, 15 de septiembre de 2026, 16:00»,
+* en las entregas, **«Apertura: … · Cierre: …»** con las dos palabras en negrita, igual que Aules,
+* el **temario o lo que hay que entregar** si lo apuntaste,
+* a la derecha, la cuenta atrás y la nota si la tienes.
+
+### 2. El plazo de las entregas (de tal día a tal día)
+
+Al apuntar un **Trabajo**, el formulario cambia solo: pide **«Se entrega»** (el cierre) y **«Hasta
+las»**, más **«Se abre»** y **«A las»** (la apertura). Las preguntas del examen (aula, hora de fin)
+se esconden, y al volver a «Examen» reaparecen. Si el profe no ha dicho cuándo se abre, se deja
+vacío. Un plazo imposible (que abra después de cerrarse) no se guarda.
+
+### 3. Los exámenes, de una hora a otra
+
+Un examen ahora tiene **«Empieza»** y **«Acaba»**: se ve «16:00 – 17:55» en la lista, en la tira de
+Inicio y en el calendario que exportas (.ics), que antes le metía 90 minutos fijos. Si no le pones
+fin, sigue funcionando como siempre.
+
+### 4. El estado de la entrega, como el desplegable de Aules
+
+Cada entrega trae su **desplegable con los tres estados**: *Pendiente de hacer · Entregado ·
+Corregido*, con su color. Se cambia desde la propia fila, sin abrir nada. Al marcar **Corregido** se
+abre la entrega para poner la **nota** (que es cuando la sabes), y si puntúa, entra sola en el
+componente del esquema (v67.5).
+
+### 5. Avisos de las entregas
+
+Además del «Entrega mañana» y «Entrega en 1 hora» de la ronda pasada, ahora también avisa:
+
+* **«Se abre una entrega»** el día que se abre (con la hora que le pusiste),
+* **«Último día para entregar»** el día del cierre, a la hora del resumen.
+
+Los dos se pueden apagar en Ajustes (donde los avisos de exámenes ahora dicen «Examen o entrega»).
+
+### 6. Un fallo que salió al revisarlo con el navegador
+
+El formulario esconde casillas con el atributo `hidden`, pero algunas clases (`.field`,
+`.form-row`) traen su propio `display`, así que en pantalla **se seguían viendo** las casillas del
+examen dentro de una entrega. Arreglado con una regla general (`[hidden] { display: none
+!important; }`) y con una prueba que la vigila: es un fallo que se veía a simple vista y que las
+pruebas de casa no cogían.
+
+**Pruebas: 548 → 582 ✓** (34 nuevas), y las mismas pasan sobre el código minificado del APK.
 
 ---
 

@@ -91,10 +91,14 @@
       examenes: (st.exams || []).map((e) => ({
         title: e.title, subject: A.subjectName(e.subjectId), date: e.date, time: e.time, room: e.room || "",
         kind: e.kind || "", puntua: e.puntua !== false,
+        openDate: e.openDate || "", openTime: e.openTime || "",
+        estado: e.estado || "", endTime: e.endTime || "",
       })),
       fichas: typeof A.dueCards === "function" ? A.dueCards().length : 0,
     };
   }
+
+  const pad2 = (n) => String(n).padStart(2, "0");
 
   /** Plan de avisos: puro, sin tocar el móvil. `ahora` permite probarlo con fechas fijas. */
   function plan(d, ahora) {
@@ -123,7 +127,19 @@
       if (!e.date) return;
       const esTrabajo = String(e.kind || "").toLowerCase() === "trabajo";
       const etiqueta = e.title || e.subject || (esTrabajo ? "Entrega" : "Examen");
-      const cola = [e.subject, e.time, e.room].filter(Boolean).join(" · ");
+      const cola = [e.subject, e.time ? (esTrabajo ? "hasta las " + e.time : e.time) : "", e.room].filter(Boolean).join(" · ");
+      // El día que se abre la entrega, para que no se te pase por empezarla tarde
+      if (esTrabajo && e.openDate && st.notifyDeliveryOpen !== false) {
+        mete("entrega-abre|" + e.openDate + "|" + i, "examen", "Se abre una entrega",
+          etiqueta + (e.subject ? " · " + e.subject : "") + (e.time ? " · hasta el " + e.date + " a las " + e.time : ""),
+          fechaHora(e.openDate, e.openTime || "08:00", 0), "exams");
+      }
+      // El último día para entregar, a la hora del resumen (por defecto las 8:00 de la mañana)
+      if (esTrabajo && st.notifyDeliveryClose !== false) {
+        mete("entrega-cierra|" + e.date + "|" + i, "examen", "Último día para entregar",
+          etiqueta + (e.time ? " · hasta las " + e.time : "") + (e.subject ? " · " + e.subject : ""),
+          fechaHora(e.date, pad2(st.remindHour || 8) + ":00", 0), "exams");
+      }
       if (st.notifyExamEve !== false) {
         mete("examen-vispera|" + e.date + "|" + i, "examen", esTrabajo ? "Entrega mañana" : "Mañana examen",
           etiqueta + (cola ? " · " + cola : ""), fechaHora(e.date, "18:00", -1440), "exams");

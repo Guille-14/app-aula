@@ -867,10 +867,12 @@ async function testAuditoria() {
     check(A.state.exams.length === 1 && A.state.exams[0].title === "Tema 3 · Subnetting", "exámenes: la prueba se guarda");
     check(!!A.state.exams[0].subjectId, "exámenes: se apunta con el módulo puesto");
     check(/Subnetting/.test(r.querySelector(".exam-hero").textContent), "exámenes: la siguiente prueba sale en la cabecera");
-    const cajas = [...r.querySelectorAll(".exam-card")];
+    const cajas = [...r.querySelectorAll(".exam-fila")];
     check(cajas.length === 1, "exámenes: sale en la lista (" + cajas.length + ")");
     check(/En \d+ días|Mañana|Hoy/.test(cajas[0].textContent), "exámenes: con la cuenta atrás");
     check(/VLSM y ACL/.test(cajas[0].textContent), "exámenes: y el temario que entra");
+    check(/16:00/.test(cajas[0].textContent) && /martes|miércoles|lunes|jueves|viernes|sábado|domingo/.test(cajas[0].textContent),
+      "exámenes: con el día completo y la hora");
 
     // La tira de Inicio avisa de la próxima
     A.go("dashboard");
@@ -881,9 +883,11 @@ async function testAuditoria() {
     // Filtros
     A.go("exams");
     act(env, "exam-filter", { f: "pasados" });
-    check(!r.querySelector(".exam-card"), "exámenes: el filtro de pasadas no mezcla las futuras");
+    check(!r.querySelector(".exam-fila"), "exámenes: el filtro de pasadas no mezcla las futuras");
     act(env, "exam-filter", { f: "todos" });
-    check(!!r.querySelector(".exam-card"), "exámenes: el filtro de todas las enseña");
+    check(!!r.querySelector(".exam-fila"), "exámenes: el filtro de todas las enseña");
+    check(!!r.querySelector(".exam-sec-head") && r.querySelector(".exam-sec-head").textContent.trim().length > 2,
+      "agenda: cada módulo tiene su apartado (" + (r.querySelector(".exam-sec-head") || {}).textContent + ")");
 
     // Borrar: con confirmación
     A.go("exams");
@@ -1203,6 +1207,17 @@ async function testAuditoria() {
     check(alarmas.length === 2 && alarmas.some((a) => a.includes("TRIGGER:-P1D")) && alarmas.some((a) => a.includes("TRIGGER:-PT1H")),
       "exportar: el examen lleva dos avisos en el calendario (víspera y una hora antes)");
     check(!/BEGIN:VALARM/.test(ics.split("UID:aula-exam")[0]), "exportar: las clases no llevan avisos (no sonaría el móvil 30 veces por semana)");
+    // v67.6: la hora de fin del examen y el plazo de la entrega, en el .ics
+    A.state.exams.push({ id: "ics1", subjectId: A.state.subjects[0].id, title: "Examen con fin", kind: "Examen", date: "2026-09-20", time: "16:00", endTime: "17:55", createdAt: Date.now() });
+    A.state.exams.push({ id: "ics2", subjectId: A.state.subjects[0].id, title: "Entrega con plazo", kind: "Trabajo", date: "2026-09-28", time: "23:55", openDate: "2026-09-25", openTime: "08:00", createdAt: Date.now() });
+    const ics2 = A.icsTexto();
+    check(/DTSTART;TZID=Europe\/Madrid:20260920T160000[\s\S]*?DTEND;TZID=Europe\/Madrid:20260920T175500/.test(ics2),
+      "exportar: el examen va de su hora de inicio a su hora de fin (16:00 → 17:55)");
+    // El .ics pliega las líneas largas (CRLF + espacio): para leerlas, se despliegan
+    const icsPlano = ics2.replace(/\r\n[ \t]/g, "");
+    console.log("DBG plano:", JSON.stringify(icsPlano.match(/DESCRIPTION:Se abre[^\r\n]*/)));
+    check(icsPlano.includes("Se abre el viernes") && icsPlano.includes("25 de septiembre de 2026 a las 08:00") && icsPlano.includes("Se entrega antes del lunes") && icsPlano.includes("28 de septiembre de 2026 a las 23:55"),
+      "exportar: la entrega lleva su plazo en la descripción");
     check(ics.split("\r\n").every((l) => l.length <= 75), "exportar: ninguna línea del .ics pasa de 75 octetos (lo pide el formato)");
 
     // Guardar: en el navegador se descarga…
@@ -2389,6 +2404,157 @@ async function testEsquema() {
   check(env.errors.length === 0, "v67.5: sin errores de consola (" + env.errors.slice(0, 2).join(" · ") + ")");
 }
 
+// --------- 23. la Agenda por apartados, con el plazo de las entregas (v67.6)
+/* Lo que pidió el usuario: la Agenda como la del instituto —cada módulo con sus cosas— y las
+   entregas con su plazo (se abre → se cierra) y su estado, además de la hora de fin del examen. */
+async function testAgenda() {
+  const env = boot();
+  ready(env.A);
+  const A = env.A, r = env.doc;
+  const s1 = { id: "a1", name: "Servicios en red", color: "#db2777", grade: "" };
+  const s2 = { id: "a2", name: "Aplicaciones web", color: "#eab308", grade: "" };
+  A.state.subjects.push(s1, s2);
+  A.state.exams = [];
+  A.go("exams");
+
+  // ————— Un examen: de una hora a otra
+  act(env, "add-exam", {});
+  let f = r_form(env);
+  f.querySelector('[name="title"]').value = "Tema 3 · Subnetting";
+  f.querySelector('[name="subjectId"]').value = "a1";
+  f.querySelector('[name="date"]').value = A.todayISO();
+  f.querySelector('[name="time"]').value = "16:00";
+  f.querySelector('[name="endTime"]').value = "17:55";
+  check(/Acaba/.test(f.textContent), "agenda: el examen se apunta de una hora a otra");
+  f.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
+  const examen = A.state.exams[0];
+  check(examen.endTime === "17:55" && examen.estado === "" && !examen.openDate, "agenda: el examen guarda su hora de fin (y no tiene plazo)");
+  check(/16:00 – 17:55/.test(r.querySelector(".exam-fila").textContent), "agenda: la fila enseña «16:00 – 17:55»");
+  check(!r.querySelector(".estado-chip"), "agenda: un examen no lleva el desplegable de estado");
+
+  // ————— Un trabajo con plazo: se abre el 14 y se entrega el 21
+  act(env, "add-exam", {});
+  f = r_form(env);
+  f.querySelector('[name="title"]').value = "A1 · Red NAT";
+  f.querySelector('[name="subjectId"]').value = "a1";
+  f.querySelector('[name="kind"]').value = "Trabajo";
+  f.querySelector('[name="kind"]').dispatchEvent(new env.window.Event("change", { bubbles: true }));
+  check(/Se entrega/.test(f.textContent) && /Hasta las/.test(f.textContent) && /Se abre/.test(f.textContent),
+    "agenda: al ser una entrega, el formulario pide desde y hasta");
+  check(/Pendiente de hacer/.test(f.textContent), "agenda: la entrega nace «Pendiente de hacer»");
+  const abierto = f.querySelector("#ex-trabajo").hidden === false && f.querySelectorAll(".ex-solo-examen:not([hidden])").length === 0;
+  check(abierto, "agenda: en una entrega se esconden las casillas del examen (aula y hora de fin)");
+  // Y de verdad se esconden: el atributo hidden manda aunque la clase traiga display propio
+  const cssUI = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+  check(tienePropiedad("[hidden]", "display: none !important", cssUI),
+    "css: lo que lleva hidden no se ve nunca (el formulario de la Agenda lo necesita)");
+  f.querySelector('[name="openDate"]').value = "2026-09-14";
+  f.querySelector('[name="openTime"]').value = "20:30";
+  f.querySelector('[name="date"]').value = "2026-09-21";
+  f.querySelector('[name="time"]').value = "20:30";
+  f.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
+  const trabajo = A.state.exams[A.state.exams.length - 1];
+  check(trabajo.kind === "Trabajo" && trabajo.estado === "pendiente" && trabajo.openDate === "2026-09-14" && trabajo.openTime === "20:30",
+    "agenda: el plazo de la entrega se guarda (14/09 20:30 → 21/09 20:30)");
+  const fila = [...r.querySelectorAll(".exam-fila")].find((x) => /Red NAT/.test(x.textContent));
+  check(/Apertura:/.test(fila.textContent) && /Cierre:/.test(fila.textContent) && /20:30/.test(fila.textContent),
+    "agenda: la fila de la entrega enseña apertura y cierre, como Aules");
+  check(/lunes, 14 de septiembre de 2026/.test(fila.textContent) && /lunes, 21 de septiembre de 2026/.test(fila.textContent),
+    "agenda: con la fecha escrita entera (día de la semana incluido)");
+
+  // ————— El estado, desde la propia fila
+  const chip = fila.querySelector(".estado-chip");
+  check(!!chip && /Pendiente de hacer/.test(chip.textContent), "agenda: la entrega trae su desplegable de estado");
+  act(env, "exam-estado", { id: trabajo.id });
+  check(/Entregado/.test(r.getElementById("modal-form").textContent), "agenda: el estado se cambia desde la fila (sin abrir la entrega)");
+  act(env, "exam-set-estado", { id: trabajo.id, e: "entregado" });
+  check(A.state.exams.find((e) => e.id === trabajo.id).estado === "entregado", "agenda: el estado pasa a «Entregado»");
+  const fila2 = [...r.querySelectorAll(".exam-fila")].find((x) => /Red NAT/.test(x.textContent));
+  check(/is-entregado/.test(fila2.querySelector(".estado-chip").className), "agenda: y el desplegable lo enseña");
+  // «Corregido» pide la nota (es cuando la sabes)
+  act(env, "exam-set-estado", { id: trabajo.id, e: "corregido" });
+  await new Promise((res) => setTimeout(res, 400));
+  const editor = r.getElementById("modal-form");
+  check(A.state.exams.find((e) => e.id === trabajo.id).estado === "corregido" && !!editor
+    && editor.querySelector('[name="title"]').value === "A1 · Red NAT",
+    "agenda: al marcar «Corregido» se abre la entrega para poner la nota");
+  act(env, "close-modal", {});
+
+  // ————— Apartados por módulo (cada módulo, con sus cosas)
+  A.state.exams.push({ id: "otro", subjectId: "a2", title: "Proyecto · API de la web", kind: "Trabajo", date: "2026-09-19", estado: "pendiente", puntua: false, createdAt: Date.now() });
+  A.go("exams");
+  const secciones = [...r.querySelectorAll(".exam-sec")];
+  check(secciones.length === 2, "agenda: cada módulo tiene su apartado (" + secciones.length + ")");
+  const cabeceras = [...r.querySelectorAll(".exam-sec-head")].map((x) => x.textContent.replace(/\s+/g, " ").trim());
+  check(/Servicios en red/.test(cabeceras[0]) && /Aplicaciones web/.test(cabeceras[1]),
+    "agenda: los apartados van por módulo: " + cabeceras.join(" | "));
+  const soloUno = secciones[0].querySelectorAll(".exam-fila").length;
+  check(soloUno === 2, "agenda: el apartado de Servicios en red lleva solo lo suyo (" + soloUno + ")");
+  check(secciones[1].querySelectorAll(".exam-fila").length === 1, "agenda: y el de Aplicaciones web, lo suyo")
+
+
+  // ————— El plazo imposible no se guarda
+  act(env, "edit-exam", { id: trabajo.id });
+  f = r_form(env);
+  f.querySelector('[name="openDate"]').value = "2026-09-30";   // después del cierre
+  f.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
+  check(A.state.exams.find((e) => e.id === trabajo.id).openDate === "", "agenda: un plazo imposible (abre después del cierre) no se guarda");
+  act(env, "edit-exam", { id: trabajo.id });
+  f = r_form(env);
+  f.querySelector('[name="date"]').value = "2026-09-21";
+  f.querySelector('[name="time"]').value = "22:00";
+  f.querySelector('[name="openDate"]').value = "";
+  f.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
+
+  // Y un examen con la hora de fin antes de empezar tampoco
+  act(env, "edit-exam", { id: A.state.exams[0].id });
+  f = r_form(env);
+  f.querySelector('[name="endTime"]').value = "15:00";
+  f.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
+  check(A.state.exams[0].endTime === "", "agenda: si el examen acaba antes de empezar, la hora de fin se descarta");
+
+  // ————— El estado no se le queda pegado a un examen (ni el plazo)
+  const guardado = JSON.parse(JSON.stringify({ settings: { onboarded: true }, subjects: [s1], exams: [
+    { id: "x", subjectId: "a1", title: "Examen suelto", kind: "Examen", date: "2026-09-20", openDate: "2026-09-10", estado: "entregado", endTime: "17:00", time: "16:00" },
+    { id: "y", subjectId: "a1", title: "Entrega suelta", kind: "Trabajo", date: "2026-09-22", openDate: "2026-09-25", estado: "vete tú a saber" },
+  ] }));
+  const limpio = A.sanitize(guardado);
+  check(limpio.exams[0].openDate === "" && limpio.exams[0].estado === "" && limpio.exams[0].endTime === "17:00",
+    "estado: a un examen se le quitan el plazo y el estado al cargar, y conserva su hora de fin");
+  check(limpio.exams[1].openDate === "" && limpio.exams[1].estado === "pendiente",
+    "estado: un plazo imposible se descarta y un estado raro vuelve a «pendiente»");
+
+  // ————— Los avisos: la apertura y el cierre de la entrega
+  const AV = env.window.AulaAvisos;
+  const datos = AV.datos();
+  const conEntrega = datos.examenes.find((e) => e.title === "A1 · Red NAT");
+  check(!!conEntrega && conEntrega.openDate === "" && conEntrega.kind === "Trabajo",
+    "avisos: las entregas llegan al plan con su tipo");
+  const ahora = new Date(A.todayISO() + "T07:00:00");
+  const plan = AV.plan({ ajustes: { notifyExamEve: true, notifyExamHour: true }, dias: [], examenes: [
+    { title: "A1 · Red NAT", subject: "Servicios en red", date: A.state.exams.find((e) => e.id === trabajo.id).date, time: "20:30", openDate: "", openTime: "20:30", kind: "Trabajo", estado: "pendiente" },
+  ], fichas: 0 }, ahora);
+  check(plan.some((a) => a.titulo === "Entrega mañana" && /hasta las 20:30/.test(a.cuerpo)),
+    "avisos: la entrega avisa la tarde antes y dice hasta qué hora se puede entregar");
+  const conApertura = AV.plan({ ajustes: { notifyExamEve: true }, dias: [], examenes: [
+    { title: "A2 · Copias de seguridad", subject: "Sistemas", date: "2026-09-28", time: "20:30", openDate: "2026-09-25", openTime: "09:00", kind: "Trabajo" },
+  ], fichas: 0 }, new Date("2026-09-24T08:00:00"));
+  check(conApertura.some((a) => a.titulo === "Se abre una entrega" && a.cuando.getDate() === 25),
+    "avisos: también avisa el día que se abre la entrega");
+  const cierre = AV.plan({ ajustes: { remindHour: 8 }, dias: [], examenes: [
+    { title: "A2 · Copias", subject: "Sistemas", date: "2026-09-28", time: "23:55", openDate: "2026-09-25", kind: "Trabajo" },
+  ], fichas: 0 }, new Date("2026-09-24T08:00:00"));
+  check(cierre.some((a) => a.titulo === "Último día para entregar" && a.cuando.getDate() === 28 && a.cuando.getHours() === 8 && /hasta las 23:55/.test(a.cuerpo)),
+    "avisos: y el último día para entregar, a la hora del resumen");
+  const sinAvisos = AV.plan({ ajustes: { notifyDeliveryOpen: false, notifyDeliveryClose: false }, dias: [], examenes: [
+    { title: "A2 · Copias", subject: "Sistemas", date: "2026-09-28", time: "23:55", openDate: "2026-09-25", kind: "Trabajo" },
+  ], fichas: 0 }, new Date("2026-09-24T08:00:00"));
+  check(!sinAvisos.some((a) => /Se abre una entrega|Último día/.test(a.titulo)),
+    "avisos: apagar esos dos avisos los quita (el de «entrega mañana» sigue)");
+
+  check(env.errors.length === 0, "v67.6: sin errores de consola (" + env.errors.slice(0, 2).join(" · ") + ")");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -2400,6 +2566,7 @@ async function testEsquema() {
     await testAuditoria();
     await testOllama();
     await testEsquema();
+    await testAgenda();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");
   }

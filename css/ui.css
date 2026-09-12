@@ -2197,45 +2197,98 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 .exam-count span { display: block; margin-top: 3px; font-size: 9.5px; font-weight: 640; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .exam-topics-hero { margin: 8px 0 0; padding-right: 74px; }
 
-/* — Lista de pruebas — */
-.exam-list { display: flex; flex-direction: column; gap: 8px; }
-.exam-card {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 14px;
+/* — Agenda: apartados por módulo y filas — */
+.exam-sec { display: flex; flex-direction: column; gap: 8px; }
+.exam-sec-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 2px 0;
+}
+.exam-sec-head i { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; }
+.exam-sec-head b { flex: 1 1 auto; min-width: 0; font-size: 14.5px; font-weight: 660; letter-spacing: -0.015em; overflow-wrap: anywhere; }
+.exam-sec-head span {
+  flex: 0 0 auto;
+  min-width: 22px; padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-2); color: var(--muted);
+  font-size: 11px; font-weight: 640; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.exam-grupo {
+  display: flex; flex-direction: column;
   border-radius: 18px;
   border: 1px solid var(--card-bd, var(--line));
   background: var(--surface);
-  color: inherit;
-  text-align: left;
   box-shadow: var(--card-in, none), var(--card-sh, 0 0 #0000);
-  transition: background .18s ease, transform .14s ease;
+  overflow: hidden;
 }
-.exam-card:hover { background: var(--surface-2); }
-.exam-card.is-hoy { border-color: color-mix(in srgb, var(--red) 36%, transparent); }
-.exam-card.is-pasado { opacity: .7; }
-.exam-date {
-  width: 46px; height: 46px;
+.exam-fila {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 13px;
+  cursor: pointer;
+  transition: background .18s ease;
+}
+.exam-fila + .exam-fila { border-top: 1px solid var(--line); }
+.exam-fila:hover { background: var(--surface-2); }
+.exam-fila.is-hoy { box-shadow: inset 3px 0 0 var(--red); }
+.exam-fila.is-fuera { opacity: .62; }
+.exam-ico {
+  width: 34px; height: 34px;
   display: grid; place-content: center;
-  text-align: center;
-  border-radius: 14px;
+  border-radius: 11px;
   background: var(--surface-2);
+  color: var(--ink-2, var(--ink));
 }
-.exam-date b { display: block; font-size: 17px; font-weight: 660; line-height: 1; font-variant-numeric: tabular-nums; }
-.exam-date small { display: block; margin-top: 2px; font-size: 9.5px; font-weight: 620; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
-.exam-card.is-hoy .exam-date { background: color-mix(in srgb, var(--red) 14%, transparent); }
-.exam-card.is-hoy .exam-date b { color: var(--red); }
-.exam-body { min-width: 0; }
-.exam-body b { display: block; font-size: 14.5px; font-weight: 620; letter-spacing: -0.015em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.exam-body small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.exam-body .exam-topics { color: var(--muted-2); }
-.exam-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.exam-ico svg { width: 19px; height: 19px; }
+.exam-fila-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.exam-fila-body > b { font-size: 14.5px; font-weight: 640; letter-spacing: -0.015em; overflow-wrap: anywhere; }
+.exam-meta { font-size: 11.5px; color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
+.exam-meta b { color: var(--ink-2, var(--ink)); font-weight: 640; }
+.exam-meta.is-topics { color: var(--muted-2); }
+.exam-meta.cola-nota { color: var(--blue, var(--muted)); font-weight: 560; }
+.exam-fila-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
 .exam-nota { font-size: 15px; font-weight: 680; font-variant-numeric: tabular-nums; }
 .exam-nota.is-bad { color: var(--red); }
 .exam-nota.is-ok { color: var(--green); }
+
+/* El estado de la entrega, como el desplegable de Aules */
+.estado-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  align-self: flex-start;
+  margin-top: 5px;
+  padding: 5px 9px 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-2, var(--ink));
+  font: inherit; font-size: 11.5px; font-weight: 620;
+  cursor: pointer;
+}
+.estado-chip svg { width: 13px; height: 13px; opacity: .7; }
+.estado-chip.is-pendiente { border-color: color-mix(in srgb, var(--amber) 45%, transparent); color: color-mix(in srgb, var(--amber) 85%, var(--ink)); }
+.estado-chip.is-entregado { border-color: color-mix(in srgb, var(--blue) 45%, transparent); color: color-mix(in srgb, var(--blue) 85%, var(--ink)); }
+.estado-chip.is-corregido { border-color: color-mix(in srgb, var(--green) 45%, transparent); color: color-mix(in srgb, var(--green) 85%, var(--ink)); }
+
+/* Elegir el estado (hoja con las tres opciones) */
+.estado-lista { display: flex; flex-direction: column; gap: 8px; }
+.estado-opcion {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: inherit; font: inherit; font-size: 14.5px;
+  text-align: left; cursor: pointer;
+}
+.estado-opcion.is-on { border-color: var(--ink); background: var(--surface); }
+.estado-punto { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--muted-2); }
+.estado-opcion.is-pendiente .estado-punto { background: var(--amber); }
+.estado-opcion.is-entregado .estado-punto { background: var(--blue); }
+.estado-opcion.is-corregido .estado-punto { background: var(--green); }
+.estado-opcion b { flex: 1 1 auto; font-weight: 620; }
+.estado-ahora { flex: 0 0 auto; font-size: 11px; font-weight: 620; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
 
 /* — Tira de «próxima prueba» en Inicio — */
 .exam-strip {
@@ -2280,6 +2333,10 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 .chat-ia .card-head b { font-size: 15px; font-weight: 640; }
 .chat-ia .card-head .hint { margin-top: 2px; word-break: break-word; }/* — El calendario, a prueba de desbordes: nada se sale de su tarjeta — */
 .cal-sum small, .cal-key, .cal-title b, .cal-title small { overflow-wrap: anywhere; }
+
+/* Una regla general: lo que lleva `hidden` no se ve, aunque su clase tenga display propio.
+   (Los formularios de la Agenda cambian de casillas según el tipo y sin esto se seguían viendo.) */
+[hidden] { display: none !important; }
 
 /* ————— Esquema de evaluación y Agenda con trabajos (v67.5) —————
    Piezas nuevas: los componentes de la nota (lista y editor), el aviso de los pesos y los
