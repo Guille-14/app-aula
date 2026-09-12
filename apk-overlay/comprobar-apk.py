@@ -138,6 +138,15 @@ ok(paquete, "paquete es.aula.smr.hub")
 # (el manifest del APK es XML binario: las cadenas van en UTF-16, así que se busca en el texto
 # decodificado, no en los bytes crudos — así falló la primera vez)
 ok("fileprovider" in man_txt, "FileProvider para compartir archivos (autoridad .fileprovider)")
+# El chat habla con tu Ollama por http:// en la Wi-Fi de casa. Desde Android 9 el tráfico en claro
+# está prohibido por defecto: sin esta marca, la app no puede llegar y el chat cae al motor local.
+ok("usesCleartextTraffic" in man_txt, "tráfico en claro permitido (para hablar con tu Ollama por http://)")
+# El puente nativo de Capacitor es el plan B cuando el WebView corta la petición (CORS o contenido
+# mixto): su clase tiene que ir dentro del APK.
+http_nativo = b"com/getcapacitor/plugin/CapacitorHttp" in dex or any(
+    b"com/getcapacitor/plugin/CapacitorHttp" in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex")
+)
+ok(http_nativo, "puente HTTP nativo de Capacitor (el plan B del chat)")
 
 for nombre_plugin, (clase, permiso) in plugins.items():
     dentro = clase in dex or any(clase in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex"))
@@ -157,6 +166,8 @@ with open(".datos-apk", "w", encoding="utf-8") as f:
         "app": ver, "app_esperada": esperada, "paquete": pkg_ver, "widgets": len(esperados) - len(faltan),
         "plugins": sum(1 for clase, _ in plugins.values() if clase in dex),
         "media": "sí" if media else "NO",
+        "cleartext": "sí" if "usesCleartextTraffic" in man_txt else "NO",
+        "http_nativo": "sí" if http_nativo else "NO",
     }.items():
         f.write("%s=%s\n" % (k, v))
 

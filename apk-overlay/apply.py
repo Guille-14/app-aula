@@ -219,15 +219,12 @@ strings.write_text(txt, encoding="utf-8")
 man = ANDROID / "app/src/main/AndroidManifest.xml"
 mt = man.read_text(encoding="utf-8")
 
-# Quitar LAUNCHER de MainActivity: los alias son el icono del escritorio
-mt = re.sub(
-    r'<action android:name="android.intent.action.MAIN"\s*/>\s*'
-    r'<category android:name="android.intent.category.LAUNCHER"\s*/>',
-    "",
-    mt,
-    count=1,
-)
-mt = re.sub(r"<intent-filter>\s*</intent-filter>", "", mt)
+# El chat puede hablar con el Ollama de tu ordenador, que va por http:// en la Wi-Fi de casa.
+# Desde Android 9 (y aquí compilamos para targetSdk 34) el tráfico en claro está prohibido por
+# defecto, así que la app se quedaba sin poder salir y el chat caía siempre al motor local.
+if "usesCleartextTraffic" not in mt:
+    # Ojo: se inserta en la misma línea (un salto aquí dentro del literal llegaría escapado al XML)
+    mt = mt.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
 
 recv_bits = []
 for wid, cls, _kind, _size, _name, _desc in WIDGETS:

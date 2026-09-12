@@ -15,7 +15,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WEB = ["index.html", "manifest.webmanifest", "sw.js", "js", "css", "assets"];
-const COPIAR = ["tests", "apk-overlay", "package.json", "package-lock.json"];
+// capacitor.config.json va aquí a propósito: las pruebas comprueban que el APK se empaqueta con
+// permiso para hablar por http:// con el Ollama de casa, y eso tiene que valer también al minificar.
+const COPIAR = ["tests", "apk-overlay", "capacitor.config.json", "package.json", "package-lock.json"];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aula-min-"));
 try {

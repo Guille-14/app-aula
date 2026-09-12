@@ -208,6 +208,81 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     return "No encuentro eso en tus apuntes. Prueba con palabras del título del tema, o conecta tu Ollama en Ajustes para respuestas más largas.";
   }
 
+  /* ---- Ollama: hablar con el ordenador de casa ------------------------------------------
+     Antes, cualquier fallo acababa en el mismo «Ollama no respondió»: daba igual que Ollama solo
+     escuchara en localhost, que el cortafuegos cortara el puerto o que Android no dejara salir
+     por http://. Ahora se distingue cada caso y se dice qué hacer. Lo único que sale a la red es
+     esto, y solo si tú pones la dirección. */
+
+  function ollamaBase() { return String(st().settings.ollamaUrl || "").trim().replace(/\/+$/, ""); }
+  function ollamaModelo() { return st().settings.ollamaModel || "llama3.2"; }
+  function esAppAndroid() {
+    try { return !!(A().isNativeShell && A().isNativeShell()); } catch { return false; }
+  }
+  // El puente nativo de Capacitor no pasa por las reglas del navegador (CORS y contenido mixto):
+  // si el fetch normal falla en el APK, se reintenta por ahí.
+  function pluginNativo() {
+    try {
+      const http = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp;
+      return http && typeof http.request === "function" ? http : null;
+    } catch { return null; }
+  }
+
+  function conTiempo(promesa, ms) {
+    let reloj = null;
+    const limite = new Promise((_, rej) => {
+      reloj = setTimeout(() => rej(Object.assign(new Error("Se agotó el tiempo"), { tipo: "tiempo" })), ms);
+    });
+    return Promise.race([promesa, limite]).finally(() => clearTimeout(reloj));
+  }
+
+  function tipoDeFallo(e) {
+    if (e && e.tipo) return e.tipo;
+    const m = String((e && (e.name || e.message)) || e || "");
+    if (/abort|tiempo|timeout|tard/i.test(m)) return "tiempo";
+    if (/failed to fetch|networkerror|load failed|network|err_|cleartext|cors/i.test(m)) return "sin-llegar";
+    return "otro";
+  }
+
+  async function porNativo(url, opts, ms) {
+    const p = pluginNativo();
+    if (!p) return null;
+    try {
+      const r = await conTiempo(p.request({
+        url,
+        method: (opts && opts.method) || "GET",
+        headers: (opts && opts.headers) || {},
+        data: opts && opts.body ? JSON.parse(opts.body) : undefined,
+        connectTimeout: ms,
+        readTimeout: ms,
+      }), ms + 1500);
+      const datos = r ? r.data : null;
+      return {
+        ok: r && r.status >= 200 && r.status < 300,
+        status: r ? r.status : 0,
+        nativo: true,
+        json: async () => (typeof datos === "string" ? JSON.parse(datos) : datos),
+        text: async () => (typeof datos === "string" ? datos : JSON.stringify(datos)),
+      };
+    } catch { return null; }
+  }
+
+  // Una petición a Ollama: fetch normal y, si el móvil lo corta, el puente nativo
+  async function pedirOllama(ruta, opts = {}, ms = 45000) {
+    const url = ollamaBase() + ruta;
+    let primero = null;
+    try {
+      const res = await conTiempo(fetch(url, opts), ms);
+      if (res && res.ok) return res;
+      primero = res;
+      // 4xx/5xx del propio Ollama: no se reintenta por el puente, el problema no es la red
+      if (res && res.status && res.status !== 0) return res;
+    } catch (e) { primero = e; }
+    const nativo = await porNativo(url, opts, ms);
+    if (nativo) return nativo;
+    throw Object.assign(new Error("No se pudo llegar a " + url), { tipo: tipoDeFallo(primero), url });
+  }
+
   // Texto del estado de Ollama para Ajustes (sin promesas: lo que ya sabemos)
   function textoOllama() {
     return st().settings.ollamaUrl
@@ -217,46 +292,117 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
 
   // Pregunta a Ollama qué modelos tienes descargados (lo único que sale a la red)
   async function modelosOllama() {
-    const url = (st().settings.ollamaUrl || "").replace(/\/$/, "");
+    const url = ollamaBase();
     if (!url) throw new Error("sin url");
-    const ctrl = new AbortController();
-    const reloj = setTimeout(() => ctrl.abort(), 8000);
+    const r = await pedirOllama("/api/tags", {}, 8000);
+    if (!r.ok) throw Object.assign(new Error("Ollama respondió " + r.status), { tipo: "servidor", status: r.status });
+    const j = await r.json().catch(() => ({}));
+    return (j.models || []).map((m) => String(m.name || m.model || "")).filter(Boolean);
+  }
+
+  /* Diagnóstico con nombre y apellidos: qué pasa y qué hacer. Es lo que enseña «Probar conexión»
+     y lo que se cuenta en el chat cuando no se puede usar tu modelo. */
+  const ARRANQUE_OLLAMA = 'Arranca Ollama en el ordenador para la Wi-Fi: en Windows, abre PowerShell y escribe $env:OLLAMA_HOST="0.0.0.0" antes de "ollama serve" (en Mac o Linux: OLLAMA_HOST=0.0.0.0 ollama serve).';
+
+  async function diagnosticoOllama() {
+    const url = ollamaBase();
+    if (!url) return { ok: false, titulo: "Sin servidor", texto: "El chat responde con el motor local del móvil. Pon la dirección de Ollama para usar tu modelo.", pasos: [] };
     try {
-      const r = await fetch(url + "/api/tags", { signal: ctrl.signal });
-      if (!r.ok) throw new Error("respuesta " + r.status);
+      const r = await pedirOllama("/api/tags", {}, 8000);
+      if (!r.ok) {
+        const pistas = r.status === 403 || r.status === 401
+          ? ["Ollama está rechazando las peticiones de la app. Reinícialo aceptando cualquier origen: OLLAMA_ORIGINS=*"]
+          : ["Ollama ha contestado algo raro en " + url + ". Comprueba la versión: ollama --version"];
+        return { ok: false, titulo: "Ollama contestó " + r.status, texto: "La dirección es correcta (algo hay escuchando ahí), pero no da modelos.", pasos: pistas, modelos: [] };
+      }
       const j = await r.json().catch(() => ({}));
-      return (j.models || []).map((m) => String(m.name || m.model || "")).filter(Boolean);
-    } finally { clearTimeout(reloj); }
+      const modelos = (j.models || []).map((m) => String(m.name || m.model || "")).filter(Boolean);
+      const elegido = ollamaModelo();
+      const tiene = modelos.some((m) => m === elegido || m.split(":")[0] === elegido);
+      if (!modelos.length) {
+        return { ok: true, aviso: true, titulo: "Ollama responde, pero no hay ningún modelo", texto: "En el ordenador no hay modelos descargados.", pasos: ["En el ordenador: ollama pull " + elegido], modelos: [] };
+      }
+      if (!tiene) {
+        return { ok: true, aviso: true, titulo: "El modelo «" + elegido + "» no está descargado", texto: "Ollama responde y tiene " + modelos.length + " modelo(s), pero no el que pide la app.", pasos: ["En el ordenador: ollama pull " + elegido, "O toca uno de los que ya tienes aquí abajo."], modelos };
+      }
+      return { ok: true, titulo: "Conectado con tu Ollama", texto: "Responde en " + url + " y el modelo «" + elegido + "» está listo." + (r.nativo ? " (Hablando por el puente del móvil.)" : ""), pasos: [], modelos };
+    } catch (e) {
+      const tipo = tipoDeFallo(e);
+      if (tipo === "tiempo") {
+        return { ok: false, titulo: "Ollama no contestó a tiempo", texto: "Hay algo en " + url + " pero tardó más de 8 s en decir qué modelos tienes.", pasos: ["Suele ser el ordenador ocupado o dormido. Prueba otra vez."], modelos: [] };
+      }
+      if (tipo === "servidor") {
+        return { ok: false, titulo: "Ollama respondió con un error", texto: String(e && e.message || ""), pasos: ["Mira la ventana de Ollama en el ordenador."], modelos: [] };
+      }
+      // Una web abierta en https:// no puede pedir nada a un http:// (contenido mixto): eso no se
+      // arregla en el ordenador de Ollama, hay que usar la app instalada o abrir la web en http://
+      try {
+        const navegadorHttps = !esAppAndroid() && location.protocol === "https:" && /^http:/i.test(url);
+        if (navegadorHttps) {
+          return {
+            ok: false,
+            titulo: "El navegador no deja salir desde https://",
+            texto: "Esta página va por https:// y Ollama está en http:// (" + url + "): el navegador bloquea esa mezcla.",
+            pasos: [
+              "Lo más fácil: usa la app instalada en el móvil, que no tiene esa limitación.",
+              "O abre la web en http:// (por ejemplo http://localhost:8080) en vez de https://.",
+            ],
+            modelos: [],
+          };
+        }
+      } catch { /* sin location: se sigue con el diagnóstico normal */ }
+      const pasos = [
+        ARRANQUE_OLLAMA,
+        "Comprueba que la dirección es la del ordenador en tu Wi-Fi (la ves con «ipconfig» en Windows, «ip a» en Linux).",
+        "Deja pasar el puerto 11434 en el cortafuegos (Windows: permite Ollama en redes privadas).",
+      ];
+      if (!esAppAndroid()) pasos.push("En el navegador, Ollama tiene que aceptar el origen de la app: OLLAMA_ORIGINS=* al arrancarlo.");
+      return { ok: false, titulo: "El móvil no llega a " + url, texto: "La app llamó y nadie contestó." + (esAppAndroid() ? "" : " Si estás en el navegador del ordenador y también falla, mira la Wi-Fi y el cortafuegos."), pasos, modelos: [] };
+    }
+  }
+
+  // Pinta el resultado del diagnóstico dentro de la hoja de configuración
+  function pintarDiagOllama(diag) {
+    st()._ollamaOk = !!diag.ok && !diag.aviso;   // lo que dirá el badge del chat
+    const estado = document.getElementById("ollama-estado");
+    if (estado) estado.textContent = diag.titulo + (diag.texto ? " · " + diag.texto : "");
+    const guia = document.getElementById("ollama-guia");
+    if (guia && !diag.ok && diag.pasos && diag.pasos.length) guia.open = true;
+    const caja = document.getElementById("ollama-chips");
+    if (caja) {
+      const modelos = diag.modelos || [];
+      const elegido = ollamaModelo();
+      const otros = modelos.filter((m) => m !== elegido);
+      if (!otros.length) { caja.hidden = true; caja.innerHTML = ""; return; }
+      caja.hidden = false;
+      caja.innerHTML = `<span class="hint">En tu Ollama tienes estos; toca uno para usarlo:</span>` +
+        otros.slice(0, 8).map((m) => `<button type="button" class="chip" data-action="ollama-usar" data-id="${esc(m)}">${esc(m)}</button>`).join("");
+      const dl = document.getElementById("ollama-modelos");
+      if (dl) dl.innerHTML = modelos.map((m) => `<option value="${esc(m)}"></option>`).join("");
+    }
   }
 
   async function probarOllama() {
-    const modelos = await modelosOllama();
-    return modelos.length
-      ? "Ollama responde · " + modelos.length + " modelo(s): " + modelos.slice(0, 3).join(", ")
-      : "Ollama responde, pero no veo ningún modelo descargado";
+    const diag = await diagnosticoOllama();
+    return diag.titulo + (diag.texto ? " · " + diag.texto : "");
   }
-
   async function askOllama(q) {
-    const url = (st().settings.ollamaUrl || "").replace(/\/$/, "");
+    const url = ollamaBase();
     if (!url) return localBrain(q);
     const ctx = st().notes.slice(0, 8).map((n) => `# ${n.title}\n${(n.content || "").slice(0, 800)}`).join("\n\n");
     const prompt = `Eres un asistente de estudio de SMR. Responde SOLO con los apuntes y el calendario del alumno. Si no está, dilo.\n\nAPUNTES:\n${ctx}\n\nPREGUNTA: ${q}`;
-    // Sin límite de tiempo, un Ollama apagado dejaba el chat pensando para siempre
-    const ctrl = new AbortController();
-    const reloj = setTimeout(() => ctrl.abort(), 45000);
-    try {
-      const r = await fetch(url + "/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: st().settings.ollamaModel || "llama3.2", prompt, stream: false }),
-        signal: ctrl.signal,
-      });
-      if (!r.ok) throw new Error("Ollama respondió " + r.status);
-      const j = await r.json();
-      return j.response || JSON.stringify(j);
-    } catch (e) {
-      throw new Error(/abort/i.test(String(e.name || e.message)) ? "Ollama tardó más de 45 s" : "No se pudo hablar con Ollama");
-    } finally { clearTimeout(reloj); }
+    const r = await pedirOllama("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: ollamaModelo(), prompt, stream: false }),
+    }, 45000);
+    if (!r.ok) {
+      if (r.status === 404) throw Object.assign(new Error("modelo no descargado"), { tipo: "modelo", status: 404 });
+      throw Object.assign(new Error("Ollama respondió " + r.status), { tipo: "servidor", status: r.status });
+    }
+    const j = await r.json().catch(() => ({}));
+    if (!j || !j.response) throw Object.assign(new Error("respuesta vacía de Ollama"), { tipo: "otro" });
+    return j.response;
   }
 
   function enviarChat() {
@@ -267,7 +413,17 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     recortarChat();
     render();
     const finish = (text) => { st()._chat.push({ role: "bot", text }); recortarChat(); render(); };
-    askOllama(q).then(finish).catch(() => finish(localBrain(q) + "\n\n(Ollama no respondió; respondió el motor local.)"));
+    askOllama(q).then((t) => { st()._ollamaOk = true; finish(t); }).catch(async (e) => {
+      st()._ollamaOk = false;
+      // Antes era siempre «Ollama no respondió»: ahora se dice qué ha pasado y qué mirar
+      const diag = await diagnosticoOllama().catch(() => null);
+      const motivo = (e && e.tipo === "modelo")
+        ? "Tu Ollama no tiene descargado el modelo «" + ollamaModelo() + "». En el ordenador: ollama pull " + ollamaModelo()
+        : diag ? diag.titulo + ". " + diag.texto : "No se pudo hablar con " + ollamaBase() + ".";
+      const pasos = diag && diag.pasos && diag.pasos.length ? "\n\nQué mirar:\n" + diag.pasos.map((p, i) => (i + 1) + ". " + p).join("\n") : "";
+      // Queda claro quién ha respondido y por qué no ha podido ser tu Ollama
+      finish(localBrain(q) + "\n\n—\nRespondió el motor local del móvil.\n" + motivo + pasos);
+    });
   }
 
   /* La config técnica (dirección y modelo) vivía dentro del chat y estorbaba a quien solo quiere
@@ -284,7 +440,19 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
         <button type="button" class="btn" data-action="ollama-modelos">Ver modelos</button>
         ${url ? `<button type="button" class="btn btn-ghost" data-action="ollama-local">Usar solo el local</button>` : ""}
       </div>
-      <p class="hint" id="ollama-estado">${esc(textoOllama())}</p>`;
+      <p class="hint" id="ollama-estado">${esc(textoOllama())}</p>
+      <div id="ollama-chips" class="chips-row" hidden></div>
+      <details class="chat-cfg" id="ollama-guia">
+        <summary>Si no conecta…</summary>
+        <p class="hint">Ollama, por defecto, <b>solo atiende a su propio ordenador</b>. Para que el móvil lo vea hay que arrancarlo en la red y dejar pasar el puerto 11434 en el cortafuegos:</p>
+        <div class="info-list">
+          <div class="info-row"><b>Windows</b><span>PowerShell: <code>$env:OLLAMA_HOST="0.0.0.0"</code> y luego <code>ollama serve</code></span></div>
+          <div class="info-row"><b>Mac / Linux</b><span><code>OLLAMA_HOST=0.0.0.0 ollama serve</code></span></div>
+          <div class="info-row"><b>Navegador</b><span>Además, que acepte el origen de la app: <code>OLLAMA_ORIGINS=*</code></span></div>
+          <div class="info-row"><b>Modelo</b><span><code>ollama pull llama3.2</code> (o el que prefieras)</span></div>
+        </div>
+        <p class="hint">El móvil tiene que estar en la <b>misma Wi-Fi</b>. La dirección de tu ordenador la ves con <code>ipconfig</code> (Windows) o <code>ip a</code> (Linux).</p>
+      </details>`;
   }
 
   function abrirConfigOllama() {
@@ -297,6 +465,7 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
         if (campo) st().settings.ollamaUrl = campo.value.trim();
         const modelo = document.getElementById("set-omodel");
         if (modelo) st().settings.ollamaModel = modelo.value.trim() || "llama3.2";
+        st()._ollamaOk = undefined;   // dirección nueva: hasta probarla, no se sabe nada
         save();
         Aula.closeModal();
         render();
@@ -316,10 +485,10 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
         <div class="card-head">
           <div>
             <b>${conectado ? "Tu Ollama" : "Motor local"}</b>
-            <div class="hint">${conectado ? esc(url) + " · " + esc(modelo) : "Tus apuntes y tu calendario, sin salir del móvil."}</div>
+            <div class="hint">${conectado ? esc(url) + " · " + esc(modelo) : "Tus apuntes y tu calendario, sin salir del móvil. Conecta tu Ollama con el engranaje."}</div>
           </div>
           <div class="chat-head-right">
-            <span class="badge ${conectado ? "done" : ""}">${conectado ? "Conectado" : "Sin red"}</span>
+            <span class="badge ${!conectado ? "" : st()._ollamaOk === true ? "done" : st()._ollamaOk === false ? "hot" : ""}">${!conectado ? "Motor local" : st()._ollamaOk === true ? "Conectado" : st()._ollamaOk === false ? "Sin conexión" : "Sin probar"}</span>
             <button type="button" class="icon-btn" data-action="ollama-config" aria-label="Ajustes de Ollama" title="Ajustes de Ollama">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
             </button>
@@ -570,6 +739,15 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       toast("Modo concentración desactivado");
     }
     if (action === "sheet-print") window.print();
+    if (action === "ollama-usar") {
+      st().settings.ollamaModel = btn.dataset.id || st().settings.ollamaModel;
+      save();
+      const campo = document.getElementById("set-omodel");
+      if (campo) campo.value = st().settings.ollamaModel;
+      toast("Modelo: " + st().settings.ollamaModel);
+      render();
+      return;
+    }
     if (action === "ollama-modelos") {
       const marca = document.getElementById("ollama-estado");
       if (marca) marca.textContent = "Preguntando a Ollama…";
@@ -579,9 +757,11 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
         const msg = ms.length ? ms.length + " modelo(s): " + ms.slice(0, 4).join(", ") : "Ollama responde, pero no hay modelos descargados";
         if (marca) marca.textContent = msg;
         toast(msg);
-      }).catch(() => {
-        const msg = "No responde en " + st().settings.ollamaUrl + " · revisa la dirección y la Wi-Fi";
+      }).catch(async () => {
+        const diag = await diagnosticoOllama().catch(() => null);
+        const msg = diag ? diag.titulo : "No responde en " + ollamaBase();
         if (marca) marca.textContent = msg;
+        if (diag) pintarDiagOllama(diag);
         toast(msg);
       });
     }
@@ -589,6 +769,7 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     if (action === "ollama-save" || action === "ollama-test" || action === "ollama-local") {
       if (action === "ollama-local") {
         st().settings.ollamaUrl = "";
+        st()._ollamaOk = undefined;
         save(); render(); toast("Ollama desconectado: el chat usará el motor local");
         return;
       }
@@ -605,15 +786,16 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       // Probar conexión: es lo único que sale a la red, y solo lo pides tú
       const marca = document.getElementById("ollama-estado");
       if (marca) marca.textContent = "Probando…";
-      probarOllama()
-        .then((m) => {
-          if (marca) marca.textContent = m;
-          render(); toast(m);
+      diagnosticoOllama()
+        .then((diag) => {
+          pintarDiagOllama(diag);
+          render();
+          toast(diag.titulo);
         })
         .catch(() => {
-          const m = "No responde en " + st().settings.ollamaUrl + " · el chat sigue en local (revisa que sea la misma Wi-Fi)";
+          const m = "No se pudo probar " + ollamaBase();
           if (marca) marca.textContent = m;
-          render(); toast(m);
+          toast(m);
         });
     }
     if (action === "snap-now") {
@@ -812,6 +994,8 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
 
   window.AulaStudio = {
     agenda, chatbot, habits, glossary,
+    // Diagnóstico de Ollama (lo usan las pruebas y el propio modal)
+    diagnosticoOllama, ollamaBase, ollamaModelo, ollamaCfgHTML,
     examode, quickreview, admin, click, todayStudyHint, hoyISO, dayInfo, esLectivo, bloquesDe,
     // Herramientas que también viven en la sección de utilidades (buscador global)
     toolCatalog() {
@@ -826,4 +1010,12 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
       return out;
     },
   };
+  /* Este script se ejecuta DESPUÉS de app.js, que ya ha pintado la vista. Si la app ha arrancado
+     directamente en una de estas vistas (por el hash), el primer pintado se encontró con que el
+     módulo todavía no existía y salió «Módulo no cargado»: se repinta aquí, ya con todo listo. */
+  try {
+    const v = (location.hash || "").replace("#", "");
+    const mias = ["agenda", "chatbot", "habits", "glossary", "examode", "quickreview", "admin"];
+    if (mias.includes(v) && typeof A().render === "function") A().render();
+  } catch { /* si aún no está listo, el primer render bueno llegará igual */ }
 })();

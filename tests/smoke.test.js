@@ -2079,6 +2079,100 @@ async function testAuditoria() {
   }
 }
 
+// ------------- 21. Ollama: por qué no conecta y qué hacer para que sí (v67.4.2)
+/* El informe del usuario fue «No funciona la IA de ollama», sin más pistas: la app se caía al
+   motor local con el mismo mensaje pasara lo que pasara. Esto comprueba que (a) el APK puede
+   salir por http://, (b) cada fallo se distingue y se explica, y (c) el chat no cae en silencio. */
+async function testOllama() {
+  const env = boot();
+  ready(env.A);
+  const A = env.A;
+  const S = env.window.AulaStudio;
+  if (!S || typeof S.diagnosticoOllama !== "function") { check(false, "ollama: falta el diagnóstico en AulaStudio"); return; }
+
+  // 1. El APK: Ollama va por http:// en la Wi-Fi de casa
+  const cap = JSON.parse(fs.readFileSync(path.join(ROOT, "capacitor.config.json"), "utf8"));
+  check(cap.android && cap.android.allowMixedContent === true,
+    "apk: se permite contenido mixto (la app es https y Ollama http)");
+  const apply = fs.readFileSync(path.join(ROOT, "apk-overlay", "apply.py"), "utf8");
+  check(/usesCleartextTraffic/.test(apply), "apk: el manifest permite tráfico en claro (sin esto Android lo corta)");
+  const comprobar = fs.readFileSync(path.join(ROOT, "apk-overlay", "comprobar-apk.py"), "utf8");
+  check(/usesCleartextTraffic/.test(comprobar) && /puente HTTP nativo/.test(comprobar),
+    "apk: la comprobación del APK exige el tráfico en claro y el puente nativo");
+
+  A.state.settings.ollamaUrl = "http://192.168.1.10:11434";
+  A.state.settings.ollamaModel = "llama3.2";
+
+  // 2. Nadie contesta: Ollama escuchando solo en localhost, cortafuegos o Wi-Fi distinta
+  env.window.fetch = () => Promise.reject(new TypeError("Failed to fetch"));
+  let diag = await S.diagnosticoOllama();
+  check(!diag.ok && /no llega/i.test(diag.titulo), "ollama: si nadie contesta, se dice con esas palabras");
+  check(diag.pasos.some((p) => /OLLAMA_HOST/.test(p)) && diag.pasos.some((p) => /11434/.test(p)),
+    "ollama: y se explica cómo arrancarlo para la Wi-Fi y abrir el puerto");
+  // Una web en https:// no puede pedir nada a un http://: eso se avisa aparte, porque en el
+  // ordenador de Ollama no hay nada que arreglar
+  check(/El navegador no deja salir desde https/.test(fs.readFileSync(path.join(ROOT, "js", "studio.js"), "utf8")),
+    "ollama: si la web va por https:// se avisa de que el navegador bloquea http://");
+
+  // 3. Alguien contesta, pero rechaza la petición (Ollama solo acepta sus orígenes por defecto)
+  env.window.fetch = () => Promise.resolve({ ok: false, status: 403, json: async () => ({}) });
+  diag = await S.diagnosticoOllama();
+  check(!diag.ok && /403/.test(diag.titulo) && diag.pasos.some((p) => /OLLAMA_ORIGINS/.test(p)),
+    "ollama: un 403 se explica como CORS, con el arreglo");
+
+  // 4. Responde, pero el modelo pedido no está descargado
+  env.window.fetch = () => Promise.resolve({ ok: true, status: 200, json: async () => ({ models: [{ name: "qwen2.5:7b" }] }) });
+  diag = await S.diagnosticoOllama();
+  check(diag.ok && diag.aviso && /llama3\.2/.test(diag.titulo) && diag.pasos.some((p) => /ollama pull/.test(p)),
+    "ollama: si falta el modelo, se dice cuál y cómo bajarlo");
+
+  // 5. Todo en orden
+  env.window.fetch = () => Promise.resolve({ ok: true, status: 200, json: async () => ({ models: [{ name: "llama3.2" }] }) });
+  diag = await S.diagnosticoOllama();
+  check(diag.ok && !diag.aviso && /Conectado/.test(diag.titulo), "ollama: conectado y con el modelo listo, lo dice");
+
+  // 6. En el móvil: si el WebView corta la petición (CORS o contenido mixto), se reintenta por
+  //    el puente nativo de Capacitor, que no pasa por las reglas del navegador
+  const pedidas = [];
+  env.window.fetch = () => Promise.reject(new TypeError("Failed to fetch"));
+  env.window.Capacitor = { isNativePlatform: () => true, Plugins: { CapacitorHttp: { request: async (o) => { pedidas.push(o.url); return { status: 200, data: { models: [{ name: "llama3.2" }] }, headers: {} }; } } } };
+  diag = await S.diagnosticoOllama();
+  check(diag.ok && pedidas.some((u) => u.endsWith("/api/tags")), "ollama en el móvil: si el WebView corta, se reintenta por el puente nativo");
+  delete env.window.Capacitor;
+
+  // 7. El chat no vuelve a caer en silencio: dice el motivo y qué mirar
+  env.window.fetch = () => Promise.reject(new TypeError("Failed to fetch"));
+  A.go("chatbot");
+  env.doc.getElementById("chat-q").value = "Explícame DHCP";
+  const antes = (A.state._chat || []).length;
+  act(env, "chat-send", {});
+  await hasta(() => { const l = A.state._chat || []; return l.length > antes && l[l.length - 1].role === "bot"; }, 8000);
+  const ultimo = (A.state._chat || []).slice(-1)[0] || { text: "" };
+  check(/motor local/i.test(ultimo.text) && /no llega/i.test(ultimo.text) && /OLLAMA_HOST/.test(ultimo.text),
+    "chat: si tu Ollama no responde, se dice el motivo y qué mirar (ya no cae en silencio)");
+  check(/Sin conexión/.test(env.doc.getElementById("view").textContent),
+    "chat: el estado dice «Sin conexión» cuando ha fallado, no «Conectado» por tener dirección");
+
+  // 8. La guía de arranque, dentro de la hoja de configuración
+  act(env, "ollama-config");
+  const guia = env.doc.getElementById("ollama-guia");
+  check(!!guia && /OLLAMA_HOST/.test(guia.textContent) && /OLLAMA_ORIGINS/.test(guia.textContent) && /ollama pull/.test(guia.textContent),
+    "ollama: la hoja trae la guía (arrancar en la red, orígenes y descargar el modelo)");
+  act(env, "close-modal");
+
+  // 9. Probar conexión desde la hoja: si responde con varios modelos, se eligen de un toque
+  env.window.fetch = () => Promise.resolve({ ok: true, status: 200, json: async () => ({ models: [{ name: "llama3.2" }, { name: "qwen2.5:7b" }] }) });
+  A.go("chatbot");
+  act(env, "ollama-config");
+  act(env, "ollama-test");
+  await hasta(() => { const c = env.doc.getElementById("ollama-chips"); return !!c && !c.hidden; }, 8000);
+  check(/Conectado/.test((env.doc.getElementById("ollama-estado") || {}).textContent || ""), "ollama: «Probar conexión» enseña el resultado en la hoja");
+  act(env, "ollama-usar", { id: "qwen2.5:7b" });
+  check(A.state.settings.ollamaModel === "qwen2.5:7b", "ollama: el modelo se cambia de un toque, sin escribir");
+  act(env, "close-modal");
+  check(env.errors.length === 0, "v67.4.2: sin errores de consola (" + env.errors.slice(0, 2).join(" · ") + ")");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -2088,6 +2182,7 @@ async function testAuditoria() {
     await testBackupConFotos();
     await testSinRed();
     await testAuditoria();
+    await testOllama();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");
   }

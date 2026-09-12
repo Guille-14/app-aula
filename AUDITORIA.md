@@ -8,6 +8,7 @@
 **Ronda v60:** segunda pasada de pulido (calendario redondo, módulos en lista, acentos por tema, 216 pruebas ✓).
 **Ronda v61:** exámenes con su pestaña, foco sin botón flotante, calendario acotado y chat de Ollama (263 pruebas ✓).
 **Ronda v62:** revisión con navegador real: media y boletín arreglados, 20 rejillas acotadas y nada se sale de la tarjeta (275 pruebas ✓).
+**Ronda v67.4.2:** «No funciona la IA de ollama»: el APK no podía salir por `http://` (contenido mixto y tráfico en claro), y cualquier fallo se contaba igual; ahora cada fallo se distingue y se explica cómo arreglarlo (492 pruebas ✓).
 **Ronda v67.4 (y v67.4.1):** la auditoría de interfaz del usuario: la barra de abajo vuelve y no se queda escondida, el calendario, la semana, los exámenes y las notas dejan de mentir (476 pruebas ✓).
 **Ronda v67.3:** el horario del centro cuadro a cuadro (31 clases, Sistemas 7 h y el jueves sin última hora) (440 pruebas ✓).
 **Ronda v67.2:** el horario del centro definitivo (15:10–22:15), sin «huecos libres» inventados, la foto de perfil que no cambiaba y los botones de Ajustes flotando (437 pruebas ✓).
@@ -892,6 +893,84 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+---
+
+## Ronda v67.4.2 · «No funciona la IA de ollama»
+
+El informe llegó con cuatro palabras y ninguna pista: «No funciona la IA de ollama». El chat no se
+rompía: **siempre** acababa en el motor local, dijera lo que dijera el informe, así que no había
+forma de saber qué pasaba. Se revisó el camino entero (página → WebView → red → Ollama) y había
+**dos problemas de verdad y uno de confianza**.
+
+### 1. En el APK, la app no podía salir por `http://` (el fallo principal)
+
+La web va dentro del APK en `https://localhost` (Capacitor con `androidScheme: "https"`), y Ollama
+en casa escucha en `http://192.168.x.x:11434`. Ahí había dos puertas cerradas:
+
+* **Contenido mixto**: la configuración tenía `android.allowMixedContent: false`, así que el WebView
+  bloqueaba cualquier petición desde la página https hacia un http.
+* **Tráfico en claro**: desde Android 9 (y aquí se compila con `targetSdk 34`) el sistema prohíbe
+  el tráfico sin cifrar salvo que la app lo pida en su manifest. Nadie lo pedía.
+
+Arreglado: `allowMixedContent: true` en `capacitor.config.json` y
+`android:usesCleartextTraffic="true"` en el `<application>` del manifest, que el overlay añade
+(`apk-overlay/apply.py`) y el comprobador del APK exige (`comprobar-apk.py`). Se aplica sobre el
+manifest tal cual sale de `cap sync`, así que el FileProvider, la activity y los 19 widgets siguen
+en su sitio (comprobado con el manifest de la plantilla real).
+
+### 2. Plan B para cuando el WebView corta: el puente nativo
+
+Toda llamada a Ollama pasa por `pedirOllama()`: primero el `fetch` normal y, si el WebView lo corta
+(contenido mixto, CORS o lo que venga), se reintenta con `CapacitorHttp`, que sale por el lado
+nativo de Android y no pasa por las reglas del navegador. El comprobador del APK verifica que esa
+clase va dentro del APK.
+
+### 3. Dejar de mentir: cada fallo, con su nombre y su arreglo
+
+Antes, cualquier problema acababa en el mismo «(Ollama no respondió; respondió el motor local.)».
+Ahora `diagnosticoOllama()` mira la dirección, el puerto, la respuesta y el puente, y distingue:
+
+| Lo que pasa | Lo que dice la app | Qué propone |
+|---|---|---|
+| Nadie contesta (Ollama solo en localhost, cortafuegos, otra Wi-Fi) | «El móvil no llega a http://…» | `OLLAMA_HOST=0.0.0.0` (Windows/Mac/Linux), la IP del ordenador y abrir el puerto 11434 |
+| Contesta 401/403 | «Ollama contestó 403» | reiniciar con `OLLAMA_ORIGINS=*` |
+| Contesta pero tarda más de 8 s | «Ollama no contestó a tiempo» | el ordenador ocupado o dormido |
+| Contesta y no hay modelos | «Ollama responde, pero no hay ningún modelo» | `ollama pull llama3.2` |
+| Contesta y falta el modelo pedido | «El modelo «x» no está descargado» | `ollama pull x`, y los que ya tienes se tocan abajo |
+| Web en https:// con Ollama en http:// | «El navegador no deja salir desde https://» | usar la app instalada o abrir la web en http:// |
+| Todo bien | «Conectado con tu Ollama» | — |
+
+El chat, cuando falla, ya no cae en silencio: escribe **quién** ha respondido («Respondió el motor
+local del móvil»), **qué** ha pasado y **qué mirar**, con los pasos numerados. El badge de la
+cabecera tampoco miente: «Conectado» solo si ha respondido de verdad, «Sin conexión» si ha fallado
+y «Sin probar» si hay dirección pero no se ha probado.
+
+### 4. La hoja de configuración enseña el camino
+
+El modal de Ollama (detrás del engranaje) lleva ahora una guía plegable «Si no conecta…» con los
+comandos exactos por sistema, recuerda que el móvil tiene que estar en la misma Wi-Fi y, al probar
+la conexión, lista los modelos que tienes en el ordenador para elegir uno **de un toque** (sin
+escribir). «Probar conexión» enseña el resultado ahí mismo y abre la guía si algo falla.
+
+### 5. Un fallo de arranque que salió por el camino
+
+`app.js` pinta la vista antes de que `studio.js` (el módulo del chat, la agenda, las herramientas…)
+esté cargado. Al abrir la app directamente en una de esas vistas salía «Módulo no cargado» y se
+quedaba ahí. Ahora el módulo repinta la vista en cuanto termina de cargar (y se comprobó en el
+navegador: el chat aparece siempre, incluso entrando directo por el enlace).
+
+### Pruebas
+
+**476 → 492 ✓** (16 comprobaciones nuevas: los siete diagnósticos, el reintento por el puente
+nativo, el motivo en el chat, el badge, la guía en la hoja, elegir modelo de un toque y las tres
+comprobaciones del APK). `npm run test:min` pasa las mismas 492 sobre el código minificado —que es
+el que va dentro del APK—; para eso el minificador ahora copia también `capacitor.config.json`.
+
+Además, una batería nueva en un navegador de verdad contra un **Ollama de mentira** local
+(`/tmp/ollama-falso.mjs`): configurar la dirección, «Probar conexión» → «Conectado con tu Ollama»,
+preguntar y recibir la respuesta **del modelo** (no del motor local), apagar el servidor y ver el
+diagnóstico completo con el badge en rojo. 9 de 9 y cero errores de consola.
 
 ---
 
