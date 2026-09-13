@@ -2947,10 +2947,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.8\.0"/.test(app), "versión: js/app.js dice v67.8.0");
-    check(pkg.version === "67.8.0", "versión: package.json dice 67.8.0");
-    check(lock.version === "67.8.0" && lock.packages[""].version === "67.8.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.8\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.9\.0"/.test(app), "versión: js/app.js dice v67.9.0");
+    check(pkg.version === "67.9.0", "versión: package.json dice 67.9.0");
+    check(lock.version === "67.9.0" && lock.packages[""].version === "67.9.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.9\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
@@ -3115,6 +3115,54 @@ function testReanalisis() {
   check(escrituras > 0, "re-análisis: y cuando hay un cambio sí guarda (escrituras=" + escrituras + ")");
 }
 
+// ------------------------------------------------------- v67.9.0: pulido de Herramientas
+function testTools() {
+  const tools = fs.readFileSync(path.join(ROOT, "js", "tools.js"), "utf8");
+
+  // 1 · El campo IPv6 arranca con una IPv6 de verdad, no con una URL
+  check(!tools.includes("example.com/user/golf"), "tools: el campo IPv6 ya no trae una URL");
+  check(/id="v6-in" value="[0-9a-f:]+"/i.test(tools), "tools: y arranca con una IPv6 de ejemplo");
+
+  // 2 · El conversor ofrece Octal (la validación de base 8 ya existía pero era inalcanzable)
+  check(/<option value="8">Octal<\/option>/.test(tools), "tools: el conversor tiene la opción Octal");
+
+  // 5 · El pin «Blanco/Verde» del T568 deja el amarillo #f5ee54 por un verde pastel
+  check(!tools.includes("#f5ee54") && tools.includes("#dcfce7"), "tools: Blanco/Verde usa verde pastel, no amarillo");
+
+  // Accesibilidad · todo botón de copiar anuncia que copia, y las pestañas son un tablist
+  const copias = (tools.match(/data-action="copy-text"/g) || []).length;
+  const etiquetas = (tools.match(/aria-label="Copiar/g) || []).length;
+  check(copias > 0 && copias === etiquetas, "tools: los " + copias + " botones de copiar llevan aria-label");
+  check(/role="tablist"/.test(tools) && /aria-selected=/.test(tools), "tools: las pestañas de la chuleta son un tablist con aria-selected");
+
+  // Funcional sobre jsdom: la IPv6 por defecto normaliza, Octal valida y hay recálculo en vivo
+  const env = boot();
+  ready(env.A);
+  const T = env.window.AulaTools;
+  const abrir = (id) => { T.click("tool-open", { dataset: { id } }); };
+  abrir("ipv6");
+  T.click("tool-ipv6", {});
+  check((env.doc.getElementById("v6-out") || { innerHTML: "" }).innerHTML.includes("Expandida"),
+    "tools: la IPv6 de ejemplo normaliza sola (Expandida sin tocar nada)");
+  abrir("conv");
+  env.doc.getElementById("cv-from").value = "8";
+  env.doc.getElementById("cv-n").value = "19";
+  T.click("tool-conv", {});
+  check((env.doc.getElementById("cv-out") || { innerHTML: "" }).innerHTML.includes("base 8"),
+    "tools: «19» en octal avisa de que el 9 no existe");
+  env.doc.getElementById("cv-n").value = "17";
+  T.click("tool-conv", {});
+  check(/Decimal<\/span>\s*<b>15</.test(env.doc.getElementById("cv-out").innerHTML),
+    "tools: y «17» octal → 15 decimal");
+  // recálculo en vivo: escribir dispara el resultado sin pulsar el botón
+  abrir("vlsm");
+  const campo = env.doc.getElementById("vl-n");
+  campo.value = "50";
+  campo.dispatchEvent(new env.window.Event("input", { bubbles: true }));
+  check((env.doc.getElementById("vl-out") || { innerHTML: "" }).innerHTML.includes("/"),
+    "tools: Hosts→CIDR responde mientras escribes (sin botón)");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -3130,6 +3178,7 @@ function testReanalisis() {
     await testV677();
     testIconoApp();
     testReanalisis();
+    testTools();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");
   }

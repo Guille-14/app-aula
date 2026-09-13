@@ -366,7 +366,7 @@
       <div id="wd-out" class="tool-out"></div>`));
     if (id === "ipv6") return wrap("IPv6", cardBox(`
       <div class="field"><label>Dirección</label>
-        <input id="v6-in" value="https://example.com/user/golf"></div>
+        <input id="v6-in" value="2001:db8:85a3::8a2e:370:7334"></div>
       ${liveBtn("tool-ipv6", "Normalizar")}
       <div id="v6-out" class="tool-out"></div>`));
     if (id === "vlan") return wrap("VLAN 802.1Q", `
@@ -379,8 +379,8 @@
           <div class="info-row"><b>Trunk</b><span>Varias VLAN, con tag</span></div>
         </div>`)}`);
     if (id === "t568") {
-      const A = [["1", "#f5ee54", "Blanco/Verde"], ["2", "green", "Verde"], ["3", "#fef9c3", "Blanco/Naranja"], ["4", "blue", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "orange", "Naranja"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
-      const B = [["1", "#fef9c3", "Blanco/Naranja"], ["2", "orange", "Naranja"], ["3", "#f5ee54", "Blanco/Verde"], ["4", "blue", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "green", "Verde"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
+      const A = [["1", "#dcfce7", "Blanco/Verde"], ["2", "green", "Verde"], ["3", "#fef9c3", "Blanco/Naranja"], ["4", "blue", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "orange", "Naranja"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
+      const B = [["1", "#fef9c3", "Blanco/Naranja"], ["2", "orange", "Naranja"], ["3", "#dcfce7", "Blanco/Verde"], ["4", "blue", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "green", "Verde"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
       const col = (rows, title) => `<div class="card"><h3 style="text-transform:none;font-size:15px;color:var(--ink)">${title}</h3>
         <div class="pinout">${rows.map(([n, c, l]) => `<div><b>${n}</b><i class="pin-dot" style="background:${c}"></i>${l}</div>`).join("")}</div></div>`;
       return wrap("T568A / T568B", col(A, "T568A") + col(B, "T568B") + `<p class="hint">En Europa suele usarse T568B en los dos extremos (cable directo).</p>`);
@@ -404,7 +404,8 @@
           <div class="info-row"><b>5 GHz</b><span>36–64, 100–140, 149–165</span></div>
           <div class="info-row"><b>Ancho</b><span>20 / 40 / 80 / 160 MHz</span></div>
         </div>`)}`);
-    if (id === "dns") return wrap("Registros DNS", `<div class="info-list">${DNSRR.map(([k, v]) => `<button type="button" class="info-row" data-action="copy-text" data-text="${k}"><b>${k}</b><span>${esc(v)}</span></button>`).join("")}</div>`);
+    if (id === "dns") return wrap("Registros DNS", `<p class="hint" style="margin-top:0">Toca un registro para copiarlo.</p>
+      <div class="info-list">${DNSRR.map(([k, v]) => `<button type="button" class="info-row" data-action="copy-text" aria-label="Copiar ${esc(k)}" data-text="${k}"><b>${k}</b><span>${esc(v)}</span></button>`).join("")}</div>`);
     if (id === "osi") return wrap("Modelo OSI", `<div class="info-list">${OSI.map(([k, v]) => `<div class="info-row"><b>${k}</b><span>${esc(v)}</span></div>`).join("")}
       <p class="hint">TCP/IP agrupa 5–7 en «Aplicación» y 1–2 a veces en «Acceso a red».</p>`);
     if (id === "nat") return wrap("NAT / PAT", `
@@ -493,7 +494,8 @@
         <div class="info-row"><b>WinRM</b><span>5985 / 5986 — PowerShell remota</span></div>
         <div class="info-row"><b>Telnet</b><span>23 — inseguro, no usar</span></div>
       </div>`)}`);
-    if (id === "systemd") return wrap("systemd", `<div class="cmd-list">${[
+    if (id === "systemd") return wrap("systemd", `<p class="hint" style="margin-top:0">Toca un comando para copiarlo.</p>
+      <div class="cmd-list">${[
       ["systemctl status SERV", "Estado"],
       ["systemctl start SERV", "Arrancar"],
       ["systemctl stop SERV", "Parar"],
@@ -502,7 +504,7 @@
       ["systemctl disable SERV", "Quitar del arranque"],
       ["journalctl -u SERV -f", "Logs en vivo"],
       ["systemctl daemon-reload", "Recargar unidades"],
-    ].map(([c, d]) => `<button type="button" class="cmd-row" data-action="copy-text" data-text="${esc(c)}"><code>${esc(c)}</code><span>${esc(d)}</span></button>`).join("")}</div>`);
+    ].map(([c, d]) => `<button type="button" class="cmd-row" data-action="copy-text" aria-label="Copiar ${esc(c)}" data-text="${esc(c)}"><code>${esc(c)}</code><span>${esc(d)}</span></button>`).join("")}</div>`);
     if (id === "poe") return wrap("PoE", `
       ${cardBox(`<div class="info-list">
         <div class="info-row"><b>802.3af (PoE)</b><span>~15,4 W (12,95 en el PD)</span></div>
@@ -522,37 +524,41 @@
       <div id="pw-out" class="tool-pass"></div>`));
     if (id === "ports") return wrap("Puertos SMR", `
       <input class="note-search" id="pt-q" placeholder="Buscar puerto o servicio…">
+      <p class="hint" style="margin-top:8px">Toca un puerto para copiarlo.</p>
       <div id="pt-list" class="port-list">${portRows("")}</div>`);
     if (id === "http") return wrap("Códigos HTTP", `
       <input class="note-search" id="ht-q" placeholder="Buscar código…">
+      <p class="hint" style="margin-top:8px">Toca un código para copiarlo.</p>
       <div id="ht-list" class="info-list">${httpRows("")}</div>`);
     if (id === "acro") return wrap("Acrónimos SMR", `
       <input class="note-search" id="ac-q" placeholder="Buscar DHCP, VLAN…">
+      <p class="hint" style="margin-top:8px">Toca un acrónimo para copiarlo.</p>
       <div id="ac-list" class="info-list">${acroRows("")}</div>`);
     if (id === "sheet") {
       const tab = st()._sheetTab || "linux";
       const rows = tab === "cisco" ? CISCO : tab === "psh" ? PSH : LINUX;
       return wrap("Chuleta de comandos", `
-        <div class="hub-seg">
-          <button data-action="sheet-tab" data-id="linux" class="${tab === "linux" ? "is-on" : ""}">Linux</button>
-          <button data-action="sheet-tab" data-id="cisco" class="${tab === "cisco" ? "is-on" : ""}">Cisco</button>
-          <button data-action="sheet-tab" data-id="psh" class="${tab === "psh" ? "is-on" : ""}">PowerShell</button>
+        <div class="hub-seg" role="tablist" aria-label="Sistema de la chuleta">
+          <button role="tab" aria-selected="${tab === "linux"}" data-action="sheet-tab" data-id="linux" class="${tab === "linux" ? "is-on" : ""}">Linux</button>
+          <button role="tab" aria-selected="${tab === "cisco"}" data-action="sheet-tab" data-id="cisco" class="${tab === "cisco" ? "is-on" : ""}">Cisco</button>
+          <button role="tab" aria-selected="${tab === "psh"}" data-action="sheet-tab" data-id="psh" class="${tab === "psh" ? "is-on" : ""}">PowerShell</button>
         </div>
         <p class="hint">Toca un comando para copiarlo.</p>
-        <div class="cmd-list">${rows.map(([c, d]) => `<button type="button" class="cmd-row" data-action="copy-text" data-text="${esc(c)}"><code>${esc(c)}</code><span>${esc(d)}</span></button>`).join("")}</div>
+        <div class="cmd-list">${rows.map(([c, d]) => `<button type="button" class="cmd-row" data-action="copy-text" aria-label="Copiar ${esc(c)}" data-text="${esc(c)}"><code>${esc(c)}</code><span>${esc(d)}</span></button>`).join("")}</div>
       `);
     }
     if (id === "ascii") {
       let rows = "";
       for (let i = 32; i <= 126; i++) {
-        rows += `<button type="button" class="info-row" data-action="copy-text" data-text="${i}"><b>${i}</b><span>${esc(String.fromCharCode(i))} · 0x${i.toString(16)}</span></button>`;
+        rows += `<button type="button" class="info-row" data-action="copy-text" aria-label="Copiar ${i}" data-text="${i}"><b>${i}</b><span>${esc(String.fromCharCode(i))} · 0x${i.toString(16)}</span></button>`;
       }
-      return wrap("Tabla ASCII", `<div class="info-list">${rows}</div>`);
+      return wrap("Tabla ASCII", `<p class="hint" style="margin-top:0">Toca un carácter para copiar su código.</p>
+      <div class="info-list">${rows}</div>`);
     }
     if (id === "conv") return wrap("Bin / Dec / Hex", cardBox(`
       <div class="field"><label>Número</label><input id="cv-n" value="255"></div>
       <div class="field"><label>Base de entrada</label>
-        <select id="cv-from"><option value="10">Decimal</option><option value="2">Binario</option><option value="16">Hex</option></select></div>
+        <select id="cv-from"><option value="10">Decimal</option><option value="2">Binario</option><option value="8">Octal</option><option value="16">Hex</option></select></div>
       ${liveBtn("tool-conv", "Convertir")}
       <div id="cv-out" class="tool-out"></div>`));
     if (id === "hash") return wrap("Hash SHA-256", cardBox(`
@@ -618,17 +624,17 @@
   function portRows(q) {
     q = (q || "").toLowerCase();
     const list = PORTS.filter((p) => !q || p.join(" ").toLowerCase().includes(q));
-    return list.map((p) => `<button type="button" class="cmd-row" data-action="copy-text" data-text="${p[0]}"><code>${p[0]} ${p[1]}</code><span>${esc(p[2])}</span></button>`).join("") || `<div class="empty">Nada.</div>`;
+    return list.map((p) => `<button type="button" class="cmd-row" data-action="copy-text" aria-label="Copiar ${p[0]}" data-text="${p[0]}"><code>${p[0]} ${p[1]}</code><span>${esc(p[2])}</span></button>`).join("") || `<div class="empty">Nada.</div>`;
   }
   function httpRows(q) {
     q = (q || "").toLowerCase();
     return HTTP.filter((p) => !q || p.join(" ").toLowerCase().includes(q))
-      .map((p) => `<button type="button" class="info-row" data-action="copy-text" data-text="${p[0]}"><b>${p[0]}</b><span>${esc(p[1])}</span></button>`).join("") || `<div class="empty">Nada.</div>`;
+      .map((p) => `<button type="button" class="info-row" data-action="copy-text" aria-label="Copiar ${p[0]}" data-text="${p[0]}"><b>${p[0]}</b><span>${esc(p[1])}</span></button>`).join("") || `<div class="empty">Nada.</div>`;
   }
   function acroRows(q) {
     q = (q || "").toLowerCase();
     return ACRO.filter((p) => !q || (p[0] + p[1]).toLowerCase().includes(q))
-      .map((p) => `<button type="button" class="info-row" data-action="copy-text" data-text="${p[0]}"><b>${p[0]}</b><span>${esc(p[1])}</span></button>`).join("") || `<div class="empty">Nada.</div>`;
+      .map((p) => `<button type="button" class="info-row" data-action="copy-text" aria-label="Copiar ${p[0]}" data-text="${p[0]}"><b>${p[0]}</b><span>${esc(p[1])}</span></button>`).join("") || `<div class="empty">Nada.</div>`;
   }
   function ipClass(oct) {
     const a = oct[0];
@@ -991,6 +997,24 @@
         ["Broadcast", r.broadcast], ["Primero", r.first], ["Último", r.last],
         ["Hosts útiles", String(r.hosts)], ["Direcciones", String(r.total)], ["Clase", r.clase],
       ]);
+    }
+    // Recálculo en vivo: las calculadoras numéricas responden al teclear, igual que Subnetting
+    // (antes era la única y el resto obligaba a pulsar el botón). Reutilizamos el manejador del
+    // botón, que ya sabe leer su campo y pintar su salida; si el campo queda vacío, se limpia.
+    const LIVE = {
+      "vl-n": ["tool-vlsm", "vl-out"], "ib-ip": ["tool-ipbin", "ib-out"], "rg-ip": ["tool-ranges", "rg-out"],
+      "wd-in": ["tool-wild", "wd-out"], "v6-in": ["tool-ipv6", "v6-out"], "mac-in": ["tool-mac", "mac-out"],
+      "dh-cidr": ["tool-dhcp", "dh-out"], "cm-oct": ["tool-chmod-oct", "cm-out"],
+      "rd-n": ["tool-raid", "rd-out"], "rd-gb": ["tool-raid", "rd-out"], "rd-lv": ["tool-raid", "rd-out"],
+      "un-n": ["tool-units", "un-out"], "un-from": ["tool-units", "un-out"],
+      "bk-gb": ["tool-backup", "bk-out"], "bk-mbps": ["tool-backup", "bk-out"],
+      "cv-n": ["tool-conv", "cv-out"], "cv-from": ["tool-conv", "cv-out"], "hs-in": ["tool-hash", "hs-out"],
+    };
+    const live = LIVE[e.target.id];
+    if (live) {
+      const out = document.getElementById(live[1]);
+      if (String(e.target.value == null ? "" : e.target.value).trim() === "") { if (out) out.innerHTML = ""; return; }
+      click(live[0], e.target);
     }
     if (e.target.id && e.target.id.startsWith("cm-") && e.target.type === "checkbox") click("tool-chmod", e.target);
   });

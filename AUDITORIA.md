@@ -11,6 +11,7 @@
 **Ronda v67.4.2:** «No funciona la IA de ollama»: el APK no podía salir por `http://` (contenido mixto y tráfico en claro), y cualquier fallo se contaba igual; ahora cada fallo se distingue y se explica cómo arreglarlo (493 pruebas ✓).
 **Ronda v67.7.1:** «no funciona lo de cambiar el icono de la app» — el manifiesto declaraba 24 lanzadores (el de MainActivity, siempre el dragón, más los 23 alias), así que cambiar de icono no servía de nada; ahora el único lanzador es el alias que eliges (680 pruebas ✓).
 **Ronda v67.8.0:** re-análisis completo aplicado: iconos comprimidos con pérdida imperceptible (−61 %/−69 %), los 33 skins por encima de 4,5:1 de contraste WCAG (antes 9 por debajo), los `blob:` huérfanos se revocan, el CSS muerto del viejo layout con barra lateral desaparece, la tipografía queda acotada a una escala de 14 tamaños (antes 33), el botón del temporizador sube a 44 px y `save()` deja de reescribir localStorage en cada navegación (693 pruebas ✓).
+**Ronda v67.9.0:** pulido de la sección Herramientas: la calculadora IPv6 arranca con una IPv6 válida (antes una URL que fallaba), el conversor Bin/Dec/Hex recupera la opción Octal (la validación existía pero era inalcanzable), todas las calculadoras numéricas recalculan mientras escribes (antes solo Subnetting), las seis listas «toca para copiar» que no lo decían ahora lo avisan, el pin «Blanco/Verde» del T568 pasa de amarillo a verde pastel, y los ~250 botones de copiar y las pestañas de la chuleta ganan `aria-label`/`role="tablist"` (703 pruebas ✓).
 **Ronda v67.7:** el contraste del modo oscuro se mide y se sube (las tarjetas ya no se funden con el negro de la OLED), los campos del esquema tienen forma de caja, la vibración la hace el motor háptico de Android, las entregas de la Agenda se deslizan con el dedo y el simulador «¿qué nota necesito?» dice lo que hace falta sacar en lo que queda —o que ya no llegas, con el máximo real— (665 pruebas ✓).
 **Ronda v67.6:** la Agenda se organiza como la del instituto —cada módulo con sus exámenes y entregas—, los exámenes van de una hora a otra y las entregas tienen plazo (se abre → se cierra) y estado (pendiente · entregado · corregido), que se cambia desde la propia fila (582 pruebas ✓).
 **Ronda v67.5:** la nota de cada módulo se calcula como la calcula tu profe — componentes con peso, notas «sobre X» y reglas que pueden suspender (aprobar todos los RA) — y Exámenes pasa a ser una Agenda con trabajos y entregas que llenan el componente solos (548 pruebas ✓).
@@ -900,6 +901,30 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.9.0 · Pulido de Herramientas
+
+Informe de la sección `js/tools.js` aplicado y verificado contra el código actual.
+
+1. **IPv6 por defecto.** El campo arrancaba con `https://example.com/user/golf`, que al pulsar
+   «Normalizar» daba «IPv6 no válida». Ahora arranca con `2001:db8:85a3::8a2e:370:7334`, que
+   expande, comprime y cuenta grupos bien (comprobado en jsdom sin tocar nada).
+2. **Octal alcanzable.** La validación de base 8 y su comentario ya existían, pero el `<select>`
+   solo ofrecía Decimal/Binario/Hex. Se añade `<option value="8">Octal</option>`; «19» avisa de que
+   el 9 no existe en base 8 y «17» → 15 decimal.
+3. **Recálculo en vivo.** Subnetting era la única que respondía al teclear. Ahora un mapa
+   campo→acción en el listener de `input` reutiliza el manejador de cada botón (vlsm, ipbin,
+   ranges, wildcard, ipv6, mac, dhcp, chmod-octal, raid, units, backup, conv, hash); con el campo
+   vacío se limpia la salida.
+4. **Aviso «toca para copiar».** `sheet` ya lo tenía; se añade a `ports`, `http`, `acro`, `dns`,
+   `systemd` y `ascii`, que usan el mismo patrón de filas-botón.
+5. **T568 Blanco/Verde.** `#f5ee54` (amarillo) → `#dcfce7` (verde pastel, en la familia de los otros
+   tres «Blanco/X»), en T568A y T568B.
+6. **Accesibilidad.** Los botones `data-action="copy-text"` llevan `aria-label="Copiar …"`, y el
+   grupo Linux/Cisco/PowerShell de la chuleta pasa a `role="tablist"` con `role="tab"` y
+   `aria-selected` en cada pestaña.
+
+**Pruebas: 693 → 703 ✓** (10 nuevas en `testTools()`), y las mismas pasan sobre el minificado.
 
 ## Ronda v67.8.0 · Re-análisis completo (7 mejoras)
 
