@@ -1674,6 +1674,9 @@ button.cal-day.is-hoy .n { font-weight: 700; }
    pulsable (34 px) y el cursor, que antes no tenía: parecía texto, no un botón. */
 .tool-back {
   align-self: flex-start;
+  /* Doble seguro contra la barra a lo ancho: aunque algo volviera a estirar el hijo del flex,
+     fit-content no puede medir más que su contenido (flecha + «Volver»). */
+  width: fit-content; max-width: 100%;
   -webkit-appearance: none; appearance: none;
   display: inline-flex; align-items: center; gap: 7px;
   min-height: 34px;

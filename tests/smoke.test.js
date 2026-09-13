@@ -2957,10 +2957,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.11\.4"/.test(app), "versión: js/app.js dice v67.11.4");
-    check(pkg.version === "67.11.4", "versión: package.json dice v67.11.4");
-    check(lock.version === "67.11.4" && lock.packages[""].version === "67.11.4", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.11\.4"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.11\.5"/.test(app), "versión: js/app.js dice v67.11.5");
+    check(pkg.version === "67.11.5", "versión: package.json dice v67.11.5");
+    check(lock.version === "67.11.5" && lock.packages[""].version === "67.11.5", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.11\.5"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
@@ -3257,6 +3257,9 @@ async function testTools3() {
     "volver: el chip anuncia que vuelve a la lista de herramientas");
   check(/\.tool-back\s*\{[^}]*min-height:\s*34px/.test(ui) && /\.tool-back\s*\{[^}]*cursor:\s*pointer/.test(ui),
     "volver: el chip tiene alto y cursor de botón (antes parecía un texto suelto)");
+  // El síntoma que reportó el usuario: una barra de lado a lado de la app. Dos cerrojos a la vez.
+  check(/\.tool-back\s*\{[^}]*align-self:\s*flex-start/.test(ui) && /\.tool-back\s*\{[^}]*width:\s*fit-content/.test(ui),
+    "volver: el chip no puede salir a lo ancho (align-self: flex-start + width: fit-content)");
 
   const env = boot();
   ready(env.A);

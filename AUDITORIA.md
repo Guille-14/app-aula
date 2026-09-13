@@ -13,6 +13,7 @@
 **Ronda v67.8.0:** re-análisis completo aplicado: iconos comprimidos con pérdida imperceptible (−61 %/−69 %), los 33 skins por encima de 4,5:1 de contraste WCAG (antes 9 por debajo), los `blob:` huérfanos se revocan, el CSS muerto del viejo layout con barra lateral desaparece, la tipografía queda acotada a una escala de 14 tamaños (antes 33), el botón del temporizador sube a 44 px y `save()` deja de reescribir localStorage en cada navegación (693 pruebas ✓).
 **Ronda v67.9.0:** pulido de la sección Herramientas: la calculadora IPv6 arranca con una IPv6 válida (antes una URL que fallaba), el conversor Bin/Dec/Hex recupera la opción Octal (la validación existía pero era inalcanzable), todas las calculadoras numéricas recalculan mientras escribes (antes solo Subnetting), las seis listas «toca para copiar» que no lo decían ahora lo avisan, el pin «Blanco/Verde» del T568 pasa de amarillo a verde pastel, y los ~250 botones de copiar y las pestañas de la chuleta ganan `aria-label`/`role="tablist"` (703 pruebas ✓).
 **Ronda v67.10.0:** informe de rendimiento/UX (Gemini) adaptado a esta PWA vanilla sin backend: de lo aplicable, el skeleton de las fotos gana un pulso que se apaga con `prefers-reduced-motion` y el estado vacío de Apuntes ofrece la acción («Nueva nota») dentro del propio estado; el resto (virtualización React, code-splitting, Zustand/React Query, N+1, índices y paginación por cursor, Zod, carpetas por feature) no tiene equivalente porque no hay React ni servidor (706 pruebas ✓).
+**Ronda v67.11.5:** el usuario confirma el síntoma («un botón que ocupaba de lado a lado de la app y estaba fatal puesto», igual en el navegador y en el APK): además del `align-self: flex-start` de la v67.11.3, el chip lleva ahora `width: fit-content; max-width: 100%`, que no puede medir más que su contenido pase lo que pase con el flex contenedor. El APK de la v67.11.4 ya se había publicado, así que se sube la versión para que se compile uno nuevo (735 pruebas ✓).
 **Ronda v67.11.4:** el botón de volver de Herramientas SMR, de verdad: el chip dice «Volver» (no «Herramientas», que ya lo pone la cabecera) y tiene alto y cursor de botón; el gesto/botón «atrás» del móvil cierra la herramienta y devuelve a la rejilla —antes no hacía nada, porque la herramienta vive dentro de la misma vista— y al salir de la sección se cierra el panel, así que ya no se entra de golpe en la última herramienta usada (734 pruebas ✓).
 **Ronda v67.11.3:** el botón «volver» seguía como barra del 100 %: `#view` es un flex en columna y lo estiraba (`align-items: stretch`), y además conservaba el aspecto nativo del navegador. Ahora lleva `align-self: flex-start`, `appearance: none` y el mismo lenguaje visual de los chips (719 pruebas ✓).
 **Ronda v67.11.1:** «Volver» de las herramientas salía gigante (el SVG sin acotar, 300×150) y los rótulos del radar de Calificaciones metían artículos/preposiciones en el recorte; ahora el icono va a 16 px y el rótulo omite palabras vacías (717 pruebas ✓).
@@ -906,6 +907,25 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.11.5 · Cerrojo doble contra la barra a lo ancho
+
+El usuario confirmó el síntoma con sus palabras: *«antes se veía un botón que ocupaba de lado a lado
+de la app y estaba fatal puesto»*, y lo veía igual en el navegador y en el APK del móvil. La causa
+original (v67.11.3) era `#view` siendo `display:flex; flex-direction:column`, que estira cada hijo a
+lo ancho con `align-items: stretch`; el arreglo fue `align-self: flex-start`.
+
+Como el APK de la v67.11.4 ya estaba publicado y no puedo abrir un navegador real en este entorno
+para medir el ancho pintado (ni Chrome de Playwright/Puppeteer ni `apt` tienen red aquí), el chip
+lleva ahora **un segundo cerrojo independiente del flex**: `width: fit-content; max-width: 100%`.
+Aunque alguna regla futura volviera a estirarlo, `fit-content` no mide más que flecha + «Volver».
+
+Lo que sí se ha podido verificar de punta a punta: `node tools/minificar.mjs www` (el mismo paso que
+ejecuta `apk-overlay/build.sh`, y Capacitor empaqueta `webDir: "www"`) deja en el CSS minificado
+`.tool-back{align-self:flex-start;…;width:fit-content;max-width:100%;min-height:34px;cursor:pointer}`
+y en el JS el chip con `aria-label="Volver a la lista de herramientas"`.
+
+**Pruebas: 734 → 735 ✓**, y las mismas pasan sobre el minificado.
 
 ## Ronda v67.11.4 · El «Volver» de Herramientas SMR funciona como se espera
 
