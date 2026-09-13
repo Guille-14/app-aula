@@ -221,8 +221,17 @@
     const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
     return h + " h " + m + " min";
   }
+  // Cada resultado se puede tocar para copiarlo (el toast «Copiado» es el feedback).
   function kv(rows) {
-    return rows.map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><b>${v}</b></div>`).join("");
+    return rows.map(([k, v]) => `<button type="button" class="kv" data-action="copy-text" data-text="${esc(v)}" aria-label="Copiar ${esc(k)}: ${esc(v)}"><span>${esc(k)}</span><b>${esc(v)}</b></button>`).join("");
+  }
+  // Tira de 32 bits: los de red en un color y los de host en otro (el «préstamo de bits» a la vista).
+  function bitsViz(prefix) {
+    const p = Math.max(0, Math.min(32, prefix | 0));
+    let cells = "";
+    for (let i = 0; i < 32; i++) cells += `<i class="${i < p ? "bit-n" : "bit-h"}"></i>`;
+    return `<div class="bits-viz" role="img" aria-label="${p} bits de red y ${32 - p} de host">${cells}</div>
+      <div class="bits-leyenda"><span><i class="bit-n"></i> Red (${p})</span><span><i class="bit-h"></i> Host (${32 - p})</span></div>`;
   }
   function st() { return A().state; }
 
@@ -255,6 +264,7 @@
       ["systemd", "grey", "chip", "systemd", "Comandos de servicio"],
       ["poe", "lime", "bolt", "PoE", "802.3af / at / bt"],
       ["pass", "amber", "key", "Generador Pass", "AD y root"],
+      ["beeps", "amber", "chip", "Beeps BIOS", "AMI / Award / Phoenix"],
     ]],
     ["Consulta", "green", [
       ["ports", "green", "ports", "Puertos SMR", "TCP / UDP y protocolos"],
@@ -324,6 +334,11 @@
     return `<button class="btn btn-primary btn-block" data-action="${action}">${label}</button>`;
   }
 
+  const BEEPS = {
+    AMI: [["1 corto", "Todo bien (POST ok)"], ["2 cortos", "Error de paridad"], ["3 cortos", "Fallo de memoria (primeros 64K)"], ["4 cortos", "Temporizador del sistema"], ["5 cortos", "Error de proceso"], ["6 cortos", "Teclado (puerta A20)"], ["7 cortos", "Excepción del procesador"], ["8 cortos", "Memoria de vídeo"], ["9 cortos", "Checksum de la ROM"], ["1 largo, 2 cortos", "Vídeo (mono/CGA)"], ["1 largo, 3 cortos", "Vídeo (EGA)"], ["1 largo, 8 cortos", "Test de pantalla fallido"]],
+    Award: [["1 corto", "POST ok"], ["2 cortos", "Error de CMOS / paridad"], ["1 largo, 1 corto", "Placa base"], ["1 largo, 2 cortos", "Tarjeta de vídeo"], ["1 largo, 3 cortos", "Teclado"], ["1 largo, 9 cortos", "Checksum de la ROM"], ["Pitidos continuos", "Memoria o vídeo"], ["Pitidos rápidos", "Sobrecalentamiento / fuente"]],
+    Phoenix: [["1-1-1", "Fallo de placa"], ["1-1-2", "Placa base"], ["1-1-3", "CMOS"], ["1-1-4", "BIOS ROM"], ["1-2-1", "Temporizador"], ["1-3-1", "RAM (refresco)"], ["2-2-3", "Puerto serie"], ["3-1-1", "Placa (canal DMA)"], ["3-2-4", "Teclado"], ["3-3-4", "Vídeo"], ["4-3-1", "Memoria (dirección)"]],
+  };
   function panel() {
     const id = st()._tool;
     if (id === "subnet") return wrap("Subnetting IPv4", cardBox(`
@@ -381,7 +396,13 @@
     if (id === "t568") {
       const A = [["1", "#dcfce7", "Blanco/Verde"], ["2", "green", "Verde"], ["3", "#fef9c3", "Blanco/Naranja"], ["4", "blue", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "orange", "Naranja"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
       const B = [["1", "#fef9c3", "Blanco/Naranja"], ["2", "orange", "Naranja"], ["3", "#dcfce7", "Blanco/Verde"], ["4", "blue", "Azul"], ["5", "#dbeafe", "Blanco/Azul"], ["6", "green", "Verde"], ["7", "#e9d5ff", "Blanco/Marrón"], ["8", "#92400e", "Marrón"]];
+      const conector = (rows) => `<svg class="rj45" viewBox="0 0 96 44" role="img" aria-label="Conector RJ45, pines 1 a 8 de izquierda a derecha">
+        <rect x="2" y="2" width="92" height="30" rx="6" fill="none" stroke="var(--line-2)" stroke-width="1.5"/>
+        ${rows.map(([, c], i) => `<rect x="${7 + i * 10.5}" y="6" width="8" height="18" rx="2" fill="${c}"></rect>`).join("")}
+        ${rows.map(([n], i) => `<text x="${11 + i * 10.5}" y="40" text-anchor="middle" font-size="7" fill="var(--muted)">${n}</text>`).join("")}
+      </svg>`;
       const col = (rows, title) => `<div class="card"><h3 style="text-transform:none;font-size:15px;color:var(--ink)">${title}</h3>
+        ${conector(rows)}
         <div class="pinout">${rows.map(([n, c, l]) => `<div><b>${n}</b><i class="pin-dot" style="background:${c}"></i>${l}</div>`).join("")}</div></div>`;
       return wrap("T568A / T568B", col(A, "T568A") + col(B, "T568B") + `<p class="hint">En Europa suele usarse T568B en los dos extremos (cable directo).</p>`);
     }
@@ -536,15 +557,26 @@
       <div id="ac-list" class="info-list">${acroRows("")}</div>`);
     if (id === "sheet") {
       const tab = st()._sheetTab || "linux";
-      const rows = tab === "cisco" ? CISCO : tab === "psh" ? PSH : LINUX;
       return wrap("Chuleta de comandos", `
         <div class="hub-seg" role="tablist" aria-label="Sistema de la chuleta">
           <button role="tab" aria-selected="${tab === "linux"}" data-action="sheet-tab" data-id="linux" class="${tab === "linux" ? "is-on" : ""}">Linux</button>
           <button role="tab" aria-selected="${tab === "cisco"}" data-action="sheet-tab" data-id="cisco" class="${tab === "cisco" ? "is-on" : ""}">Cisco</button>
           <button role="tab" aria-selected="${tab === "psh"}" data-action="sheet-tab" data-id="psh" class="${tab === "psh" ? "is-on" : ""}">PowerShell</button>
         </div>
+        <input class="note-search" id="sh-q" placeholder="Buscar por comando o descripción («crear vlan»)…" value="${esc(st()._sheetQ || "")}">
         <p class="hint">Toca un comando para copiarlo.</p>
-        <div class="cmd-list">${rows.map(([c, d]) => `<button type="button" class="cmd-row" data-action="copy-text" aria-label="Copiar ${esc(c)}" data-text="${esc(c)}"><code>${esc(c)}</code><span>${esc(d)}</span></button>`).join("")}</div>
+        <div class="cmd-list" id="sh-list">${sheetRows(tab, st()._sheetQ || "")}</div>
+      `);
+    }
+    if (id === "beeps") {
+      const v = st()._beepTab || "AMI";
+      const rows = BEEPS[v] || BEEPS.AMI;
+      return wrap("Pitidos de la BIOS", `
+        <div class="hub-seg" role="tablist" aria-label="Fabricante de la BIOS">
+          ${["AMI", "Award", "Phoenix"].map((k) => `<button role="tab" aria-selected="${v === k}" data-action="beep-tab" data-id="${k}" class="${v === k ? "is-on" : ""}">${k}</button>`).join("")}
+        </div>
+        <p class="hint">Cuenta los pitidos al arrancar y míralos aquí.</p>
+        <div class="info-list">${rows.map(([k, d]) => `<div class="info-row"><b>${esc(k)}</b><span>${esc(d)}</span></div>`).join("")}</div>
       `);
     }
     if (id === "ascii") {
@@ -636,6 +668,12 @@
     return ACRO.filter((p) => !q || (p[0] + p[1]).toLowerCase().includes(q))
       .map((p) => `<button type="button" class="info-row" data-action="copy-text" aria-label="Copiar ${p[0]}" data-text="${p[0]}"><b>${p[0]}</b><span>${esc(p[1])}</span></button>`).join("") || `<div class="empty">Nada.</div>`;
   }
+  function sheetRows(tab, q) {
+    q = (q || "").toLowerCase();
+    const src = tab === "cisco" ? CISCO : tab === "psh" ? PSH : LINUX;
+    const filas = q ? src.filter(([c, d]) => (c + " " + d).toLowerCase().includes(q)) : src;
+    return filas.map(([c, d]) => `<button type="button" class="cmd-row" data-action="copy-text" aria-label="Copiar ${esc(c)}" data-text="${esc(c)}"><code>${esc(c)}</code><span>${esc(d)}</span></button>`).join("") || `<div class="empty">Nada.</div>`;
+  }
   function ipClass(oct) {
     const a = oct[0];
     if (a === 127) return "Loopback";
@@ -720,7 +758,7 @@
         ["Red", r.network + "/" + r.prefix], ["Máscara", r.mask], ["Wildcard", r.wildcard],
         ["Broadcast", r.broadcast], ["Primero", r.first], ["Último", r.last],
         ["Hosts útiles", String(r.hosts)], ["Direcciones", String(r.total)], ["Clase", r.clase],
-      ]);
+      ]) + bitsViz(r.prefix);
     }
     if (action === "tool-vlsm") {
       const n = parseInt((document.getElementById("vl-n") || {}).value, 10) || 0;
@@ -961,17 +999,25 @@
       copyText(id);
     }
     if (action === "sheet-tab") { st()._sheetTab = btn.dataset.id; A().render(); }
+    if (action === "beep-tab") { st()._beepTab = btn.dataset.id; A().render(); }
     if (action === "copy-text") copyText(btn.dataset.text || "");
   }
 
+  let toolsSearchTimer;
   document.addEventListener("input", (e) => {
-    if (e.target.id === "pt-q") {
-      const list = document.getElementById("pt-list");
-      if (list) list.innerHTML = portRows(e.target.value);
+    const SEARCH = { "pt-q": ["pt-list", portRows], "ht-q": ["ht-list", httpRows], "ac-q": ["ac-list", acroRows] };
+    if (SEARCH[e.target.id]) {
+      const [listId, fn] = SEARCH[e.target.id];
+      const v = e.target.value;
+      // Debounce: filtrar cientos de filas por cada tecla se nota en móviles modestos.
+      clearTimeout(toolsSearchTimer);
+      toolsSearchTimer = setTimeout(() => { const l = document.getElementById(listId); if (l) l.innerHTML = fn(v); }, 160);
     }
-    if (e.target.id === "ht-q") {
-      const list = document.getElementById("ht-list");
-      if (list) list.innerHTML = httpRows(e.target.value);
+    if (e.target.id === "sh-q") {
+      st()._sheetQ = e.target.value;
+      const v = e.target.value, tab = st()._sheetTab || "linux";
+      clearTimeout(toolsSearchTimer);
+      toolsSearchTimer = setTimeout(() => { const l = document.getElementById("sh-list"); if (l) l.innerHTML = sheetRows(tab, v); }, 160);
     }
     if (e.target.id === "tools-q") {
       st()._toolsQ = e.target.value;
@@ -979,10 +1025,7 @@
       if (body) body.innerHTML = gridHTML();
       return;
     }
-    if (e.target.id === "ac-q") {
-      const list = document.getElementById("ac-list");
-      if (list) list.innerHTML = acroRows(e.target.value);
-    }
+
     if (e.target.id === "pw-len") {
       const l = document.getElementById("pw-len-lbl");
       if (l) l.textContent = e.target.value + " caracteres";
@@ -996,7 +1039,7 @@
         ["Red", r.network + "/" + r.prefix], ["Máscara", r.mask], ["Wildcard", r.wildcard],
         ["Broadcast", r.broadcast], ["Primero", r.first], ["Último", r.last],
         ["Hosts útiles", String(r.hosts)], ["Direcciones", String(r.total)], ["Clase", r.clase],
-      ]);
+      ]) + bitsViz(r.prefix);
     }
     // Recálculo en vivo: las calculadoras numéricas responden al teclear, igual que Subnetting
     // (antes era la única y el resto obligaba a pulsar el botón). Reutilizamos el manejador del
@@ -1022,6 +1065,8 @@
   window.AulaTools = {
     view() { return st()._tool ? panel() : home(); },
     click,
+    // Funciones puras de cálculo, expuestas para poder probarlas sin tocar la UI
+    calc: { calcSubnet, parseIp, intToIp, expandV6, compressV6 },
     // Catálogo plano para el buscador global (Ctrl/Cmd + K)
     catalog() {
       const out = [];

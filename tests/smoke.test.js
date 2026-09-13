@@ -2947,10 +2947,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.10\.0"/.test(app), "versión: js/app.js dice v67.10.0");
-    check(pkg.version === "67.10.0", "versión: package.json dice 67.10.0");
-    check(lock.version === "67.10.0" && lock.packages[""].version === "67.10.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.10\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.11\.0"/.test(app), "versión: js/app.js dice v67.11.0");
+    check(pkg.version === "67.11.0", "versión: package.json dice 67.11.0");
+    check(lock.version === "67.11.0" && lock.packages[""].version === "67.11.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.11\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
@@ -3185,6 +3185,56 @@ function testGemini() {
     "gemini: «Sin notas» ofrece la acción dentro del estado vacío");
 }
 
+// ------------------------------------------------------- v67.11.0: herramientas, 2.ª pasada
+async function testTools2() {
+  const env = boot();
+  ready(env.A);
+  const T = env.window.AulaTools;
+  const abrir = (id) => T.click("tool-open", { dataset: { id } });
+  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Funciones puras expuestas y correctas (sin tocar la UI)
+  const c = T.calc;
+  const s24 = c.calcSubnet("192.168.1.10/24");
+  check(s24 && s24.network === "192.168.1.0" && s24.broadcast === "192.168.1.255" && s24.hosts === 254 && s24.mask === "255.255.255.0",
+    "tools2: /24 da red, broadcast, hosts y máscara exactos");
+  const s30 = c.calcSubnet("10.0.0.1/30");
+  check(s30 && s30.hosts === 2, "tools2: /30 deja 2 hosts útiles");
+  const s27 = c.calcSubnet("172.16.0.0/27");
+  check(s27 && s27.hosts === 30 && s27.mask === "255.255.255.224", "tools2: /27 → 30 hosts y máscara .224");
+  check(c.parseIp("192.168.1.256") === null && c.calcSubnet("1.2.3.4/33") === null,
+    "tools2: octeto >255 y CIDR >32 se rechazan sin lanzar");
+
+  // Resultados copiables + visualizador de bits
+  abrir("subnet");
+  T.click("tool-subnet", {});
+  const out = env.doc.getElementById("sn-out");
+  check(out.querySelectorAll("button.kv[data-action=\"copy-text\"]").length >= 8,
+    "tools2: cada resultado de Subnetting se toca para copiar");
+  check(out.querySelectorAll(".bits-viz .bit-n").length === 24 && out.querySelectorAll(".bits-viz .bit-h").length === 8,
+    "tools2: el visualizador pinta 24 bits de red y 8 de host para /24");
+
+  // RJ45 en SVG
+  abrir("t568");
+  check(env.doc.querySelectorAll("#view svg.rj45").length === 2, "tools2: el T568 dibuja los dos conectores RJ45 en SVG");
+
+  // Buscador de la chuleta por descripción (con debounce)
+  abrir("sheet");
+  T.click("sheet-tab", { dataset: { id: "cisco" } });
+  const sh = env.doc.getElementById("sh-q");
+  sh.value = "vlan";
+  sh.dispatchEvent(new env.window.Event("input", { bubbles: true }));
+  await espera(240);
+  check(/vlan/i.test(env.doc.getElementById("sh-list").textContent), "tools2: «vlan» filtra la chuleta por descripción");
+
+  // Beeps BIOS con pestañas
+  abrir("beeps");
+  const antes = env.doc.querySelectorAll("#view .info-row").length;
+  T.click("beep-tab", { dataset: { id: "Phoenix" } });
+  check(antes > 0 && env.doc.querySelector("#view [data-id=\"Phoenix\"]").getAttribute("aria-selected") === "true",
+    "tools2: los pitidos BIOS cambian de fabricante y anuncian la pestaña activa");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -3201,6 +3251,7 @@ function testGemini() {
     testIconoApp();
     testReanalisis();
     testTools();
+    await testTools2();
     testGemini();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");

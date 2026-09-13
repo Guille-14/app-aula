@@ -13,6 +13,7 @@
 **Ronda v67.8.0:** re-análisis completo aplicado: iconos comprimidos con pérdida imperceptible (−61 %/−69 %), los 33 skins por encima de 4,5:1 de contraste WCAG (antes 9 por debajo), los `blob:` huérfanos se revocan, el CSS muerto del viejo layout con barra lateral desaparece, la tipografía queda acotada a una escala de 14 tamaños (antes 33), el botón del temporizador sube a 44 px y `save()` deja de reescribir localStorage en cada navegación (693 pruebas ✓).
 **Ronda v67.9.0:** pulido de la sección Herramientas: la calculadora IPv6 arranca con una IPv6 válida (antes una URL que fallaba), el conversor Bin/Dec/Hex recupera la opción Octal (la validación existía pero era inalcanzable), todas las calculadoras numéricas recalculan mientras escribes (antes solo Subnetting), las seis listas «toca para copiar» que no lo decían ahora lo avisan, el pin «Blanco/Verde» del T568 pasa de amarillo a verde pastel, y los ~250 botones de copiar y las pestañas de la chuleta ganan `aria-label`/`role="tablist"` (703 pruebas ✓).
 **Ronda v67.10.0:** informe de rendimiento/UX (Gemini) adaptado a esta PWA vanilla sin backend: de lo aplicable, el skeleton de las fotos gana un pulso que se apaga con `prefers-reduced-motion` y el estado vacío de Apuntes ofrece la acción («Nueva nota») dentro del propio estado; el resto (virtualización React, code-splitting, Zustand/React Query, N+1, índices y paginación por cursor, Zod, carpetas por feature) no tiene equivalente porque no hay React ni servidor (706 pruebas ✓).
+**Ronda v67.11.0:** segunda pasada de Herramientas: los resultados de las calculadoras se tocan para copiar, Subnetting dibuja los 32 bits con red/host en dos colores, el T568 estrena conector RJ45 en SVG, la chuleta gana un buscador por descripción con debounce, se añade la referencia de pitidos BIOS (AMI/Award/Phoenix) y las funciones de cálculo quedan expuestas y probadas como puras (715 pruebas ✓).
 **Ronda v67.7:** el contraste del modo oscuro se mide y se sube (las tarjetas ya no se funden con el negro de la OLED), los campos del esquema tienen forma de caja, la vibración la hace el motor háptico de Android, las entregas de la Agenda se deslizan con el dedo y el simulador «¿qué nota necesito?» dice lo que hace falta sacar en lo que queda —o que ya no llegas, con el máximo real— (665 pruebas ✓).
 **Ronda v67.6:** la Agenda se organiza como la del instituto —cada módulo con sus exámenes y entregas—, los exámenes van de una hora a otra y las entregas tienen plazo (se abre → se cierra) y estado (pendiente · entregado · corregido), que se cambia desde la propia fila (582 pruebas ✓).
 **Ronda v67.5:** la nota de cada módulo se calcula como la calcula tu profe — componentes con peso, notas «sobre X» y reglas que pueden suspender (aprobar todos los RA) — y Exámenes pasa a ser una Agenda con trabajos y entregas que llenan el componente solos (548 pruebas ✓).
@@ -902,6 +903,30 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.11.0 · Herramientas, 2.ª pasada
+
+Nuevo informe (de nuevo con sabor React/TS) aplicado en vanilla sobre `js/tools.js`. Lo que pedía y
+ya existía: navegación por tarjetas de acceso rápido (el hub ya las tiene), estética de consola en la
+chuleta (`<code>`), clasificación RFC1918/APIPA/multicast (la herramienta «Clases y rangos» y el campo
+«Clase» de Subnetting) y la calculadora GB↔GiB («GB vs GiB»). Lo nuevo:
+
+1. **Resultados copiables.** `kv()` pinta cada fila como botón `data-action="copy-text"` con
+   `aria-label`; tocar Máscara/Red/Broadcast/etc. lo copia con el toast de feedback.
+2. **Visualizador de bits.** Subnetting añade una tira de 32 celdas (red en azul, host en verde) con
+   leyenda y `aria-label`, para ver el «préstamo de bits».
+3. **RJ45 en SVG.** El T568 dibuja los dos conectores (A y B) con sus 8 pines coloreados, además de la
+   lista.
+4. **Buscador de la chuleta.** Campo «Buscar por comando o descripción» que filtra Linux/Cisco/
+   PowerShell con debounce (160 ms), igual que los buscadores de puertos/códigos/acrónimos, que
+   también pasan a debounce.
+5. **Beeps BIOS.** Nueva herramienta con pestañas AMI / Award / Phoenix y el significado de cada
+   secuencia de pitidos.
+6. **Funciones puras probadas.** `window.AulaTools.calc` expone `calcSubnet/parseIp/intToIp/expandV6/
+   compressV6`; las pruebas verifican /24, /27 y /30 y que octeto >255 o CIDR >32 se rechazan sin
+   lanzar.
+
+**Pruebas: 706 → 715 ✓** (`testTools2()`), y las mismas pasan sobre el minificado del APK.
 
 ## Ronda v67.10.0 · Informe de rendimiento/UX adaptado (sin React, sin backend)
 
