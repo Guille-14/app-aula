@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.11.0";
+  const APP_VERSION = "v67.11.1";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -5493,7 +5493,11 @@
     const apretado = mods.length > 8;
     const labels = mods.map((sub, i) => {
       const [x, y] = pt(i, R + (apretado ? 18 : 16));
-      const short = sub.name.split(" ").map((w) => w.slice(0, 3)).join("").slice(0, apretado ? 5 : 6).toUpperCase();
+      // Sin artículos/preposiciones/romanos: «Sistemas de gestión» antes daba «SISDE…» y la
+      // palabra vacía se comía el recorte antes de llegar a las sílabas que sí identifican.
+      const utiles = sub.name.split(/\s+/).filter((w) => w && !/^(de|del|la|el|los|las|un|una|unos|unas|y|o|u|e|en|a|al|para|por|con|sin|sobre|entre|hacia|vs|y?i{1,3}|iv|v[i]{0,3}|\d+\.?)$/i.test(w));
+      const base = utiles.length ? utiles : sub.name.split(/\s+/);
+      const short = (base.map((w) => w.slice(0, 3)).join("").slice(0, apretado ? 5 : 6) || sub.name.slice(0, 3)).toUpperCase();
       return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-size="${apretado ? 8.5 : 9.5}" font-weight="700" fill="currentColor" opacity=".6">${esc(short)}</text>`;
     }).join("");
     // Cada punto lleva su nombre completo y su nota: en pantalla pequeña los rótulos del radar

@@ -1668,6 +1668,9 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .tool-card small { color: var(--muted); font-size: 12px; margin-top: auto; }
 .tool-pass { font-family: var(--mono); font-size: 18px; font-weight: 620; letter-spacing: 0.02em; word-break: break-all; }
 .tool-back { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--muted); font-size: 13px; font-weight: 560; }
+/* Sin esto, el <svg> de «volver» (sin width/height ni regla propia) sale a 300×150 y se come la
+   pantalla de cada herramienta; el resto de botones con icono sí tienen su tamaño acotado. */
+.tool-back svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .tool-out { display: flex; flex-direction: column; }
 .tool-out .info-row:first-child { border-top: 0; }
 .chmod-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }

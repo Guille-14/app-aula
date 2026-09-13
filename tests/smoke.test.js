@@ -2345,6 +2345,7 @@ async function testEsquema() {
   // ————— Vista de Calificaciones y radar
   const s1 = { id: "s1", name: "Aplicaciones web", grade: "", color: "#eab308" };
   A.state.subjects.push(s1);   // 13 módulos: antes el radar cortaba en 12 y ya no se veía el último
+  A.state.subjects.push({ id: "s2", name: "Sistemas de gestión de redes", grade: "", color: "#0ea5e9" });
   A.go("rendimiento");
   const v = env.doc.getElementById("view");
   check(/Meter notas/.test(v.textContent) && /Examen de teoría/.test(v.textContent),
@@ -2354,6 +2355,12 @@ async function testEsquema() {
   check(v.querySelectorAll("svg.radar-box text").length === A.state.subjects.length,
     "radar: entran TODOS los módulos (sin tope) — " + A.state.subjects.length + " ejes");
   check(v.querySelectorAll("svg.radar-box circle").length >= A.state.subjects.length, "radar: cada módulo tiene su punto");
+  const rotulos = [...v.querySelectorAll("svg.radar-box text")].map((t) => t.textContent).join("|");
+  check(rotulos.includes("SISGE") && !rotulos.includes("SISDE"),
+    "radar: el rótulo omite palabras vacías («Sistemas de gestión…» → SISGE, no SISDE)");
+  // El botón «volver» de cada herramienta acota su icono (sin esto el SVG salía a 300×150)
+  const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+  check(/\.tool-back svg\s*\{[^}]*width:\s*16px/.test(ui), "tools: el icono de «volver» tiene tamaño acotado");
 
   // ————— El editor del esquema, de punta a punta
   A.go("subjects");
@@ -2947,10 +2954,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.11\.0"/.test(app), "versión: js/app.js dice v67.11.0");
-    check(pkg.version === "67.11.0", "versión: package.json dice 67.11.0");
-    check(lock.version === "67.11.0" && lock.packages[""].version === "67.11.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.11\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.11\.1"/.test(app), "versión: js/app.js dice v67.11.1");
+    check(pkg.version === "67.11.1", "versión: package.json dice 67.11.1");
+    check(lock.version === "67.11.1" && lock.packages[""].version === "67.11.1", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.11\.1"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
