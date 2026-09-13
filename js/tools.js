@@ -322,10 +322,13 @@
     `;
   }
 
+  /* Cabecera de cada herramienta: el chip de volver y el título de la herramienta. El chip dice
+     «Volver» (no «Herramientas», que es lo que ya pone la cabecera de la vista) y es la única
+     forma de salir de aquí con el móvil en la mano. */
   function wrap(title, body) {
-    return `<button type="button" class="tool-back" data-action="tool-back" aria-label="Volver a herramientas">
+    return `<button type="button" class="tool-back" data-action="tool-back" aria-label="Volver a la lista de herramientas">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M15 6 9 12l6 6"/></svg>
-        <span>Herramientas</span>
+        <span>Volver</span>
       </button>
       <h2 class="tool-title">${esc(title)}</h2>${body}`;
   }
@@ -740,14 +743,40 @@
     return out.join(":");
   }
 
+  /* Cierra la herramienta y vuelve a la rejilla. Es el mismo camino para el chip «Volver» y
+     para el gesto/botón «atrás» del móvil. */
+  function cerrarTool() {
+    // Se apunta antes de go(): go() reescribe el estado de la entrada actual y borraría la marca
+    const suya = !!(window.history && history.state && history.state.tool);
+    st()._tool = null;
+    A().go("tools");
+    // Si la herramienta tenía su propia entrada en el historial, se consume aquí; si no, el
+    // siguiente «atrás» caería en una entrada que ya no pinta nada y parecería que no funciona.
+    try { if (suya) history.back(); } catch {}
+  }
+  /* La llama app.js al recibir «atrás» estando ya en la vista tools: devuelve true si había una
+     herramienta abierta (y la cierra), false si se estaba en la rejilla. */
+  function atras() {
+    if (!st()._tool) return false;
+    st()._tool = null;
+    A().render();
+    return true;
+  }
+
   function click(action, btn) {
     if (!A()) return;
     if (action === "tool-open") {
       st()._tool = btn.dataset.id;
       A().go("tools");
+      // La herramienta vive DENTRO de la vista «tools», así que go() no añade entrada al
+      // historial y el «atrás» del móvil se saltaba la rejilla (o cerraba la app). Se añade una
+      // entrada propia para que «atrás» cierre justo la herramienta abierta.
+      try {
+        if (!history.state || !history.state.tool) history.pushState({ v: "tools", tool: btn.dataset.id }, "", "#tools");
+      } catch {}
       if (btn.dataset.id === "chmod") setTimeout(() => click("tool-chmod", btn), 0);
     }
-    if (action === "tool-back") { st()._tool = null; A().go("tools"); }
+    if (action === "tool-back") cerrarTool();
     if (action === "tools-clear-q") { st()._toolsQ = ""; A().render(); }
     if (action === "tool-subnet") {
       const r = calcSubnet((document.getElementById("sn-ip") || {}).value);
@@ -1065,6 +1094,9 @@
   window.AulaTools = {
     view() { return st()._tool ? panel() : home(); },
     click,
+    // Los usa app.js: back() en el «atrás» del móvil, reset() al salir de la sección
+    back: atras,
+    reset() { st()._tool = null; },
     // Funciones puras de cálculo, expuestas para poder probarlas sin tocar la UI
     calc: { calcSubnet, parseIp, intToIp, expandV6, compressV6 },
     // Catálogo plano para el buscador global (Ctrl/Cmd + K)

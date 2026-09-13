@@ -2957,10 +2957,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.11\.3"/.test(app), "versión: js/app.js dice v67.11.3");
-    check(pkg.version === "67.11.3", "versión: package.json dice v67.11.3");
-    check(lock.version === "67.11.3" && lock.packages[""].version === "67.11.3", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.11\.3"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.11\.4"/.test(app), "versión: js/app.js dice v67.11.4");
+    check(pkg.version === "67.11.4", "versión: package.json dice v67.11.4");
+    check(lock.version === "67.11.4" && lock.packages[""].version === "67.11.4", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.11\.4"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
@@ -3245,6 +3245,85 @@ async function testTools2() {
     "tools2: los pitidos BIOS cambian de fabricante y anuncian la pestaña activa");
 }
 
+// ------------------------------------------------------- v67.11.4: el «Volver» de Herramientas
+/* El fallo: una herramienta se pinta DENTRO de la vista «tools», así que el gesto/botón «atrás»
+   del móvil no cambiaba de vista y no hacía absolutamente nada (solo servía el chip), y al salir
+   de la sección el panel quedaba guardado en el estado: la vez siguiente se entraba directo a él. */
+async function testTools3() {
+  const tj = fs.readFileSync(path.join(ROOT, "js", "tools.js"), "utf8");
+  const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+
+  check(/class="tool-back"[^>]*aria-label="Volver a la lista de herramientas"/.test(tj),
+    "volver: el chip anuncia que vuelve a la lista de herramientas");
+  check(/\.tool-back\s*\{[^}]*min-height:\s*34px/.test(ui) && /\.tool-back\s*\{[^}]*cursor:\s*pointer/.test(ui),
+    "volver: el chip tiene alto y cursor de botón (antes parecía un texto suelto)");
+
+  const env = boot();
+  ready(env.A);
+  const T = env.window.AulaTools;
+  // Se comprueba en marcha (no con una expresión sobre el fuente): el minificador renombra las
+  // funciones internas y una búsqueda de texto daría un falso fallo dentro del APK.
+  check(typeof T.back === "function" && typeof T.reset === "function",
+    "volver: el módulo expone su «atrás» y su «cerrar» para que los use la app");
+  const rejilla = () => env.doc.querySelectorAll("#view .tool-card").length;
+  const pulsar = (sel) => {
+    const el = env.doc.querySelector(sel);
+    if (!el) return false;
+    el.dispatchEvent(new env.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    return true;
+  };
+
+  // 1 · Todas las herramientas del catálogo pintan su botón de volver
+  env.A.go("tools");
+  const ids = T.catalog().map((x) => x.id);
+  const sinVolver = ids.filter((id) => { env.A.state._tool = id; env.A.render(); return !env.doc.querySelector("#view .tool-back"); });
+  check(ids.length >= 38 && sinVolver.length === 0,
+    "volver: las " + ids.length + " herramientas pintan el botón de volver" +
+    (sinVolver.length ? " (sin él: " + sinVolver.join(", ") + ")" : ""));
+
+  // 2 · Se elige un apartado pulsando su tarjeta de verdad y el chip devuelve a la rejilla
+  env.A.go("dashboard");     // salir de la sección cierra el panel abierto en el recorrido anterior
+  env.A.go("tools");
+  const antes = rejilla();
+  check(antes > 0 && pulsar('#view .tool-card[data-id="ports"]') && env.A.state._tool === "ports" && !!env.doc.querySelector("#view .tool-back"),
+    "volver: al elegir un apartado se abre su panel con el botón de volver");
+  check(pulsar("#view .tool-back") && env.A.state._tool === null && rejilla() === antes,
+    "volver: y al pulsarlo se vuelve a la rejilla con sus " + antes + " tarjetas");
+
+  // 3 · El «atrás» del móvil cierra la herramienta (antes se quedaba igual)
+  env.A.go("dashboard");
+  env.A.go("tools");
+  pulsar('#view .tool-card[data-id="subnet"]');
+  check(!!(env.window.history.state && env.window.history.state.tool === "subnet"),
+    "volver: la herramienta abierta guarda su propia entrada en el historial");
+  env.window.history.back();
+  await hasta(() => env.A.state._tool === null && rejilla() > 0, 3000);
+  check(env.A.state._tool === null && rejilla() > 0,
+    "volver: el gesto «atrás» del móvil devuelve a la rejilla (sin tocar el chip)");
+  check((env.window.location.hash || "") === "#tools",
+    "volver: y la dirección sigue siendo #tools, coherente con lo que se ve");
+
+  // 4 · Salir de la sección cierra el panel: la vez siguiente se ve la rejilla
+  env.A.go("tools");
+  pulsar('#view .tool-card[data-id="ipv6"]');
+  check(env.A.state._tool === "ipv6", "volver: se abre IPv6 para comprobar la salida de la sección");
+  env.A.go("dashboard");
+  check(env.A.state._tool === null, "volver: al salir de Herramientas se cierra la herramienta");
+  env.A.go("tools");
+  check(rejilla() > 0 && !env.doc.querySelector("#view .tool-back"),
+    "volver: y al volver a entrar se ve la rejilla, no el último panel");
+
+  // 5 · El buscador global (Ctrl/Cmd+K) sigue entrando directo a la herramienta
+  env.A.go("dashboard");
+  const atajo = env.window.AulaStudio.toolCatalog().find((x) => /Subnetting/.test(x.title));
+  check(!!atajo, "volver: el buscador global sigue listando las herramientas");
+  atajo.run();
+  check(env.A.state._tool === "subnet" && !!env.doc.querySelector("#view .tool-back"),
+    "volver: y desde el buscador se entra directo a la herramienta");
+
+  check(env.errors.length === 0, "volver: sin errores de consola en todo el recorrido (" + env.errors.slice(0, 2).join(" · ") + ")");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -3262,6 +3341,7 @@ async function testTools2() {
     testReanalisis();
     testTools();
     await testTools2();
+    await testTools3();
     testGemini();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");

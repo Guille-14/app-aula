@@ -13,6 +13,7 @@
 **Ronda v67.8.0:** re-análisis completo aplicado: iconos comprimidos con pérdida imperceptible (−61 %/−69 %), los 33 skins por encima de 4,5:1 de contraste WCAG (antes 9 por debajo), los `blob:` huérfanos se revocan, el CSS muerto del viejo layout con barra lateral desaparece, la tipografía queda acotada a una escala de 14 tamaños (antes 33), el botón del temporizador sube a 44 px y `save()` deja de reescribir localStorage en cada navegación (693 pruebas ✓).
 **Ronda v67.9.0:** pulido de la sección Herramientas: la calculadora IPv6 arranca con una IPv6 válida (antes una URL que fallaba), el conversor Bin/Dec/Hex recupera la opción Octal (la validación existía pero era inalcanzable), todas las calculadoras numéricas recalculan mientras escribes (antes solo Subnetting), las seis listas «toca para copiar» que no lo decían ahora lo avisan, el pin «Blanco/Verde» del T568 pasa de amarillo a verde pastel, y los ~250 botones de copiar y las pestañas de la chuleta ganan `aria-label`/`role="tablist"` (703 pruebas ✓).
 **Ronda v67.10.0:** informe de rendimiento/UX (Gemini) adaptado a esta PWA vanilla sin backend: de lo aplicable, el skeleton de las fotos gana un pulso que se apaga con `prefers-reduced-motion` y el estado vacío de Apuntes ofrece la acción («Nueva nota») dentro del propio estado; el resto (virtualización React, code-splitting, Zustand/React Query, N+1, índices y paginación por cursor, Zod, carpetas por feature) no tiene equivalente porque no hay React ni servidor (706 pruebas ✓).
+**Ronda v67.11.4:** el botón de volver de Herramientas SMR, de verdad: el chip dice «Volver» (no «Herramientas», que ya lo pone la cabecera) y tiene alto y cursor de botón; el gesto/botón «atrás» del móvil cierra la herramienta y devuelve a la rejilla —antes no hacía nada, porque la herramienta vive dentro de la misma vista— y al salir de la sección se cierra el panel, así que ya no se entra de golpe en la última herramienta usada (734 pruebas ✓).
 **Ronda v67.11.3:** el botón «volver» seguía como barra del 100 %: `#view` es un flex en columna y lo estiraba (`align-items: stretch`), y además conservaba el aspecto nativo del navegador. Ahora lleva `align-self: flex-start`, `appearance: none` y el mismo lenguaje visual de los chips (719 pruebas ✓).
 **Ronda v67.11.1:** «Volver» de las herramientas salía gigante (el SVG sin acotar, 300×150) y los rótulos del radar de Calificaciones metían artículos/preposiciones en el recorte; ahora el icono va a 16 px y el rótulo omite palabras vacías (717 pruebas ✓).
 **Ronda v67.11.0:** segunda pasada de Herramientas: los resultados de las calculadoras se tocan para copiar, Subnetting dibuja los 32 bits con red/host en dos colores, el T568 estrena conector RJ45 en SVG, la chuleta gana un buscador por descripción con debounce, se añade la referencia de pitidos BIOS (AMI/Award/Phoenix) y las funciones de cálculo quedan expuestas y probadas como puras (715 pruebas ✓).
@@ -905,6 +906,34 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.11.4 · El «Volver» de Herramientas SMR funciona como se espera
+
+Aviso del usuario: *«en Herramientas SMR, cuando selecciono algún apartado sale ese botón para volver
+a atrás»*. Las dos rondas anteriores habían arreglado el aspecto del chip (SVG gigante, barra al
+100 %); lo que seguía roto era el **comportamiento**. Verificado en jsdom antes de tocar nada:
+recorrido rejilla → tarjeta → chip, con el botón pintado en las 38 herramientas.
+
+1. **El «atrás» del móvil no hacía nada.** Una herramienta se pinta *dentro* de la vista `tools`
+   (`_tool` es solo estado), así que `go("tools")` no añadía entrada al historial y `popstate`
+   terminaba en `destino === view` → sin cambios. Había que acertar con el chip sí o sí. Ahora
+   `tool-open` añade una entrada propia (`{ v: "tools", tool: id }`) y el `popstate` de `app.js`
+   pregunta primero a `AulaTools.back()`: si había una herramienta abierta, la cierra y vuelve a la
+   rejilla; si no, sigue con el cambio de vista de siempre.
+2. **La sección amanecía dentro de la última herramienta.** `_tool` vive en `state`, que se guarda
+   en `localStorage`: si te ibas a Inicio con Subnetting abierto, al volver a Herramientas caías
+   otra vez en Subnetting. Ahora salir de la vista cierra el panel (`toolsRejilla()` en `go()` y en
+   `hashchange`). Se limpia al **salir**, no al entrar, porque abrir una herramienta desde el
+   buscador global (Ctrl/Cmd+K) pasa por `go("tools")` justo antes de fijar `_tool`.
+3. **El chip no se leía como botón.** Decía «Herramientas» (lo mismo que la cabecera de la vista) y
+   no tenía ni `cursor` ni alto mínimo. Ahora dice «Volver», con `aria-label="Volver a la lista de
+   herramientas"`, `min-height: 34px` (el alto pulsable de los `.chip`) y `cursor: pointer`; el
+   título de la herramienta sube de 14 px a 16 px, dentro de la escala tipográfica.
+4. **Historial limpio.** Al pulsar el chip se consume la entrada de la herramienta
+   (`history.back()` si esa entrada era suya), para que el siguiente «atrás» no caiga en una
+   entrada que ya no pinta nada.
+
+**Pruebas: 719 → 734 ✓** (`testTools3()`), y las mismas pasan sobre el minificado.
 
 ## Ronda v67.11.3 · «Volver» como chip compacto
 

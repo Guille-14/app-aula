@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.11.3";
+  const APP_VERSION = "v67.11.4";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -4510,12 +4510,21 @@
   function openCmd() { cmdOpen = true; cmdItems = collectCmd(""); cmdIndex = 0; $("#cmdk").hidden = false; $("#cmdk-input").value = ""; renderCmd(); setTimeout(() => $("#cmdk-input").focus(), 20); }
   function closeCmd() { cmdOpen = false; $("#cmdk").hidden = true; }
 
+  // «Herramientas SMR»: la herramienta abierta es un estado pasajero de la vista. Al salir de la
+  // sección se vuelve a la rejilla; si no, al entrar otra vez aparecía el último panel abierto.
+  function toolsRejilla() {
+    if (window.AulaTools && typeof window.AulaTools.reset === "function") window.AulaTools.reset();
+  }
   function go(v) {
     // Vistas retiradas (o un marcador viejo acabado en #timeline): a Inicio, nunca en blanco
     if (!(titles[v] || EXTRA_VIEWS[v])) v = "dashboard";
     persistNoteNow();
     const anterior = view;
     view = v;
+    // Salir de «Herramientas» cierra la herramienta que estuviera abierta: _tool vive en el estado
+    // (y por tanto se guarda), así que si se deja puesto, al volver a la sección se caía dentro
+    // del último panel en vez de ver la rejilla.
+    if (anterior === "tools" && v !== "tools") toolsRejilla();
     $("#overlay").hidden = true;
     closeCmd(); closeMore();
     const scroller = $("#view");
@@ -6012,9 +6021,16 @@
   window.addEventListener("beforeunload", flushSave);
   window.addEventListener("hashchange", () => {
     const v = (location.hash || "").replace("#", "");
-    if (esVista(v) && v !== view) { persistNoteNow(); closeMore(); view = v; render(); }
+    if (esVista(v) && v !== view) { persistNoteNow(); closeMore(); if (view === "tools") toolsRejilla(); view = v; render(); }
   });
   window.addEventListener("popstate", () => {
+    // Una herramienta de «Herramientas SMR» se pinta dentro de la misma vista «tools», así que
+    // el «atrás» del móvil no cambiaba de vista y no pasaba absolutamente nada: había que buscar
+    // el botón de volver. Primero se cierra la herramienta abierta y se vuelve a la rejilla.
+    if (view === "tools" && window.AulaTools && typeof window.AulaTools.back === "function" && window.AulaTools.back()) {
+      window.scrollTo(0, 0);
+      return;
+    }
     // Si no queda historial propio, se vuelve a Inicio en lugar de cerrar la app
     const v = (location.hash || "").replace("#", "");
     const destino = esVista(v) ? v : "dashboard";
