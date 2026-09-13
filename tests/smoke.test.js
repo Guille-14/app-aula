@@ -2361,6 +2361,7 @@ async function testEsquema() {
   // El botón «volver» de cada herramienta acota su icono (sin esto el SVG salía a 300×150)
   const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
   check(/\.tool-back svg\s*\{[^}]*width:\s*16px/.test(ui), "tools: el icono de «volver» tiene tamaño acotado en CSS");
+  check(/\.tool-back\s*\{[^}]*align-self:\s*flex-start/.test(ui), "tools: «volver» no se estira al 100 % (align-self contra el flex de #view)");
   const tj = fs.readFileSync(path.join(ROOT, "js", "tools.js"), "utf8");
   check(/<svg viewBox="0 0 24 24" width="16" height="16"/.test(tj), "tools: y el SVG de «volver» lleva width/height de atributo");
 
@@ -2956,10 +2957,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.11\.2"/.test(app), "versión: js/app.js dice v67.11.2");
-    check(pkg.version === "67.11.2", "versión: package.json dice v67.11.2");
-    check(lock.version === "67.11.2" && lock.packages[""].version === "67.11.2", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.11\.2"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.11\.3"/.test(app), "versión: js/app.js dice v67.11.3");
+    check(pkg.version === "67.11.3", "versión: package.json dice v67.11.3");
+    check(lock.version === "67.11.3" && lock.packages[""].version === "67.11.3", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.11\.3"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }

@@ -13,6 +13,7 @@
 **Ronda v67.8.0:** re-análisis completo aplicado: iconos comprimidos con pérdida imperceptible (−61 %/−69 %), los 33 skins por encima de 4,5:1 de contraste WCAG (antes 9 por debajo), los `blob:` huérfanos se revocan, el CSS muerto del viejo layout con barra lateral desaparece, la tipografía queda acotada a una escala de 14 tamaños (antes 33), el botón del temporizador sube a 44 px y `save()` deja de reescribir localStorage en cada navegación (693 pruebas ✓).
 **Ronda v67.9.0:** pulido de la sección Herramientas: la calculadora IPv6 arranca con una IPv6 válida (antes una URL que fallaba), el conversor Bin/Dec/Hex recupera la opción Octal (la validación existía pero era inalcanzable), todas las calculadoras numéricas recalculan mientras escribes (antes solo Subnetting), las seis listas «toca para copiar» que no lo decían ahora lo avisan, el pin «Blanco/Verde» del T568 pasa de amarillo a verde pastel, y los ~250 botones de copiar y las pestañas de la chuleta ganan `aria-label`/`role="tablist"` (703 pruebas ✓).
 **Ronda v67.10.0:** informe de rendimiento/UX (Gemini) adaptado a esta PWA vanilla sin backend: de lo aplicable, el skeleton de las fotos gana un pulso que se apaga con `prefers-reduced-motion` y el estado vacío de Apuntes ofrece la acción («Nueva nota») dentro del propio estado; el resto (virtualización React, code-splitting, Zustand/React Query, N+1, índices y paginación por cursor, Zod, carpetas por feature) no tiene equivalente porque no hay React ni servidor (706 pruebas ✓).
+**Ronda v67.11.3:** el botón «volver» seguía como barra del 100 %: `#view` es un flex en columna y lo estiraba (`align-items: stretch`), y además conservaba el aspecto nativo del navegador. Ahora lleva `align-self: flex-start`, `appearance: none` y el mismo lenguaje visual de los chips (719 pruebas ✓).
 **Ronda v67.11.1:** «Volver» de las herramientas salía gigante (el SVG sin acotar, 300×150) y los rótulos del radar de Calificaciones metían artículos/preposiciones en el recorte; ahora el icono va a 16 px y el rótulo omite palabras vacías (717 pruebas ✓).
 **Ronda v67.11.0:** segunda pasada de Herramientas: los resultados de las calculadoras se tocan para copiar, Subnetting dibuja los 32 bits con red/host en dos colores, el T568 estrena conector RJ45 en SVG, la chuleta gana un buscador por descripción con debounce, se añade la referencia de pitidos BIOS (AMI/Award/Phoenix) y las funciones de cálculo quedan expuestas y probadas como puras (715 pruebas ✓).
 **Ronda v67.7:** el contraste del modo oscuro se mide y se sube (las tarjetas ya no se funden con el negro de la OLED), los campos del esquema tienen forma de caja, la vibración la hace el motor háptico de Android, las entregas de la Agenda se deslizan con el dedo y el simulador «¿qué nota necesito?» dice lo que hace falta sacar en lo que queda —o que ya no llegas, con el máximo real— (665 pruebas ✓).
@@ -904,6 +905,16 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.11.3 · «Volver» como chip compacto
+
+El contenedor `#view` (`.hub-scroll`) es `display:flex; flex-direction:column`, así que todo hijo
+se estira al ancho completo por defecto; el `inline-flex` de la v67.11.0 no ganaba a eso. La
+v67.11.2 acotó el icono pero la barra seguía al 100 % y con el borde/fondo nativo del navegador.
+Ahora `.tool-back` lleva `align-self: flex-start`, `appearance: none` y estética de chip
+(`border-radius: 999px`, fondo `--surface-2`), coherente con el resto de la app.
+
+**Pruebas: 718 → 719 ✓**, y las mismas pasan sobre el minificado.
 
 ## Ronda v67.11.1 · Dos regresiones de la sección Herramientas/Calificaciones
 
