@@ -1932,6 +1932,11 @@ img.is-loading {
   box-shadow: inset 0 0 0 1px var(--line);
   min-height: 90px;
 }
+/* Skeleton: un pulso suave deja claro que la foto sigue cargando (el min-height ya reserva el
+   sitio y evita saltos de layout). Sin brillo para quien pide menos movimiento. */
+@keyframes skeleton-pulse { 50% { opacity: .5; } }
+.note-img.is-loading, img.is-loading { animation: skeleton-pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .note-img.is-loading, img.is-loading { animation: none; } }
 
 /* En táctil: más área para pulsar y sin hover pegajoso */
 /* v67.4: la casilla del día salía ovalada porque el CSS viejo (css/styles.css) le dejaba

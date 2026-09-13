@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.9.0";
+  const APP_VERSION = "v67.10.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -2524,7 +2524,9 @@
   function notasListaHTML() {
     const notes = notasFiltradas();
     if (!notes.length) {
-      return `<div class="empty">${noteQuery.trim() ? "Ninguna nota coincide con «" + esc(noteQuery.trim()) + "»." : "Sin notas."}</div>`;
+      return noteQuery.trim()
+        ? `<div class="empty">Ninguna nota coincide con «${esc(noteQuery.trim())}».</div>`
+        : `<div class="empty"><b>Sin notas</b><p>Aquí viven tus apuntes, con fotos y fichas.</p><button class="btn btn-primary" data-action="add-note">Nueva nota</button></div>`;
     }
     return notes.map((n) => {
       const bloqueada = n.locked && !unlockedNotes.has(n.id);

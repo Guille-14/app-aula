@@ -12,6 +12,7 @@
 **Ronda v67.7.1:** «no funciona lo de cambiar el icono de la app» — el manifiesto declaraba 24 lanzadores (el de MainActivity, siempre el dragón, más los 23 alias), así que cambiar de icono no servía de nada; ahora el único lanzador es el alias que eliges (680 pruebas ✓).
 **Ronda v67.8.0:** re-análisis completo aplicado: iconos comprimidos con pérdida imperceptible (−61 %/−69 %), los 33 skins por encima de 4,5:1 de contraste WCAG (antes 9 por debajo), los `blob:` huérfanos se revocan, el CSS muerto del viejo layout con barra lateral desaparece, la tipografía queda acotada a una escala de 14 tamaños (antes 33), el botón del temporizador sube a 44 px y `save()` deja de reescribir localStorage en cada navegación (693 pruebas ✓).
 **Ronda v67.9.0:** pulido de la sección Herramientas: la calculadora IPv6 arranca con una IPv6 válida (antes una URL que fallaba), el conversor Bin/Dec/Hex recupera la opción Octal (la validación existía pero era inalcanzable), todas las calculadoras numéricas recalculan mientras escribes (antes solo Subnetting), las seis listas «toca para copiar» que no lo decían ahora lo avisan, el pin «Blanco/Verde» del T568 pasa de amarillo a verde pastel, y los ~250 botones de copiar y las pestañas de la chuleta ganan `aria-label`/`role="tablist"` (703 pruebas ✓).
+**Ronda v67.10.0:** informe de rendimiento/UX (Gemini) adaptado a esta PWA vanilla sin backend: de lo aplicable, el skeleton de las fotos gana un pulso que se apaga con `prefers-reduced-motion` y el estado vacío de Apuntes ofrece la acción («Nueva nota») dentro del propio estado; el resto (virtualización React, code-splitting, Zustand/React Query, N+1, índices y paginación por cursor, Zod, carpetas por feature) no tiene equivalente porque no hay React ni servidor (706 pruebas ✓).
 **Ronda v67.7:** el contraste del modo oscuro se mide y se sube (las tarjetas ya no se funden con el negro de la OLED), los campos del esquema tienen forma de caja, la vibración la hace el motor háptico de Android, las entregas de la Agenda se deslizan con el dedo y el simulador «¿qué nota necesito?» dice lo que hace falta sacar en lo que queda —o que ya no llegas, con el máximo real— (665 pruebas ✓).
 **Ronda v67.6:** la Agenda se organiza como la del instituto —cada módulo con sus exámenes y entregas—, los exámenes van de una hora a otra y las entregas tienen plazo (se abre → se cierra) y estado (pendiente · entregado · corregido), que se cambia desde la propia fila (582 pruebas ✓).
 **Ronda v67.5:** la nota de cada módulo se calcula como la calcula tu profe — componentes con peso, notas «sobre X» y reglas que pueden suspender (aprobar todos los RA) — y Exámenes pasa a ser una Agenda con trabajos y entregas que llenan el componente solos (548 pruebas ✓).
@@ -901,6 +902,36 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.10.0 · Informe de rendimiento/UX adaptado (sin React, sin backend)
+
+El informe externo asume una app de **profesor** con React + base de datos (alumnos, asistencia,
+tablas de notas). Este repo es una PWA **vanilla de alumno, sin servidor**: los datos viven en el
+dispositivo (localStorage + IndexedDB) y no hay React, ORM ni API. Por eso la mayoría de puntos no
+tienen equivalente; los que sí, ya estaban o se cierran aquí. Verificado contra el código actual.
+
+**No aplica (no existe el stack):** virtualización con `@tanstack/react-virtual`, `React.lazy`,
+`Zustand`/`React.memo`, `TanStack Query`/SWR, N+1 del ORM, índices SQL, paginación por cursor, Zod,
+carpetas por feature en TypeScript. No hay componentes React ni consultas a servidor que optimizar.
+
+**Ya cubierto (equivalente vanilla):**
+- *Code splitting:* `js/tools.js` se carga bajo demanda (`cargarTools()`), no al arrancar.
+- *Validación en runtime:* `sanitize()` valida y repara el estado al cargar (el «Zod» de la casa).
+- *Guardado optimista/instantáneo:* todo es local; `save()` difiere 400 ms y desde la v67.8 solo
+  escribe si algo cambió.
+- *Skeletons y CLS:* `.note-img.is-loading` reserva `min-height` (sin saltos de layout).
+- *Estados vacíos con CTA:* Mazo, módulos, agenda y herramientas ya traen botón de acción.
+- *No depender solo del color:* los chips de estado llevan texto («Entregado») y `aria-label`.
+- *Rendimiento de listas:* medido en rondas anteriores — la Agenda escala lineal (~736 ms con 800
+  elementos en jsdom, menos en navegador real); no justifica virtualizar a este volumen.
+
+**Se añade ahora:**
+1. *Skeleton con pulso:* `@keyframes skeleton-pulse` anima las fotos que cargan, y se apaga con
+   `prefers-reduced-motion`.
+2. *Estado vacío educativo en Apuntes:* sin notas, el propio estado ofrece «Nueva nota» (antes solo
+   el botón de la cabecera).
+
+**Pruebas: 703 → 706 ✓** (`testGemini()`), y las mismas pasan sobre el minificado del APK.
 
 ## Ronda v67.9.0 · Pulido de Herramientas
 

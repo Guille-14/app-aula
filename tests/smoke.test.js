@@ -2947,10 +2947,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.9\.0"/.test(app), "versión: js/app.js dice v67.9.0");
-    check(pkg.version === "67.9.0", "versión: package.json dice 67.9.0");
-    check(lock.version === "67.9.0" && lock.packages[""].version === "67.9.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.9\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.10\.0"/.test(app), "versión: js/app.js dice v67.10.0");
+    check(pkg.version === "67.10.0", "versión: package.json dice 67.10.0");
+    check(lock.version === "67.10.0" && lock.packages[""].version === "67.10.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.10\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
@@ -3163,6 +3163,28 @@ function testTools() {
     "tools: Hosts→CIDR responde mientras escribes (sin botón)");
 }
 
+// ------------------------------------------------------- v67.10.0: informe Gemini (lo aplicable)
+function testGemini() {
+  const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
+  // Skeleton con pulso y sin brillo para quien pide menos movimiento. Tolerante al minificador
+  // (cssnano renombra los @keyframes y quita espacios), así que buscamos «animation» que no sea
+  // «none» en el skeleton, y el apagado dentro del media de reduced-motion.
+  check(/is-loading[^{]*\{[^}]*animation:(?!\s*none)/.test(ui),
+    "gemini: las fotos que cargan usan un skeleton con pulso");
+  const reduce = (ui.match(/prefers-reduced-motion:\s*reduce\)[\s\S]{0,300}?is-loading[^{]*\{[^}]*animation:\s*none/) || [])[0];
+  check(!!reduce, "gemini: y el pulso se apaga con prefers-reduced-motion");
+
+  // Estado vacío educativo con CTA dentro (no solo el botón de la cabecera)
+  const env = boot();
+  ready(env.A);
+  env.A.state.settings.onboarded = true;   // sin onboarding la vista de notas no se pinta
+  env.A.state.notes = [];                   // y con notas de demo nunca veríamos el estado vacío
+  env.A.go("notes");
+  const vacio = env.doc.querySelector("#view .empty");
+  check(!!vacio && !!vacio.querySelector("[data-action=\"add-note\"]"),
+    "gemini: «Sin notas» ofrece la acción dentro del estado vacío");
+}
+
 // ------------------------------------------------------------- ejecución
 (async () => {
   try {
@@ -3179,6 +3201,7 @@ function testTools() {
     testIconoApp();
     testReanalisis();
     testTools();
+    testGemini();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");
   }
