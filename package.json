@@ -1,6 +1,6 @@
 {
   "name": "aula-smr",
-  "version": "67.11.1",
+  "version": "67.11.2",
   "private": true,
   "description": "Aula SMR · PWA de estudio para 2.º SMR (local, sin cuenta)",
   "scripts": {

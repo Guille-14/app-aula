@@ -324,7 +324,7 @@
 
   function wrap(title, body) {
     return `<button type="button" class="tool-back" data-action="tool-back" aria-label="Volver a herramientas">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M15 6 9 12l6 6"/></svg>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M15 6 9 12l6 6"/></svg>
         <span>Herramientas</span>
       </button>
       <h2 class="tool-title">${esc(title)}</h2>${body}`;
