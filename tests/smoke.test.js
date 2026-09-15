@@ -422,8 +422,15 @@ async function testSettings() {
   const env = boot();
   ready(env.A);
   const A = env.A;
-  const hoy = "2026-09-14";   // primer lunes de clase del curso 2026-27
-  const dow = 0;
+  // Primer día con clases de la semana a partir de HOY de verdad: si la fecha se queda
+  // fija, al pasar los días el cambio queda en el pasado y la vista deja de listarlo.
+  let hoy = A.todayISO();
+  for (let i = 0; i < 400; i++) {
+    const d = new Date(hoy + "T12:00:00"); d.setDate(d.getDate() + i);
+    const iso = A.localISO(d);
+    if (A.dayInfo(iso).kind === "lectivo" && A.state.events.some((e) => Number(e.day) === A.weekdayMon0(d))) { hoy = iso; break; }
+  }
+  const dow = A.weekdayMon0(new Date(hoy + "T12:00:00"));
   const clases = A.state.events.filter((e) => e.day === dow);
   if (!clases.length) {
     check(false, "excepciones: el horario de ejemplo no tiene clases hoy, no se puede probar");
@@ -1380,7 +1387,9 @@ async function testAuditoria() {
         cancel: async (o) => llamadas.push({ cancelado: o.notifications.map((n) => n.id) }),
       } },
     };
-    const fin = new Date("2026-09-14T18:35:00");
+    // Una fecha fija se pudre: en cuanto pasa el día, el aviso queda «en el pasado» y no se
+    // programa. Se usa «dentro de una hora» para que la prueba no dependa del calendario.
+    const fin = new Date(Date.now() + 60 * 60 * 1000);
     const r = await AV.programarBloque({ fin, minutos: 25, etiqueta: "Seguridad" });
     const enfoca = llamadas.find((l) => l.id === AV.idEnfoque);
     const termina = llamadas.find((l) => l.id === AV.idBloque);
@@ -1739,8 +1748,8 @@ async function testAuditoria() {
     const envV2 = boot({ seed: JSON.stringify(conSello2) });
     ready(envV2.A);
     const martes = envV2.A.state.events.filter((e) => e.day === 1).sort((a, b) => a.start.localeCompare(b.start));
-    check(envV2.A.state.settings.planVersion === envV2.A.PLAN_VERSION && envV2.A.subjectName(martes[4].subjectId) === "Módulo optativo",
-      "actualización: un horario ya sellado con el plan anterior se vuelve a cuadrar (martes con optativo a las 19:10)");
+    check(envV2.A.state.settings.planVersion === envV2.A.PLAN_VERSION && envV2.A.subjectName(martes[4].subjectId) === "Programación",
+      "actualización: un horario ya sellado con el plan anterior se vuelve a cuadrar (martes con Programación a las 19:10)");
     check(envV2.A.state.events.filter((e) => e.day === 3).every((e) => e.start !== "21:20"),
       "actualización: y el jueves se queda sin la última hora");
 
@@ -2046,7 +2055,12 @@ async function testAuditoria() {
     A.state.settings.showWeekStrip = true;
     A.render();
     const pills = [...r.querySelectorAll(".week-pill")];
-    check(pills.length === 7 && pills.every((p) => p.dataset.tipo), "semana: cada día de la tira lleva su tipo (" + pills.map((p) => p.dataset.tipo).join(",") + ")");
+    // Con el curso empezado los lectivos van lisos (tipo ""); antes del curso todos eran
+    // «fuera». Lo que hay que exigir: findes marcados y ningún tipo inventado entre semana.
+    check(pills.length === 7 && ["finde", "fuera", "fest", "vac"].includes(pills[5].dataset.tipo)
+      && ["finde", "fuera", "fest", "vac"].includes(pills[6].dataset.tipo)
+      && pills.slice(0, 5).every((p) => ["", "fest", "vac", "fuera"].includes(p.dataset.tipo)),
+      "semana: cada día de la tira lleva su tipo (" + pills.map((p) => p.dataset.tipo).join(",") + ")");
 
     // 3. Calendario: casillas redondas y relleno invisible
     check(tienePropiedad("button.cal-day", "min-height: 0", ui), "calendario: el día no hereda los 96 px del CSS viejo");
@@ -2957,10 +2971,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.11\.3"/.test(app), "versión: js/app.js dice v67.11.3");
-    check(pkg.version === "67.11.3", "versión: package.json dice v67.11.3");
-    check(lock.version === "67.11.3" && lock.packages[""].version === "67.11.3", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.11\.3"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.12\.0"/.test(app), "versión: js/app.js dice v67.12.0");
+    check(pkg.version === "67.12.0", "versión: package.json dice v67.12.0");
+    check(lock.version === "67.12.0" && lock.packages[""].version === "67.12.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.12\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
@@ -3174,6 +3188,48 @@ function testTools() {
 }
 
 // ------------------------------------------------------- v67.10.0: informe Gemini (lo aplicable)
+function testEsquemaTodos() {
+  // v67.12: optativa → Programación, media de temas con «aprobar todos» y clases hasta el 27 de febrero
+  const seed = JSON.stringify({
+    settings: { onboarded: true, demo: false },
+    subjects: [
+      { id: "m1", name: "Módulo optativo", color: "#84cc16", grade: "" },
+      { id: "m2", name: "Sistemas operativos en red", color: "#3b82f6", grade: "" },
+      { id: "m3", name: "Servicios en red", color: "#db2777", grade: "",
+        eval: { v: 1, componentes: [{ id: "c1", nombre: "Teoría", peso: 100, sobre: 10, nota: 6 }], reglas: { ra: { activo: false, lista: [] }, min: { activo: false } } } },
+    ],
+  });
+  const env = boot({ seed });
+  const A = env.window.Aula;
+  const st = A.state;
+  check(st.settings.endDate === "2027-02-27", "curso: sus clases acaban el 27 de febrero (migración una vez)");
+  const prog = st.subjects.find((s) => s.id === "m1");
+  check(prog && prog.name === "Programación", "curso: la optativa guardada pasa a llamarse Programación");
+  check(A.evalDe(prog) && prog.eval.reglas.todos.activo, "curso: Programación nace con esquema y la regla de aprobar todos los temas");
+  const sor = st.subjects.find((s) => s.id === "m2");
+  check(A.evalDe(sor) && sor.eval.reglas.todos.activo, "curso: SOR nace con esquema y la regla de aprobar todos los temas");
+  const ser = st.subjects.find((s) => s.id === "m3");
+  check(ser.eval.reglas.todos && ser.eval.reglas.todos.activo, "curso: los esquemas ya montados también reciben la regla");
+
+  // La regla: un tema por debajo de la mitad suspende aunque la media dé aprobado
+  ser.eval.componentes.push({ id: "c2", nombre: "Tema 2", peso: 100, sobre: 10, nota: 8 });
+  ser.eval.componentes[0].nota = 4;   // media 6, pero con un tema suspenso
+  let est = A.estadoModulo(ser);
+  check(est.nota === 6 && est.aprobado === false && /Tema/.test(est.motivo || ""), "regla: un tema < 5 suspende el módulo aunque la media dé");
+  ser.eval.componentes[0].nota = 5;
+  est = A.estadoModulo(ser);
+  check(est.aprobado === true && est.nota === 6.5, "regla: con todos los temas aprobados manda la media");
+
+  // El simulador trata la mitad de cada tema como suelo pendiente
+  ser.eval.componentes[1].nota = "";
+  const sim = A.notaNecesaria(ser, 5);
+  check(sim.minimoPendiente && sim.minimoPendiente.min === 5, "simulador: con la regla activa exige al menos un 5 en lo pendiente");
+
+  // Calendario: a partir del 28 de febrero ya no hay clase (después, prácticas)
+  check(A.dayInfo("2027-03-01").kind === "fuera", "calendario: desde el 28 de febrero no hay clase");
+  check(A.dayInfo("2027-02-26").kind !== "fuera", "calendario: hasta el 27 de febrero sigue habiendo clase");
+}
+
 function testGemini() {
   const ui = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
   // Skeleton con pulso y sin brillo para quien pide menos movimiento. Tolerante al minificador
@@ -3262,6 +3318,7 @@ async function testTools2() {
     testReanalisis();
     testTools();
     await testTools2();
+    testEsquemaTodos();
     testGemini();
   } catch (e) {
     fails.push("las pruebas asíncronas fallaron: " + e.message + " [traza: " + String(e.stack || "").split("\n")[1] + "]");

@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.11.3";
+  const APP_VERSION = "v67.12.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -447,7 +447,7 @@
     { key: "pro", name: "Proyecto intermodular Sistemas microinformáticos y redes", teacher: "Ernesto Montero Sandiego", color: "#22c55e", room: "AULA 1NF3", aliases: ["proyecto intermodular", "proyecto"] },
     { key: "dig", name: "Digitalización aplicada al sistema productivo GM", teacher: "Amador Gramage Borrás", color: "#fb7185", room: "AULA 1NF3", aliases: ["digitalización", "digitalizacion"] },
     { key: "sos", name: "Sostenibilidad aplicada al sistema productivo", teacher: "Javier Ibáñez Micó", color: "#f9a8d4", room: "AULA 3", aliases: ["sostenibilidad"] },
-    { key: "opt", name: "Módulo optativo", teacher: "Damián Antonio Santos Baldo", color: "#84cc16", room: "AULA 3", aliases: ["optativo"] },
+    { key: "opt", name: "Programación", teacher: "Damián Antonio Santos Baldo", color: "#84cc16", room: "AULA 3", aliases: ["optativo", "optativa", "programacion", "programación"] },
     { key: "tut", name: "Tutoría Segundo", teacher: "Ernesto Montero Sandiego", color: "#86efac", room: "AULA 1NF3", aliases: ["tutoría", "tutoria"] },
   ];
   // Tramos horarios: el del curso y el temporal (septiembre y junio, 45 min por clase)
@@ -475,6 +475,10 @@
     end: "2027-06-18",
     local: ["2026-09-09", "2026-12-07", "2027-02-08"],   // festivos locales a efectos escolares
   };
+  // El calendario escolar de COURSE es el oficial, pero SUS clases pueden acabar antes
+  // (después vienen las prácticas/FCT): el rango efectivo es el que él tenga configurado.
+  const cursoIni = () => ((state.settings && state.settings.startDate) || COURSE.start);
+  const cursoFin = () => ((state.settings && state.settings.endDate) || COURSE.end);
   const TIMETABLE_ID = "2smr-2026-2027";
   // El centro publicó el horario definitivo (clases de 15:10 a 22:15) con algún cambio de
   // módulo respecto al primer documento. Este sello avisa de que hay que actualizarlo.
@@ -535,8 +539,8 @@
     if (vac) return { kind: "vacaciones", label: vac.name, short: "Vacaciones", dow };
     if (HOLIDAYS[iso]) return { kind: "festivo", label: HOLIDAYS[iso], short: HOLIDAYS[iso], dow };
     if (dow > 4) return { kind: "finde", label: "Fin de semana", short: "Fin de semana", dow };
-    if (iso < COURSE.start) return { kind: "fuera", label: "Sin clase: el curso empieza el " + fmtDate(COURSE.start), short: "Sin curso", dow };
-    if (iso > COURSE.end) return { kind: "fuera", label: "Sin clase: el curso acabó el " + fmtDate(COURSE.end), short: "Sin curso", dow };
+    if (iso < cursoIni()) return { kind: "fuera", label: "Sin clase: el curso empieza el " + fmtDate(cursoIni()), short: "Sin curso", dow };
+    if (iso > cursoFin()) return { kind: "fuera", label: "Sin clase: las clases acabaron el " + fmtDate(cursoFin()), short: "Sin curso", dow };
     return { kind: "lectivo", label: "", short: "", dow };
   }
   function isLectivo(iso) { return dayInfo(iso).kind === "lectivo"; }
@@ -857,6 +861,9 @@
     if (((out.settings || {}).skin || "") === "pokemon") out.settings.skin = "hub";
     out.subjects.forEach((s) => {
       if (/^IPE/i.test(s.name) && (!s.color || s.color === "#64748b")) s.color = "#14b8a6";
+      // v67.12: su optativa de 2.º SMR es Programación; los datos guardados traían el
+      // nombre genérico de la plantilla oficial. Idempotente: si ya se llama Programación, no toca nada.
+      if (/optativ|módulo optativo/i.test(s.name) && !/programaci/i.test(s.name)) s.name = "Programación";
     });
     return out;
   }
@@ -871,6 +878,24 @@
       componente: [["Examen de teoría", 40], ["Examen práctico", 40], ["Prácticas", 20]],
       raTodos: true,
       nota: "Servicios en red ya tiene su esquema: 40 % teoría · 40 % práctico · 20 % prácticas (y hay que aprobar todos los RA).",
+    },
+    // v67.12: en Programación (su optativa) y en SOR la final es la MEDIA DE LOS TEMAS y hay que
+    // aprobarlos todos. El 60 % trabajos / 40 % exámenes lo aplica él al notar cada tema fuera de
+    // la app; aquí cada tema es un componente de igual peso y la regla «todos» exige la mitad.
+    // Se siembra un «Tema 1» como marcador de posición para que el esquema exista y él añada el resto.
+    {
+      sello: "eval-programacion-v1",
+      coincide: ["programación", "programacion", "módulo optativo", "optativa"],
+      componente: [["Tema 1", 100]],
+      todos: true,
+      nota: "Programación: nota final = media de los temas y hay que aprobarlos todos. Añade tus temas en el esquema.",
+    },
+    {
+      sello: "eval-sor-v1",
+      coincide: ["sistemas operativos en red", "sistemas operativos"],
+      componente: [["Tema 1", 100]],
+      todos: true,
+      nota: "Sistemas operativos en red: nota final = media de los temas y hay que aprobarlos todos.",
     },
   ];
 
@@ -887,7 +912,7 @@
       if (!sub || evalDe(sub)) { hechos[k.sello] = 1; return; }   // ya hay uno puesto: no se toca
       sub.eval = saneEval({
         componentes: k.componente.map(([nombre, peso]) => ({ id: uid(), nombre, peso, sobre: max, nota: "" })),
-        reglas: { ra: { activo: !!k.raTodos, lista: [] }, min: { activo: false } },
+        reglas: { ra: { activo: !!k.raTodos, lista: [] }, min: { activo: false }, todos: { activo: !!k.todos } },
       }, max);
       hechos[k.sello] = 1;
       aviso = k.nota;
@@ -918,7 +943,32 @@
     // Los esquemas de evaluación que ya me ha pasado el usuario (v67.5)
     const avisoEsquema = aplicarEsquemasConocidos(out);
     if (avisoEsquema) setTimeout(() => toast(avisoEsquema), 1200);
+    aplicarCursoPersonal(out);
     return out;
+  }
+
+  /* Ajustes de SU curso (v67.12), aplicados una sola vez (sello en progress.flags):
+     1. Sus clases acaban el 27 de febrero de 2027; después vienen las prácticas (FCT) y
+        el horario de esas lo dirá él. El calendario oficial sigue siendo el de la
+        Generalitat, pero el rango «con clase» que mira dayInfo es el suyo.
+     2. En todos los módulos hay que aprobar todos los temas: los esquemas que ya
+        tuviera montados a mano reciben la regla «todos» activa. */
+  function aplicarCursoPersonal(st) {
+    st.progress = isObj(st.progress) ? st.progress : { flags: {} };
+    st.progress.flags = isObj(st.progress.flags) ? st.progress.flags : {};
+    const hechos = st.progress.flags;
+    if (isObj(st.settings) && !hechos["fin-clases-feb-v1"]) {
+      st.settings.endDate = "2027-02-27";
+      hechos["fin-clases-feb-v1"] = 1;
+    }
+    if (!hechos["regla-todos-v1"]) {
+      asArray(st.subjects).forEach((s) => {
+        if (s && isObj(s.eval) && isObj(s.eval.reglas)) {
+          s.eval.reglas.todos = { activo: true };
+        }
+      });
+      hechos["regla-todos-v1"] = 1;
+    }
   }
 
   let saveTimer = null;
@@ -1266,6 +1316,16 @@
       });
       if (malo) motivo = "«" + malo.nombre + "» por debajo del mínimo (" + Number(malo.min).toFixed(1) + ")";
     }
+    // v67.12: «hay que aprobar todos los temas»: un componente (tema) por debajo de la mitad
+    // suspende el módulo aunque la media dé aprobado.
+    if (nota != null && !motivo && ev.reglas.todos && ev.reglas.todos.activo) {
+      const suspensos = ev.componentes.filter((c) => {
+        const n = notaDeComponente(sub, c);
+        return n.nota != null && n.nota < n.sobre / 2;
+      });
+      if (suspensos.length === 1) motivo = "Tema «" + suspensos[0].nombre + "» sin aprobar";
+      else if (suspensos.length > 1) motivo = suspensos.length + " temas sin aprobar";
+    }
     return { nota, aprobado: nota == null ? null : (nota >= max / 2 && !motivo), motivo, tieneEsquema: true, conNota, total: ev.componentes.length };
   }
 
@@ -1302,12 +1362,15 @@
     let pesoTodo = 0, sumaNota = 0, pesoPendiente = 0;
     const pendientes = [], minSuspenso = [];
     const minActivo = !!(ev.reglas && ev.reglas.min && ev.reglas.min.activo);
+    const todosActivo = !!(ev.reglas && ev.reglas.todos && ev.reglas.todos.activo);
     ev.componentes.forEach((c) => {
       const p = clamp(Number(c.peso) || 0, 0, 100);
       if (p <= 0) return;                     // un componente sin peso no decide nada
       pesoTodo += p;
       const n = notaDeComponente(sub, c);
-      const suelo = minActivo && Number(c.min) > 0 ? Number(c.min) : 0;
+      // Con «aprobar todos los temas» cada componente exige al menos la mitad, aunque
+      // no tenga mínimo propio: el simulador lo trata como suelo igual que el min.
+      const suelo = minActivo && Number(c.min) > 0 ? Number(c.min) : (todosActivo ? n.sobre / 2 : 0);
       if (n.nota == null) {
         pesoPendiente += p;
         pendientes.push({ id: c.id, nombre: c.nombre, peso: p, sobre: n.sobre, min: suelo });
@@ -1407,6 +1470,9 @@
       reglas: {
         ra: { activo: !!raRaw.activo, lista },
         min: { activo: !!(isObj(reglas.min) && reglas.min.activo) },
+        // v67.12: «aprobar todos los temas» — cada componente por debajo de la mitad suspende
+        // el módulo aunque la media pondere bien.
+        todos: { activo: !!(isObj(reglas.todos) && reglas.todos.activo) },
       },
     };
   }
@@ -2147,7 +2213,7 @@
       // semana entera en rojo (que en un colegio se lee como «suspenso»). Ahora el rojo es solo
       // para los festivos de verdad; vacaciones en ámbar y lo de fuera del curso en gris.
       const info = dayInfo(iso);
-      const fuera = iso < COURSE.start || iso > COURSE.end;
+      const fuera = iso < cursoIni() || iso > cursoFin();
       const tipo = fuera ? "fuera" : info.kind === "festivo" ? "fest" : info.kind === "vacaciones" ? "vac" : info.kind === "finde" ? "finde" : "";
       pills.push({ iso, n: d.getDate(), lbl: DAYS_SHORT[i], today: iso === today, tipo });
     }
@@ -5331,7 +5397,7 @@
     ["pro", ["proyecto", "intermodular", "memoria", "defensa"]],
     ["dig", ["digitalizacion", "transformacion digital"]],
     ["sos", ["sostenibilidad", "medio ambiente", "economia circular", "ods"]],
-    ["opt", ["optativo", "optativa"]],
+    ["opt", ["optativo", "optativa", "programacion", "programación", "bucles", "funciones", "variables", "algoritmo"]],
     ["tut", ["tutoria", "tutoría"]],
   ];
   function subjectKeyOf(name) {
@@ -5546,13 +5612,16 @@
         reglas: {
           ra: { activo: !!(ev.reglas && ev.reglas.ra && ev.reglas.ra.activo), lista: ((ev.reglas && ev.reglas.ra && ev.reglas.ra.lista) || []).map((x) => ({ ...x })) },
           min: { activo: !!(ev.reglas && ev.reglas.min && ev.reglas.min.activo) },
+          todos: { activo: !!(ev.reglas && ev.reglas.todos && ev.reglas.todos.activo) },
         },
       };
     }
+    // Regla de su curso (v67.12): en todos los módulos hay que aprobar todos los temas,
+    // así un esquema nuevo nace con la regla puesta (se puede apagar en el editor).
     return {
       v: 1,
       componentes: [{ id: uid(), nombre: "Nota del módulo", peso: 100, sobre: max, nota: "", min: 0, modo: "auto" }],
-      reglas: { ra: { activo: false, lista: [] }, min: { activo: false } },
+      reglas: { ra: { activo: false, lista: [] }, min: { activo: false }, todos: { activo: true } },
     };
   }
 
@@ -5623,6 +5692,8 @@
           <button type="button" class="btn btn-sm btn-ghost" data-action="eval-add-ra">+ Añadir RA</button>
         </div>
         <label class="switch"><span class="switch-t">Exigir la nota mínima de cada componente</span><input type="checkbox" name="regla-min" role="switch" ${ev.reglas.min.activo ? "checked" : ""}/></label>
+        <label class="switch"><span class="switch-t">Hay que aprobar todos los temas</span><input type="checkbox" name="regla-todos" role="switch" ${ev.reglas.todos.activo ? "checked" : ""}/></label>
+        <p class="hint">Con la regla activa, un tema (componente) por debajo de la mitad suspende el módulo aunque la media dé aprobado.</p>
       </div>
       <div class="eval-pie ${est.nota == null ? "" : est.aprobado ? "is-ok" : "is-bad"}">${resumen}</div>`;
   }
@@ -5654,6 +5725,7 @@
       if (m) { const r = evalDraft.reglas.ra.lista.find((x) => x.id === m[1]); if (r) r.ok = c.checked; }
       if (c.name === "regla-ra") evalDraft.reglas.ra.activo = c.checked;
       if (c.name === "regla-min") evalDraft.reglas.min.activo = c.checked;
+      if (c.name === "regla-todos") evalDraft.reglas.todos.activo = c.checked;
     });
   }
 
@@ -5687,7 +5759,10 @@
     leerEsquema($("#modal-form"));
     if (accion === "eval-add-comp") {
       const sobre = Number(state.settings.gradeMax) || 10;
-      evalDraft.componentes.push({ id: uid(), nombre: "Componente " + (evalDraft.componentes.length + 1), peso: 0, sobre, nota: "", min: 0, modo: "auto" });
+      // Hereda el peso del primero: con temas de igual peso la ponderada es la media
+      // (antes nacían con peso 0 y no contaban para nada hasta tocarlos a mano).
+      const pesoBase = Number(evalDraft.componentes[0] && evalDraft.componentes[0].peso) || 10;
+      evalDraft.componentes.push({ id: uid(), nombre: "Tema " + (evalDraft.componentes.length + 1), peso: pesoBase, sobre, nota: "", min: 0, modo: "auto" });
     }
     if (accion === "eval-del-comp") {
       if (evalDraft.componentes.length <= 1) { toast("Deja al menos un componente"); return; }
