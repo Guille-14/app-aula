@@ -222,6 +222,23 @@ if "usesCleartextTraffic" not in mt:
     # Ojo: se inserta en la misma línea (un salto aquí dentro del literal llegaría escapado al XML)
     mt = mt.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
 
+# Para que los avisos programados suenen de verdad hacen falta dos permisos más. Sin
+# SCHEDULE_EXACT_ALARM (Android 12+), el plugin de Capacitor cae a alarmas inexactas que
+# el móvil puede retrasar horas o no disparar; la app detecta el estado y deja activarlo
+# desde Ajustes. Sin REQUEST_IGNORE_BATTERY_OPTIMIZATIONS no se puede pedir exención de
+# la optimización de batería, y varios fabricantes matan por ahí las alarmas en 2.º plano.
+if "SCHEDULE_EXACT_ALARM" not in mt:
+    perms = (
+        '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n'
+        '<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />\n'
+    )
+    mt = re.sub(
+        r"(\n[ \t]*)<application",
+        lambda m: m.group(1) + perms + m.group(1) + "<application",
+        mt,
+        count=1,
+    )
+
 recv_bits = []
 for wid, cls, _kind, _size, _name, _desc in WIDGETS:
     if f".{cls}" in mt:

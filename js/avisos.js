@@ -18,6 +18,20 @@
  * Exámenes, Horario, Fichas o Inicio. También hay una prueba de 5 segundos para comprobar
  * desde Ajustes que los avisos suenan de verdad en ese móvil.
  *
+ * Para que suenen de verdad (con la app cerrada y el móvil en el bolsillo) Android necesita
+ * tres cosas, y esta app las persigue desde Ajustes:
+ *   1. permiso de notificaciones (POST_NOTIFICATIONS) — el clásico;
+ *   2. alarmas con hora exacta: desde Android 12 el teléfono las trae bloqueadas
+ *      («Alarmas y recordatorios»). Sin ellas el plugin de Capacitor programa alarmas
+ *      inexactas que el móvil puede retrasar o nunca disparar. `alarmasExactas()` lo
+ *      detecta y `pedirAlarmasExactas()` abre la pantalla del sistema para activarlas;
+ *   3. exención de la optimización de batería: varios fabricantes (Xiaomi, Samsung,
+ *      Oppo…) matan las alarmas en segundo plano. `bateria()` la detecta y `pedirBateria()`
+ *      abre el diálogo del sistema.
+ *  Y todos los avisos se programan con `allowWhileIdle: true`: que suenen aunque el móvil
+ *  esté en modo de reposo (Doze) — con `false`, que era como estaba, el teléfono podía
+ *  guardarse la notificación «para luego» y no sonar nunca a la hora.
+ *
  * `plan()` es una función pura (datos de entrada, lista de avisos de salida) para poder
  * probarla sin móvil ni navegador; la parte nativa solo traduce ese plan a llamadas.
  */
@@ -219,7 +233,10 @@
           notifications: avisos.map((a) => ({
             id: a.id, title: a.titulo, body: a.cuerpo, channelId: CANAL,
             extra: { vista: a.vista },
-            schedule: { at: a.cuando, allowWhileIdle: false },
+            // allowWhileIdle: true es lo que hace sonar el aviso aunque el móvil esté
+            // bloqueado y en reposo (Doze). Con false, Android puede retrasarlo o no
+            // dispararlo nunca: era por ahí por donde se escapaban las notificaciones.
+            schedule: { at: a.cuando, allowWhileIdle: true },
           })),
         });
       } catch {
@@ -250,12 +267,13 @@
             id: ID_ENFOQUE, title: "Enfocado hasta las " + hhmm,
             body: minutos + " min de estudio" + etiqueta + ". Puedes cerrar la app: te aviso al terminar.",
             channelId: CANAL, extra: { vista: "timer" }, autoCancel: true,
-            schedule: { at: new Date(Date.now() + 1000) },
+            schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
           },
           {
             id: ID_BLOQUE, title: "Bloque terminado", body: "+" + minutos + " min" + etiqueta + ". Toca para el descanso.",
             channelId: CANAL, extra: { vista: "timer" },
-            schedule: { at: fin },
+            // que suene aunque la pantalla esté apagada y el móvil en reposo: ese es el punto
+            schedule: { at: fin, allowWhileIdle: true },
           },
         ],
       });
@@ -304,13 +322,60 @@
       await P.schedule({
         notifications: [{
           id: ID_PRUEBA, title: "Aula SMR", body: "Prueba de aviso: si ves esto, funciona. Te avisará en 5 segundos.",
-          channelId: CANAL, extra: { vista: "settings" }, schedule: { at },
+          channelId: CANAL, extra: { vista: "settings" }, schedule: { at, allowWhileIdle: true },
         }],
       });
       return { nativo: true, ok: true, permiso: true, cuando: at };
     } catch {
       return { nativo: true, ok: false, permiso: true };
     }
+  }
+
+  /** ¿Tiene el móvil permiso para programar alarmas a una hora exacta? (Android 12+:
+   *  «Alarmas y recordatorios».) `null` = no se puede saber (fuera del APK o móvil antiguo
+   *  donde no existe el interruptor: ahí las alarmas son exactas por defecto). */
+  async function alarmasExactas() {
+    const P = plugin();
+    if (!P || typeof P.checkExactNotificationSetting !== "function") return null;
+    try {
+      const r = await P.checkExactNotificationSetting();
+      return r && r.exact_alarm === "granted";
+    } catch { return null; }
+  }
+
+  /** Abre la pantalla del sistema para activar las alarmas exactas. Devuelve el estado
+   *  final (`exact_alarm`) cuando el usuario vuelve. */
+  async function pedirAlarmasExactas() {
+    const P = plugin();
+    if (!P || typeof P.changeExactNotificationSetting !== "function") return { ok: false, motivo: "no-disponible" };
+    try {
+      const r = await P.changeExactNotificationSetting();
+      return { ok: true, exact_alarm: r && r.exact_alarm };
+    } catch { return { ok: false, motivo: "fallo" }; }
+  }
+
+  /** ¿Le vigila el móvil la batería? `vigilada` = la optimización de batería puede matar
+   *  las alarmas en segundo plano; `exenta` = el móvil la respeta; `null` = fuera del APK
+   *  o no se puede comprobar. */
+  async function bateria() {
+    if (!nativo()) return null;
+    const W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AulaWidget;
+    if (!W || typeof W.verBateria !== "function") return null;
+    try {
+      const r = await W.verBateria();
+      return r && r.ignorando ? "exenta" : "vigilada";
+    } catch { return null; }
+  }
+
+  /** Pide al móvil que excluya a la app de la optimización de batería (diálogo del sistema). */
+  async function pedirBateria() {
+    if (!nativo()) return { ok: false, motivo: "no-nativo" };
+    const W = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AulaWidget;
+    if (!W || typeof W.pedirBateria !== "function") return { ok: false, motivo: "no-disponible" };
+    try {
+      const r = await W.pedirBateria();
+      return r && typeof r.ok === "boolean" ? r : { ok: false, motivo: "fallo" };
+    } catch { return { ok: false, motivo: "fallo" }; }
   }
 
   /** Al tocar una notificación se llama a `cb(vista)`: la app abre esa pantalla. */
@@ -347,6 +412,7 @@
   window.AulaAvisos = {
     plan, datos, resumen, sincronizar, activar, apagar, permiso, probar, escucharToques,
     programarBloque, cancelarBloque,
+    alarmasExactas, pedirAlarmasExactas, bateria, pedirBateria,
     disponible, nativo, maxAvisos: MAX, idPrueba: ID_PRUEBA, idBloque: ID_BLOQUE, idEnfoque: ID_ENFOQUE,
   };
 })();

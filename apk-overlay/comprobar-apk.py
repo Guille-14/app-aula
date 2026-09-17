@@ -152,10 +152,17 @@ http_nativo = b"com/getcapacitor/plugin/CapacitorHttp" in dex or any(
 ok(http_nativo, "puente HTTP nativo de Capacitor (el plan B del chat)")
 
 for nombre_plugin, (clase, permiso) in plugins.items():
-    dentro = clase in dex or any(clase in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex"))
+    dentro = clase in dex o any(clase in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex"))
     ok(dentro, "plugin de %s dentro del APK" % nombre_plugin, "" if dentro else "falta la clase %s (¿cap sync?)" % clase.decode())
     if permiso:
         ok(permiso in man_txt, "permiso %s declarado" % permiso)
+
+# v67.13: sin estos dos permisos los avisos programados no suenan en la mayoría de móviles
+# modernos (alarmas inexactas + optimización de batería), aunque el plugin esté dentro.
+ok("SCHEDULE_EXACT_ALARM" in man_txt, "permiso SCHEDULE_EXACT_ALARM (alarmas a la hora exacta)")
+ok("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in man_txt, "permiso de exención de optimización de batería")
+ok(b"verBateria" in dex or any(b"verBateria" in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex")),
+   "método verBateria del plugin AulaWidget dentro del APK (diálogo de batería)")
 
 # ---------------------------------------------------------------- datos
 sha = hashlib.sha256(Path(apk).read_bytes()).hexdigest()

@@ -20,6 +20,12 @@ las versiones nuevas se instalan **encima** de la anterior sin perder nada.
 
 - Id de paquete: `es.aula.smr.hub`. Si Android dice **conflicto de paquete**, desinstala antes cualquier Aula SMR o PWA antigua (por ejemplo `Aula-SMR-v48.apk`).
 - **Widgets:** mantén pulsado el escritorio → *Widgets* → **Aula SMR** (hay 19: clase, hoy, horario, días sin clase, nota media, racha, fichas…)
+- **Avisos:** en Ajustes → Avisos, pulsa «Programar avisos en el móvil» y acepta el permiso de
+  *notificaciones*. A partir de ahí la tarjeta avisa de otras dos cosas que el móvil puede estar
+  bloqueando y da un botón para cada una: las **alarmas a la hora exacta** (en Android 12+ van
+  bloqueadas por defecto) y la **optimización de batería** (en muchos móviles corta los avisos
+  en segundo plano). Con las tres cosas activas, suenan aunque la app esté cerrada y el móvil
+  bloqueado. «Probar aviso» suena a los 5 segundos.
 - **Compilar el APK desde este repositorio:** receta completa en [`apk-overlay/README.md`](apk-overlay/README.md) (Capacitor + `apk-overlay/apply.py` + Gradle, y cómo firmarlo y publicarlo).
 - Sin APK también funciona: instálala como PWA desde Chrome (ver abajo).
 

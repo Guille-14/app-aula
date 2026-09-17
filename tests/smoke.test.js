@@ -1383,7 +1383,7 @@ async function testAuditoria() {
       isNativePlatform: () => true,
       Plugins: { LocalNotifications: {
         checkPermissions: async () => ({ display: "granted" }),
-        schedule: async (o) => llamadas.push(...o.notifications.map((n) => ({ id: n.id, titulo: n.title, cuando: new Date(n.schedule.at).getTime(), vista: n.extra && n.extra.vista }))),
+        schedule: async (o) => llamadas.push(...o.notifications.map((n) => ({ id: n.id, titulo: n.title, cuando: new Date(n.schedule.at).getTime(), vista: n.extra && n.extra.vista, idle: n.schedule && n.schedule.allowWhileIdle }))),
         cancel: async (o) => llamadas.push({ cancelado: o.notifications.map((n) => n.id) }),
       } },
     };
@@ -1399,6 +1399,10 @@ async function testAuditoria() {
     check(!!termina && termina.cuando === fin.getTime(), "bloque: y a la hora exacta de fin (18:35 → " + new Date(termina ? termina.cuando : 0).toISOString().slice(11, 16) + ")");
     check(!!termina && termina.vista === "timer" && !!enfoca && enfoca.vista === "timer",
       "bloque: los dos abren el temporizador al tocarlos");
+    // v67.13: programados para sonar con el móvil en reposo (Doze). Con allowWhileIdle: false
+    // (el valor de antes), Android podía guardarlos «para luego» y no sonar a la hora.
+    check(!!enfoca && enfoca.idle === true && !!termina && termina.idle === true,
+      "bloque: los avisos se programan con «sonar aunque el móvil esté en reposo» (allowWhileIdle)");
     check(llamadas.some((l) => l.cancelado && l.cancelado.includes(AV.idBloque) && l.cancelado.includes(AV.idEnfoque)),
       "bloque: antes de programar se quitan los del bloque anterior (por si el móvil se reinició)");
     llamadas.length = 0;
@@ -1570,15 +1574,18 @@ async function testAuditoria() {
           createChannel: async (c) => llamadas.push(["canal", c.id]),
           getPending: async () => ({ notifications: [{ id: 7 }, { id: 8 }] }),
           cancel: async (o) => llamadas.push(["cancelar", o.notifications.length]),
-          schedule: async (o) => llamadas.push(["programar", o.notifications.length, o.notifications[0].channelId]),
+          schedule: async (o) => llamadas.push(["programar", o.notifications.length, o.notifications[0].channelId, o.notifications.map((n) => n.schedule && n.schedule.allowWhileIdle)]),
         },
       },
     };
     check(AV.disponible() === true, "avisos: dentro del APK el módulo se declara disponible");
     const r2 = await AV.sincronizar({ datos, ahora });
     check(r2.nativo === true && r2.permiso === true && r2.programados === 9, "avisos: se programan los 9 avisos del plan en Android");
-    check(JSON.stringify(llamadas) === JSON.stringify([["canal", "aula-smr"], ["cancelar", 2], ["programar", 9, "aula-smr"]]),
+    check(JSON.stringify(llamadas) === JSON.stringify([["canal", "aula-smr"], ["cancelar", 2], ["programar", 9, "aula-smr", Array(9).fill(true)]]),
       "avisos: antes de programar se cancelan los viejos y se prepara el canal de Android (" + JSON.stringify(llamadas) + ")");
+    const programadosR2 = (llamadas.find((l) => l[0] === "programar") || [])[3] || [];
+    check(programadosR2.length === 9 && programadosR2.every((v) => v === true),
+      "avisos: todos se programan con «sonar aunque el móvil esté en reposo» (allowWhileIdle: true)");
     // v64: aviso de prueba (suena a los 5 segundos) y toques que abren la vista
     let programadoPrueba = null;
     env.window.Capacitor.Plugins.LocalNotifications.schedule = async (o) => { programadoPrueba = o.notifications[0]; };
@@ -1588,6 +1595,8 @@ async function testAuditoria() {
       "avisos: «Probar aviso» programa un aviso de prueba para dentro de 5 segundos (id reservado) [" + JSON.stringify(programadoPrueba) + " · ok=" + (prueba && prueba.ok) + "]");
     check(programadoPrueba && programadoPrueba.extra && programadoPrueba.extra.vista === "settings",
       "avisos: el aviso de prueba abre Ajustes al tocarlo");
+    check(programadoPrueba && programadoPrueba.schedule && programadoPrueba.schedule.allowWhileIdle === true,
+      "avisos: el aviso de prueba también se programa para sonar con el móvil en reposo");
 
     let escucha = null;
     env.window.Capacitor.Plugins.LocalNotifications.addListener = (evento, cb) => { escucha = { evento, cb }; };
@@ -1607,6 +1616,72 @@ async function testAuditoria() {
     env.window.Capacitor.Plugins.LocalNotifications.checkPermissions = async () => ({ display: "denied" });
     const r3 = await AV.sincronizar({ pedirPermiso: false, datos, ahora });
     check(r3.permiso === false && r3.programados === 0, "avisos: sin permiso de Android no se programa nada");
+  }
+
+  // --- v67.13: los avisos de verdad (alarmas exactas + optimización de batería) ---
+  {
+    // Fuera del APK nada de esto se puede comprobar: null / no-disponible, sin reventar
+    const envNav = boot();
+    ready(envNav.A);
+    const AVn = envNav.window.AulaAvisos;
+    check((await AVn.alarmasExactas()) === null, "avisos: fuera del APK no se comprueban alarmas exactas (null)");
+    check((await AVn.bateria()) === null, "avisos: fuera del APK no se comprueba la batería (null)");
+    const pedNav = await AVn.pedirAlarmasExactas();
+    check(pedNav.ok === false && pedNav.motivo === "no-disponible", "avisos: fuera del APK no se pide abrir alarmas exactas");
+    const pedBNav = await AVn.pedirBateria();
+    check(pedBNav.ok === false && pedBNav.motivo === "no-nativo", "avisos: fuera del APK no se pide exención de batería");
+
+    // Dentro del APK, con un móvil que tiene todo bloqueado (lo que pasaba en la realidad)
+    const env = boot();
+    ready(env.A);
+    const AV = env.window.AulaAvisos;
+    let bateriaPedida = 0;
+    env.window.Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {
+        LocalNotifications: {
+          checkPermissions: async () => ({ display: "granted" }),
+          checkExactNotificationSetting: async () => ({ exact_alarm: "denied" }),
+          changeExactNotificationSetting: async () => ({ exact_alarm: "granted" }),
+          schedule: async () => {}, getPending: async () => ({ notifications: [] }), cancel: async () => {}, createChannel: async () => {},
+        },
+        AulaWidget: {
+          verBateria: async () => ({ ignorando: false }),
+          pedirBateria: async () => { bateriaPedida++; return { ok: true }; },
+        },
+      },
+    };
+    check(AV.disponible() === true, "avisos: dentro del APK el módulo se declara disponible");
+    check((await AV.alarmasExactas()) === false, "avisos: se detecta que el móvil tiene bloqueadas las alarmas exactas");
+    check((await AV.bateria()) === "vigilada", "avisos: se detecta que la app no está exenta de la optimización de batería");
+
+    // Ajustes enseña el problema y el botón para arreglarlo (y se actualiza al volver)
+    env.A.go("settings");
+    env.doc.dispatchEvent(new env.window.Event("visibilitychange"));   // «volver de los ajustes del móvil»
+    await new Promise((res) => setTimeout(res, 60));
+    const txt1 = env.doc.getElementById("view").textContent;
+    check(/alarmas a la hora exacta/i.test(txt1) && !!env.doc.querySelector('[data-action="enable-exact-alarms"]'),
+      "avisos: Ajustes avisa de las alarmas exactas bloqueadas y ofrece activarlas");
+    check(/optimización de batería/i.test(txt1) && !!env.doc.querySelector('[data-action="enable-bateria"]'),
+      "avisos: Ajustes avisa de la optimización de batería y ofrece eximirse");
+    const ped = await AV.pedirAlarmasExactas();
+    check(ped.ok === true && ped.exact_alarm === "granted", "avisos: «Activar alarmas exactas» abre la pantalla del sistema y vuelve con el estado (" + JSON.stringify(ped) + ")");
+    const pedB = await AV.pedirBateria();
+    check(pedB.ok === true && bateriaPedida === 1, "avisos: «Eximir de la batería» abre el diálogo del sistema");
+
+    // El mismo móvil, ya con todo activado
+    env.window.Capacitor.Plugins.LocalNotifications.checkExactNotificationSetting = async () => ({ exact_alarm: "granted" });
+    env.window.Capacitor.Plugins.AulaWidget.verBateria = async () => ({ ignorando: true });
+    check((await AV.alarmasExactas()) === true, "avisos: con el permiso activado, las alarmas exactas se dan por hechas");
+    check((await AV.bateria()) === "exenta", "avisos: eximida de la batería, la app se declara exenta");
+    env.doc.dispatchEvent(new env.window.Event("visibilitychange"));
+    await new Promise((res) => setTimeout(res, 60));
+    const txt2 = env.doc.getElementById("view").textContent;
+    check(/listos en este móvil/i.test(txt2) && !env.doc.querySelector('[data-action="enable-exact-alarms"]')
+      && !env.doc.querySelector('[data-action="enable-bateria"]'),
+      "avisos: con todo activado, Ajustes dice que los avisos están listos (y retira los botones)");
+    // Y el botón de prueba sigue ahí para comprobar que suenan
+    check(!!env.doc.querySelector('[data-action="test-notify"]'), "avisos: el botón «Probar aviso» sigue en Ajustes");
   }
 
   // --- v67.2: el horario del centro definitivo, sin horas libres inventadas, la foto de perfil
@@ -2976,10 +3051,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.12\.1"/.test(app), "versión: js/app.js dice v67.12.1");
-    check(pkg.version === "67.12.1", "versión: package.json dice v67.12.1");
-    check(lock.version === "67.12.1" && lock.packages[""].version === "67.12.1", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.12\.1"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.13\.0"/.test(app), "versión: js/app.js dice v67.13.0");
+    check(pkg.version === "67.13.0", "versión: package.json dice v67.13.0");
+    check(lock.version === "67.13.0" && lock.packages[""].version === "67.13.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.13\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }

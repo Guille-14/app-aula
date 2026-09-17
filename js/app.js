@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.12.1";
+  const APP_VERSION = "v67.13.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -334,6 +334,36 @@
     window.AulaAvisos.permiso().then((v) => {
       if (v === permisoAvisos) return;
       permisoAvisos = v;
+      if (view === "settings" || view === "dashboard") render();
+    }).catch(() => {});
+  }
+  // Dos permisos más que en los móviles modernos mandan sobre si los avisos suenan:
+  // alarmas exactas (Android 12+: bloqueadas por defecto) y la optimización de batería.
+  // null = no se puede saber (fuera del APK o móvil donde no existe el interruptor).
+  let exactasAvisos = null;
+  let bateriaAvisos = null;
+  function mirarExactasAvisos() {
+    if (!avisosNativos() || typeof window.AulaAvisos.alarmasExactas !== "function") return;
+    window.AulaAvisos.alarmasExactas().then((v) => {
+      if (v === null || v === exactasAvisos) return;
+      const antes = exactasAvisos;
+      exactasAvisos = v;
+      if (v === true && antes === false && avisosProgramados()) {
+        // Acaban de conceder las alarmas exactas: lo ya programado quedó como alarma
+        // imprecisa, así que se repasa el plan para que suene a la hora exacta.
+        reprogramarAvisos();
+        toast("Alarmas exactas activadas: los avisos sonarán a la hora exacta");
+      }
+      if (view === "settings" || view === "dashboard") render();
+    }).catch(() => {});
+  }
+  function mirarBateriaAvisos() {
+    if (!avisosNativos() || typeof window.AulaAvisos.bateria !== "function") return;
+    window.AulaAvisos.bateria().then((v) => {
+      if (v === null || v === bateriaAvisos) return;
+      const antes = bateriaAvisos;
+      bateriaAvisos = v;
+      if (v === "exenta" && antes === "vigilada") toast("La app ya no la vigila la optimización de batería");
       if (view === "settings" || view === "dashboard") render();
     }).catch(() => {});
   }
@@ -3767,6 +3797,11 @@
         </button>
         ${avisosProgramados() && window.AulaAvisos ? `<p class="hint">${esc(window.AulaAvisos.resumen(window.AulaAvisos.datos()))}</p>` : ""}
         ${avisosNativos() && permisoAvisos === "denegado" ? `<p class="hint warn-text">Android tiene los avisos bloqueados para esta app. Actívalos en Ajustes del móvil → Aplicaciones → Aula SMR → Notificaciones.</p>` : ""}
+        ${avisosNativos() && exactasAvisos === false ? `<p class="hint warn-text">Este móvil tiene bloqueadas las <b>alarmas a la hora exacta</b> (Android 12+, «Alarmas y recordatorios»). Sin ellas, el teléfono puede retrasar los avisos o no dispararlos cuando está bloqueado.</p>
+          <button class="btn btn-sm" type="button" data-action="enable-exact-alarms">Activar alarmas exactas</button>` : ""}
+        ${avisosNativos() && bateriaAvisos === "vigilada" ? `<p class="hint warn-text">La <b>optimización de batería</b> de este móvil puede cortar los avisos cuando la app no está en pantalla. Lo mejor es eximirla.</p>
+          <button class="btn btn-sm" type="button" data-action="enable-bateria">Eximir de la optimización de batería</button>` : ""}
+        ${avisosNativos() && exactasAvisos === true && bateriaAvisos !== "vigilada" ? `<p class="hint">Los avisos están listos en este móvil${bateriaAvisos === "exenta" ? " (alarmas exactas y exentos de la batería)" : " (con alarmas a la hora exacta)"}. Si alguno no sonara, revisa el volumen y el no molestar del teléfono.</p>` : ""}
         ${avisosNativos() ? `<div class="form-row" style="margin-top:10px">
           <button class="btn btn-sm" type="button" data-action="test-notify">Probar aviso</button>
         </div>` : ""}
@@ -5168,6 +5203,27 @@
       else { mirarPermisoAvisos(); requestNotify(); }
     }
     if (action === "test-notify") probarAviso();
+    if (action === "enable-exact-alarms") {
+      if (!avisosNativos() || typeof window.AulaAvisos.pedirAlarmasExactas !== "function") return;
+      window.AulaAvisos.pedirAlarmasExactas().then((r) => {
+        mirarExactasAvisos();
+        if (r && r.ok && r.exact_alarm === "granted") {
+          reprogramarAvisos();
+          toast("Alarmas exactas activadas: los avisos sonarán a la hora exacta");
+        } else if (r && r.ok) {
+          toast("No se han activado: repítelo y deja el interruptor de «Alarmas y recordatorios» activado");
+        }
+      }).catch(() => toast("No se pudo abrir la pantalla de alarmas exactas"));
+      return;
+    }
+    if (action === "enable-bateria") {
+      if (!avisosNativos() || typeof window.AulaAvisos.pedirBateria !== "function") return;
+      window.AulaAvisos.pedirBateria().then((r) => {
+        mirarBateriaAvisos();
+        if (r && r.ok === false && r.motivo === "no-disponible") toast("Este móvil no ofrece el diálogo de batería: búscalo en Ajustes → Batería");
+      }).catch(() => toast("No se pudo pedir la exención de batería"));
+      return;
+    }
     if (action === "skip-onboard" || action === "on-finish") {
       collectOnboard();
       const ncl = on("#set-nclass"); if (ncl !== undefined) state.settings.notifyClass = ncl;
@@ -6077,6 +6133,8 @@
   }
   escucharToquesAvisos();
   mirarPermisoAvisos();
+  mirarExactasAvisos();
+  mirarBateriaAvisos();
   initCopia();
   dailyCheckIn();
   checkAchievements();
@@ -6147,6 +6205,8 @@
     revisarTemaPorHora();
     tickNotify();
     mirarPermisoAvisos();
+    mirarExactasAvisos();
+    mirarBateriaAvisos();
     const cambioPlantilla = syncPlantilla(state);
     if (cambioPlantilla) { save(); toast(avisoPlantilla(cambioPlantilla)); render(); }
     tickLiveUI();
@@ -6156,6 +6216,11 @@
   if (plantillaAuto) setTimeout(() => { toast(avisoPlantilla(plantillaAuto)); save(); }, 1400);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { flushSave(); return; }
+    // Acaba de volver (por ejemplo, de la pantalla de «Alarmas y recordatorios» o del
+    // diálogo de batería): se comprueba si ha cambiado algo y se pinta si estaba en Ajustes.
+    mirarPermisoAvisos();
+    mirarExactasAvisos();
+    mirarBateriaAvisos();
     const cambioPlantilla = syncPlantilla(state);
     if (cambioPlantilla) { save(); toast(avisoPlantilla(cambioPlantilla)); render(); }
     tickNotify();
