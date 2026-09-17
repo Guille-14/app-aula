@@ -642,12 +642,12 @@ async function testSinRed() {
     check(plan[0] === "seg,seg,ipe,sor,sor,ser,ser", "centro: lunes seg·seg·ipe·sor·sor·ser·ser");
     check(plan[1] === "ipe,dig,seg,seg,opt,web,—", "centro: martes ipe·dig·seg·seg·opt·web");
     check(plan[2] === "pro,pro,opt,opt,ser,sos,—", "centro: miércoles pro·pro·opt·opt·ser·sos");
-    check(plan[3] === "sor,sor,sor,web,web,ser,—", "centro: jueves sor·sor·sor·web·web·ser");
+    check(plan[3] === "sor,sor,web,web,ser,ser,—", "centro: jueves sor·sor·web·web·ser·ser (2 h de SOR, como el documento)");
     check(plan[4] === "tut,ipe,ser,ser,sor,sor,—", "centro: viernes tut·ipe·ser·ser·sor·sor");
     // Cada módulo, una sola asignatura (sin duplicados raros)
     const horas = {};
     A.OFFICIAL_PLAN.flat().filter(Boolean).forEach((k) => { horas[k] = (horas[k] || 0) + 1; });
-    check(horas.seg === 4 && horas.sor === 7 && horas.ser === 6 && horas.web === 3 && horas.ipe === 3 && horas.opt === 3,
+    check(horas.seg === 4 && horas.sor === 6 && horas.ser === 7 && horas.web === 3 && horas.ipe === 3 && horas.opt === 3,
       "centro: las horas semanales de cada módulo cuadran con el documento (" + JSON.stringify(horas) + ")");
   }
   check(A.state.subjects.some((s) => s.name === "Servicios en red" && s.room === "AULA 3"), "centro: los módulos llevan su aula habitual");
@@ -1752,6 +1752,11 @@ async function testAuditoria() {
       "actualización: un horario ya sellado con el plan anterior se vuelve a cuadrar (martes con Programación a las 19:10)");
     check(envV2.A.state.events.filter((e) => e.day === 3).every((e) => e.start !== "21:20"),
       "actualización: y el jueves se queda sin la última hora");
+    const juev = envV2.A.state.events.filter((e) => e.day === 3);
+    check(juev.filter((e) => envV2.A.subjectName(e.subjectId) === "Sistemas operativos en red").length === 2
+      && juev.filter((e) => envV2.A.subjectName(e.subjectId) === "Aplicaciones web").length === 2
+      && juev.filter((e) => envV2.A.subjectName(e.subjectId) === "Servicios en red").length === 2,
+      "actualización: el jueves queda como el documento (2 h SOR, 2 web, 2 servicios; no 3 h de SOR)");
 
     // Y si el horario tiene una clase puesta a mano, no se toca nada
     const env2 = boot({ seed: JSON.stringify(Object.assign({}, viejo, { events: viejo.events.concat([{ id: "mia", subjectId: subjectId("seg"), day: 5, start: "11:11", end: "12:00", room: "", type: "clase" }]) })) });
@@ -2971,10 +2976,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.12\.0"/.test(app), "versión: js/app.js dice v67.12.0");
-    check(pkg.version === "67.12.0", "versión: package.json dice v67.12.0");
-    check(lock.version === "67.12.0" && lock.packages[""].version === "67.12.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.12\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.12\.1"/.test(app), "versión: js/app.js dice v67.12.1");
+    check(pkg.version === "67.12.1", "versión: package.json dice v67.12.1");
+    check(lock.version === "67.12.1" && lock.packages[""].version === "67.12.1", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.12\.1"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }

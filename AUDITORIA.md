@@ -13,6 +13,7 @@
 **Ronda v67.8.0:** re-análisis completo aplicado: iconos comprimidos con pérdida imperceptible (−61 %/−69 %), los 33 skins por encima de 4,5:1 de contraste WCAG (antes 9 por debajo), los `blob:` huérfanos se revocan, el CSS muerto del viejo layout con barra lateral desaparece, la tipografía queda acotada a una escala de 14 tamaños (antes 33), el botón del temporizador sube a 44 px y `save()` deja de reescribir localStorage en cada navegación (693 pruebas ✓).
 **Ronda v67.9.0:** pulido de la sección Herramientas: la calculadora IPv6 arranca con una IPv6 válida (antes una URL que fallaba), el conversor Bin/Dec/Hex recupera la opción Octal (la validación existía pero era inalcanzable), todas las calculadoras numéricas recalculan mientras escribes (antes solo Subnetting), las seis listas «toca para copiar» que no lo decían ahora lo avisan, el pin «Blanco/Verde» del T568 pasa de amarillo a verde pastel, y los ~250 botones de copiar y las pestañas de la chuleta ganan `aria-label`/`role="tablist"` (703 pruebas ✓).
 **Ronda v67.10.0:** informe de rendimiento/UX (Gemini) adaptado a esta PWA vanilla sin backend: de lo aplicable, el skeleton de las fotos gana un pulso que se apaga con `prefers-reduced-motion` y el estado vacío de Apuntes ofrece la acción («Nueva nota») dentro del propio estado; el resto (virtualización React, code-splitting, Zustand/React Query, N+1, índices y paginación por cursor, Zod, carpetas por feature) no tiene equivalente porque no hay React ni servidor (706 pruebas ✓).
+**Ronda v67.12.1:** el jueves del horario oficial ponía 3 horas de Sistemas operativos en red y el documento del centro son 2 (a las 17:00 entra Aplicaciones web, y Servicios en red también a las 20:05); `PLAN_VERSION` sube para que se recoloque solo (730 pruebas ✓).
 **Ronda v67.12.0:** la optativa pasa a llamarse Programación; Programación y SOR nacen con esquema «media de los temas + aprobarlos todos» (regla nueva «todos» en el motor de notas, activa también en los esquemas ya montados y por defecto en los nuevos); sus clases acaban el 27/02/2027 y el calendario lo respeta (729 pruebas ✓).
 **Ronda v67.11.3:** el botón «volver» seguía como barra del 100 %: `#view` es un flex en columna y lo estiraba (`align-items: stretch`), y además conservaba el aspecto nativo del navegador. Ahora lleva `align-self: flex-start`, `appearance: none` y el mismo lenguaje visual de los chips (719 pruebas ✓).
 **Ronda v67.11.1:** «Volver» de las herramientas salía gigante (el SVG sin acotar, 300×150) y los rótulos del radar de Calificaciones metían artículos/preposiciones en el recorte; ahora el icono va a 16 px y el rótulo omite palabras vacías (717 pruebas ✓).
@@ -906,6 +907,16 @@ acaba de tumbar la entrega, así que a partir de ahora se avisa antes de compila
 ---
 
 ---
+
+## Ronda v67.12.1 · El jueves del horario, como el documento del centro
+
+El plan oficial tenía el jueves `sor, sor, sor, web, web, ser`: tres horas seguidas de Sistemas
+operativos en red. En el documento del centro el bloque azul de SOR es de 15:10 a 17:00 (dos
+horas), a las 17:00 entra Aplicaciones web y por la tarde hay Servicios en red a las 19:10 **y** a
+las 20:05. Nuevo plan: `sor, sor, web, web, ser, ser`. `PLAN_VERSION` 3 → 4 para que
+`actualizarHorarioOficial` recoloque el horario ya guardado sin tocar asistencias ni avisos.
+
+**Pruebas: 729 → 730 ✓**, y las mismas pasan sobre el minificado.
 
 ## Ronda v67.12.0 · Asignaturas: Programación, media de temas y fin de clases el 27 de febrero
 
