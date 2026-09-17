@@ -1,12 +1,12 @@
 package es.aula.smr.hub;
 
-import android.app.admin.DevicePolicyManager;
 import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
 import android.provider.Settings;
 
 import com.getcapacitor.JSObject;
@@ -58,8 +58,8 @@ public class AulaWidgetPlugin extends Plugin {
     JSObject r = new JSObject();
     boolean ignorando = false;
     try {
-      DevicePolicyManager dpm = (DevicePolicyManager) getContext().getSystemService(Context.DEVICE_POLICY_SERVICE);
-      if (dpm != null) ignorando = dpm.isIgnoringBatteryOptimizations(getContext().getPackageName());
+      PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+      if (pm != null) ignorando = pm.isIgnoringBatteryOptimizations(getContext().getPackageName());
     } catch (Exception ignored) { /* sin permiso, se responde «no exenta» */ }
     r.put("ignorando", ignorando);
     call.resolve(r);
