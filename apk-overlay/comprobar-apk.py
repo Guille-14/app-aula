@@ -152,7 +152,7 @@ http_nativo = b"com/getcapacitor/plugin/CapacitorHttp" in dex or any(
 ok(http_nativo, "puente HTTP nativo de Capacitor (el plan B del chat)")
 
 for nombre_plugin, (clase, permiso) in plugins.items():
-    dentro = clase in dex o any(clase in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex"))
+    dentro = clase in dex or any(clase in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex"))
     ok(dentro, "plugin de %s dentro del APK" % nombre_plugin, "" if dentro else "falta la clase %s (¿cap sync?)" % clase.decode())
     if permiso:
         ok(permiso in man_txt, "permiso %s declarado" % permiso)
