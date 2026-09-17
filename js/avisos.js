@@ -210,6 +210,29 @@
   }
 
   /** Programa de verdad: pide permiso si hace falta y deja el móvil con los avisos puestos. */
+  // El sonido de un canal ya creado no se puede cambiar (regla de Android), así que la
+  // primera vez que corre esta versión se borra el canal viejo (timbre genérico) y se
+  // vuelve a crear con la campanita: los que ya tenían la app la ganan sin reinstalar.
+  const CLAVE_CANAL = "aula.canal.v2";
+  async function canal(P) {
+    if (!P || typeof P.createChannel !== "function") return;
+    try {
+      let migrado = true;
+      try { migrado = localStorage.getItem(CLAVE_CANAL) === "1"; } catch { /* sin localStorage, no hay migración pendiente */ }
+      if (!migrado && typeof P.deleteChannel === "function") {
+        await P.deleteChannel({ id: CANAL }).catch(() => {});
+        try { localStorage.setItem(CLAVE_CANAL, "1"); } catch { /* si no se puede marcar, se repite; repetir es inofensivo */ }
+      }
+      await P.createChannel({
+        id: CANAL, name: "Avisos de Aula SMR", description: "Clases, exámenes y repaso",
+        importance: 4, visibility: 1, lights: true, vibration: true,
+        // campanita propia (apk-overlay/res/raw/smsr_ding.wav): el timbre por defecto de
+        // Android se confunde con el resto de avisos del móvil
+        sound: "smsr_ding",
+      });
+    } catch { /* sin canal, en móviles antiguos (pre-Android 8) los avisos suenan igualmente */ }
+  }
+
   async function sincronizar(opciones) {
     const o = opciones || {};
     const P = plugin();
@@ -226,12 +249,7 @@
       }
     } catch { permiso = false; }
     if (!permiso) return { nativo: true, programados: 0, permiso: false };
-    try {
-      await P.createChannel({
-        id: CANAL, name: "Avisos de Aula SMR", description: "Clases, exámenes y repaso",
-        importance: 4, visibility: 1, lights: true, vibration: true,
-      });
-    } catch { /* el canal ya existe o la versión no lo necesita */ }
+    await canal(P);
     // Fuera lo viejo: el plan nuevo refleja los exámenes y el horario de ahora mismo
     try {
       const viejos = await P.getPending();
@@ -272,6 +290,7 @@
     try {
       const p = await P.checkPermissions();
       if (p.display !== "granted") return { nativo: true, ok: false, permiso: false };
+      await canal(P);
       await cancelarBloque();   // fuera los del bloque anterior (o de un móvil reiniciado)
       await P.schedule({
         notifications: [
@@ -331,6 +350,7 @@
         const pedido = await P.requestPermissions();
         if (pedido.display !== "granted") return { nativo: true, ok: false, permiso: false };
       }
+      await canal(P);
       await P.schedule({
         notifications: [cosido({
           id: ID_PRUEBA, title: "Aula SMR", body: "Prueba de aviso: si ves esto, funciona. Te avisará en 5 segundos.",

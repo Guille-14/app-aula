@@ -1590,7 +1590,8 @@ async function testAuditoria() {
         LocalNotifications: {
           checkPermissions: async () => ({ display: "granted" }),
           requestPermissions: async () => ({ display: "granted" }),
-          createChannel: async (c) => llamadas.push(["canal", c.id]),
+          createChannel: async (c) => llamadas.push(["canal", c.id, c.sound]),
+          deleteChannel: async (o) => llamadas.push(["borrar", o.id]),
           getPending: async () => ({ notifications: [{ id: 7 }, { id: 8 }] }),
           cancel: async (o) => llamadas.push(["cancelar", o.notifications.length]),
           schedule: async (o) => llamadas.push(["programar", o.notifications.length, o.notifications[0].channelId,
@@ -1602,9 +1603,11 @@ async function testAuditoria() {
     check(AV.disponible() === true, "avisos: dentro del APK el módulo se declara disponible");
     const r2 = await AV.sincronizar({ datos, ahora });
     check(r2.nativo === true && r2.permiso === true && r2.programados === 9, "avisos: se programan los 9 avisos del plan en Android");
-    check(JSON.stringify(llamadas) === JSON.stringify([["canal", "aula-smr"], ["cancelar", 2], ["programar", 9, "aula-smr", Array(9).fill(true),
+    check(JSON.stringify(llamadas) === JSON.stringify([["borrar", "aula-smr"], ["canal", "aula-smr", "smsr_ding"], ["cancelar", 2], ["programar", 9, "aula-smr", Array(9).fill(true),
       Array.from({ length: 9 }, () => ["ic_noti", "ic_noti_l", "#DA7419", true])]]),
-      "avisos: antes de programar se cancelan los viejos y se prepara el canal de Android (" + JSON.stringify(llamadas) + ")");
+      "avisos: antes de programar se migra el canal (campanita propia), se cancelan los viejos y se crea el canal de Android (" + JSON.stringify(llamadas) + ")");
+    const canalR2 = (llamadas.find((l) => l[0] === "canal") || []);
+    check(canalR2[2] === "smsr_ding", "avisos: el canal lleva la campanita de la app (smsr_ding), no el timbre genérico de Android");
     const programadosR2 = (llamadas.find((l) => l[0] === "programar") || [])[3] || [];
     check(programadosR2.length === 9 && programadosR2.every((v) => v === true),
       "avisos: todos se programan con «sonar aunque el móvil esté en reposo» (allowWhileIdle: true)");
@@ -3079,10 +3082,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.14\.0"/.test(app), "versión: js/app.js dice v67.14.0");
-    check(pkg.version === "67.14.0", "versión: package.json dice v67.14.0");
-    check(lock.version === "67.14.0" && lock.packages[""].version === "67.14.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.14\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.15\.0"/.test(app), "versión: js/app.js dice v67.15.0");
+    check(pkg.version === "67.15.0", "versión: package.json dice v67.15.0");
+    check(lock.version === "67.15.0" && lock.packages[""].version === "67.15.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.15\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }

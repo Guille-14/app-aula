@@ -221,9 +221,13 @@ res = ANDROID / "app/src/main/res"
 pkg.mkdir(parents=True, exist_ok=True)
 for src in (ROOT / "java").glob("*.java"):
     shutil.copy2(src, pkg / src.name)
-for folder, dest in (("layout", res / "layout"), ("xml", res / "xml"), ("drawable", res / "drawable")):
+for folder, dest in (("layout", res / "layout"), ("xml", res / "xml"), ("drawable", res / "drawable"),
+                     ("res/raw", res / "raw")):
+    src_dir = ROOT / folder
+    if not src_dir.exists():
+        continue
     dest.mkdir(parents=True, exist_ok=True)
-    for src in (ROOT / folder).glob("*"):
+    for src in src_dir.glob("*"):
         shutil.copy2(src, dest / src.name)
 
 write_icons()

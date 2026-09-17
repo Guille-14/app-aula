@@ -171,6 +171,8 @@ ok(b"ic_noti" in dex or any(b"ic_noti" in z.read(n) for n in nombres if n.starts
    "icono de notificación ic_noti dentro del APK (sin él, los avisos usan el icono genérico)")
 ok(b"ic_dragon_fg" in dex or any(b"ic_dragon_fg" in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex")),
    "capas adaptativas del icono (ic_*_bg/fg): sin ellas el launcher enmascara el arte a sangre y sale «con zoom»")
+ok(b"smsr_ding" in dex or any(b"smsr_ding" in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex")),
+   "sonido smsr_ding dentro del APK (el canal de avisos lo usa; si falta, los avisos no suenan)")
 
 # ---------------------------------------------------------------- datos
 sha = hashlib.sha256(Path(apk).read_bytes()).hexdigest()
