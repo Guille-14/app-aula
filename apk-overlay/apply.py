@@ -108,6 +108,49 @@ def paint_icon(src: Path, dest: Path, size: int = 432):
     crop.convert("RGB").save(dest, "PNG", optimize=True)
 
 
+def paint_adaptive_layers(src: Path, dest_dir: Path, name: str, size: int = 432):
+    """Capas de icono adaptativo que SÍ respetan el recorte del launcher.
+
+    El launcher enmascara un lienzo de 108 dp y solo garantiza visibles 66 dp
+    centrados. Con el arte a sangre como capa de fondo (como se hacía antes), lo
+    visible era el 61 % central: el icono se veía «con zoom» y cortado. Ahora:
+      · fondo  = el arte difuminado (llena la máscara con sus colores, sin borde duro)
+      · frente = el arte al 62 % centrado, que cabe en la zona segura (esquinas a
+        0,44 del radio: ni siquiera una máscara circular completa las recorta)
+    432 px = 108 dp a 4x → se meten en drawable-xxxhdpi.
+    """
+    from PIL import Image, ImageFilter
+    img = Image.open(src).convert("RGBA")
+    w, h = img.size
+    side = min(w, h) or 1
+    sx = (w - side) / 2
+    sy = (h - side) / 2
+    cover = img.crop((int(sx), int(sy), int(sx + side), int(sy + side))).resize(
+        (size, size), Image.Resampling.LANCZOS
+    )
+    bg = cover.filter(ImageFilter.GaussianBlur(radius=size * 0.035))
+    fg_size = int(size * 0.62)
+    art = cover.resize((fg_size, fg_size), Image.Resampling.LANCZOS)
+    fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    off = (size - fg_size) // 2
+    fg.paste(art, (off, off), art)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    bg.convert("RGB").save(dest_dir / f"ic_{name}_bg.png", "PNG", optimize=True)
+    fg.save(dest_dir / f"ic_{name}_fg.png", "PNG", optimize=True)
+
+
+def icon_source(name: str, dragon_src: Path) -> Path:
+    """Origen del arte de cada icono (los avatares viven en assets/avatars)."""
+    if name == "dragon":
+        return dragon_src
+    ava = AULA / "assets/avatars"
+    for ext in (".jpg", ".png"):
+        p = ava / (name + ext)
+        if p.exists():
+            return p
+    return dragon_src
+
+
 def write_icons():
     drawable = ANDROID / "app/src/main/res/drawable"
     drawable.mkdir(parents=True, exist_ok=True)
@@ -115,60 +158,46 @@ def write_icons():
     if not dragon_src.exists():
         dragon_src = AULA / "assets/icon-192.png"
     paint_icon(dragon_src, drawable / "ic_dragon.png")
-    ava = AULA / "assets/avatars"
     for name in ICONS:
         if name == "dragon":
             continue
-        src = ava / f"{name}.jpg"
-        if not src.exists():
-            src = ava / f"{name}.png"
-        if src.exists():
-            paint_icon(src, drawable / f"ic_{name}.png")
-        else:
+        src = icon_source(name, dragon_src)
+        if src == dragon_src:
             shutil.copy2(drawable / "ic_dragon.png", drawable / f"ic_{name}.png")
-    # Capacitor default launcher → dragón a sangre (sin adaptive inset)
+        else:
+            paint_icon(src, drawable / f"ic_{name}.png")
+    # Icono adaptativo (API 26+): fondo difuminado + arte a la zona segura.
+    # Sin esto el launcher enmascaraba el arte a sangre y el icono salía «con zoom».
+    layers = ANDROID / "app/src/main/res/drawable-xxxhdpi"
+    for name in ICONS:
+        paint_adaptive_layers(icon_source(name, dragon_src), layers, name)
+    # Capacitor default launcher → dragón a sangre (solo para API < 26, que no enmascara)
     for p in ANDROID.glob("app/src/main/res/mipmap-*/ic_launcher*.png"):
-        shutil.copy2(drawable / "ic_dragon.png", p)
+        if "anydpi" not in str(p):
+            shutil.copy2(drawable / "ic_dragon.png", p)
     anydpi = ANDROID / "app/src/main/res/mipmap-anydpi-v26"
     anydpi.mkdir(parents=True, exist_ok=True)
     for p in list(anydpi.glob("ic_launcher*.xml")):
         p.unlink()
+    adaptive_tmpl = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+        '    <background android:drawable="@drawable/ic_%s_bg"/>\n'
+        '    <foreground android:drawable="@drawable/ic_%s_fg"/>\n'
+        "</adaptive-icon>\n"
+    )
     for name in ICONS:
-        (anydpi / f"ic_{name}.xml").write_text(
-            """<?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_%s"/>
-    <foreground android:drawable="@android:color/transparent"/>
-</adaptive-icon>
-"""
-            % name,
-            encoding="utf-8",
-        )
+        (anydpi / f"ic_{name}.xml").write_text(adaptive_tmpl % (name, name), encoding="utf-8")
         if name == "dragon":
-            (anydpi / "ic_launcher.xml").write_text(
-                """<?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_dragon"/>
-    <foreground android:drawable="@android:color/transparent"/>
-</adaptive-icon>
-""",
-                encoding="utf-8",
-            )
-            (anydpi / "ic_launcher_round.xml").write_text(
-                """<?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_dragon"/>
-    <foreground android:drawable="@android:color/transparent"/>
-</adaptive-icon>
-""",
-                encoding="utf-8",
-            )
+            (anydpi / "ic_launcher.xml").write_text(adaptive_tmpl % (name, name), encoding="utf-8")
+            (anydpi / "ic_launcher_round.xml").write_text(adaptive_tmpl % (name, name), encoding="utf-8")
+    # El antiguo ic_launcher_foreground.png (a sangre, sin usar) ya no se genera:
+    # las capas adaptativas viven en drawable-xxxhdpi.
+    (ANDROID / "app/src/main/res/drawable/ic_launcher_foreground.png").unlink(missing_ok=True)
     xxx = ANDROID / "app/src/main/res/mipmap-xxxhdpi"
     xxx.mkdir(parents=True, exist_ok=True)
     for name in ICONS:
         shutil.copy2(drawable / f"ic_{name}.png", xxx / f"ic_{name}.png")
-    fg = ANDROID / "app/src/main/res/drawable/ic_launcher_foreground.png"
-    shutil.copy2(drawable / "ic_dragon.png", fg)
 
 
 def write_widget_providers(pkg: Path, xml_dir: Path):

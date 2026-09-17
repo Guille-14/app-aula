@@ -43,6 +43,17 @@
   const ID_BLOQUE = 2147483001; // id reservado para el «bloque terminado»
   const ID_ENFOQUE = 2147483002; // id reservado para el «enfocado hasta las…»
   const FICHAS_HORA = "18:00";
+  // El aspecto de cada aviso (sin esto, Android se ve el icono genérico del sistema,
+  // que es por lo que los avisos salían «feas y sosas»):
+  const ICONO = "ic_noti";        // silueta blanca del dragón (apk-overlay/drawable/)
+  const ICONO_GRANDE = "ic_noti_l"; // dragón a color, como icono grande en la bandeja
+  const COLOR = "#DA7419";        // naranja del dragón: acento en la barra y la notificación
+  function cosido(n) {
+    // Cada aviso: icono propio, acento de la marca y texto completo expandible.
+    return Object.assign(
+      { smallIcon: ICONO, largeIcon: ICONO_GRANDE, iconColor: COLOR, largeBody: n.body }, n
+    );
+  }
   const DIAS_SEMANA = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
   // Qué vista se abre al tocar cada tipo de aviso
   const VISTA = { clase: "schedule", examen: "exams", fichas: "cards", resumen: "dashboard" };
@@ -125,13 +136,14 @@
       lista.push({ id: clave(id), tipo, titulo, cuerpo, cuando, vista: vista || VISTA[tipo] || "dashboard" });
     };
 
-    // Clases: diez minutos antes de cada una
+    // Clases: diez minutos antes de cada una. El módulo va en el título (lo primero
+    // que se ve en la bandeja) y el aula + la hora, en el cuerpo.
     if (st.notifyClass !== false) {
       (d.dias || []).forEach((dia) => {
         (dia.clases || []).forEach((c, i) => {
           const cuando = fechaHora(dia.iso, c.start, -10);
-          mete("clase|" + dia.iso + "|" + i + "|" + c.start, "clase", "Clase en 10 min",
-            c.subject + (c.room ? " · " + c.room : "") + " · " + c.start, cuando, "schedule");
+          mete("clase|" + dia.iso + "|" + i + "|" + c.start, "clase", c.subject + " en 10 min",
+            (c.room ? c.room + " · " : "") + "empieza a las " + c.start, cuando, "schedule");
         });
       });
     }
@@ -230,7 +242,7 @@
     if (avisos.length) {
       try {
         await P.schedule({
-          notifications: avisos.map((a) => ({
+          notifications: avisos.map((a) => cosido({
             id: a.id, title: a.titulo, body: a.cuerpo, channelId: CANAL,
             extra: { vista: a.vista },
             // allowWhileIdle: true es lo que hace sonar el aviso aunque el móvil esté
@@ -263,18 +275,18 @@
       await cancelarBloque();   // fuera los del bloque anterior (o de un móvil reiniciado)
       await P.schedule({
         notifications: [
-          {
+          cosido({
             id: ID_ENFOQUE, title: "Enfocado hasta las " + hhmm,
             body: minutos + " min de estudio" + etiqueta + ". Puedes cerrar la app: te aviso al terminar.",
             channelId: CANAL, extra: { vista: "timer" }, autoCancel: true,
             schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
-          },
-          {
+          }),
+          cosido({
             id: ID_BLOQUE, title: "Bloque terminado", body: "+" + minutos + " min" + etiqueta + ". Toca para el descanso.",
             channelId: CANAL, extra: { vista: "timer" },
             // que suene aunque la pantalla esté apagada y el móvil en reposo: ese es el punto
             schedule: { at: fin, allowWhileIdle: true },
-          },
+          }),
         ],
       });
       return { nativo: true, ok: true, fin };
@@ -320,10 +332,10 @@
         if (pedido.display !== "granted") return { nativo: true, ok: false, permiso: false };
       }
       await P.schedule({
-        notifications: [{
+        notifications: [cosido({
           id: ID_PRUEBA, title: "Aula SMR", body: "Prueba de aviso: si ves esto, funciona. Te avisará en 5 segundos.",
           channelId: CANAL, extra: { vista: "settings" }, schedule: { at, allowWhileIdle: true },
-        }],
+        })],
       });
       return { nativo: true, ok: true, permiso: true, cuando: at };
     } catch {

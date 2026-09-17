@@ -1208,6 +1208,19 @@ async function testAuditoria() {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
     check(!!pkg.scripts.minificar && !!pkg.devDependencies.terser, "minificado: hay script npm y minificador instalado");
     check(!!pkg.devDependencies["@capacitor/local-notifications"], "APK: el plugin de notificaciones locales está en las dependencias");
+    // v67.14: los avisos llevan su propio icono (silueta blanca + dragón a color) y el
+    // lanzador usa capas adaptativas: sin ellas el launcher enmascara el arte a sangre y
+    // el icono sale «con zoom».
+    const apply = fs.readFileSync(path.join(ROOT, "apk-overlay/apply.py"), "utf8");
+    check(fs.existsSync(path.join(ROOT, "apk-overlay/drawable/ic_noti.png"))
+      && fs.existsSync(path.join(ROOT, "apk-overlay/drawable/ic_noti_l.png")),
+      "avisos: la silueta y el dragón a color para las notificaciones van en el overlay");
+    check(/ic_%s_bg/.test(apply) && /ic_%s_fg/.test(apply) && /0\.62/.test(apply),
+      "icono: el overlay genera las capas adaptativas (fondo difuminado + arte al 62 %, dentro de la zona segura)");
+    const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, "capacitor.config.json"), "utf8"));
+    check(cfg.plugins && cfg.plugins.LocalNotifications && cfg.plugins.LocalNotifications.smallIcon === "ic_noti"
+      && /^#[0-9A-F]{6}$/i.test(cfg.plugins.LocalNotifications.iconColor || ""),
+      "avisos: el plugin tiene icono y acento por defecto en capacitor.config.json");
   }
 
   // --- v65: exportar de verdad (y guardar dentro del APK, donde las descargas no existen) ---
@@ -1383,7 +1396,7 @@ async function testAuditoria() {
       isNativePlatform: () => true,
       Plugins: { LocalNotifications: {
         checkPermissions: async () => ({ display: "granted" }),
-        schedule: async (o) => llamadas.push(...o.notifications.map((n) => ({ id: n.id, titulo: n.title, cuando: new Date(n.schedule.at).getTime(), vista: n.extra && n.extra.vista, idle: n.schedule && n.schedule.allowWhileIdle }))),
+        schedule: async (o) => llamadas.push(...o.notifications.map((n) => ({ id: n.id, titulo: n.title, cuando: new Date(n.schedule.at).getTime(), vista: n.extra && n.extra.vista, idle: n.schedule && n.schedule.allowWhileIdle, icono: n.smallIcon }))),
         cancel: async (o) => llamadas.push({ cancelado: o.notifications.map((n) => n.id) }),
       } },
     };
@@ -1403,6 +1416,8 @@ async function testAuditoria() {
     // (el valor de antes), Android podía guardarlos «para luego» y no sonar a la hora.
     check(!!enfoca && enfoca.idle === true && !!termina && termina.idle === true,
       "bloque: los avisos se programan con «sonar aunque el móvil esté en reposo» (allowWhileIdle)");
+    check(!!enfoca && enfoca.icono === "ic_noti" && !!termina && termina.icono === "ic_noti",
+      "bloque: los avisos del bloque llevan el icono de la app");
     check(llamadas.some((l) => l.cancelado && l.cancelado.includes(AV.idBloque) && l.cancelado.includes(AV.idEnfoque)),
       "bloque: antes de programar se quitan los del bloque anterior (por si el móvil se reinició)");
     llamadas.length = 0;
@@ -1521,6 +1536,10 @@ async function testAuditoria() {
     check(avisos.length === 9, "avisos: el plan de dos semanas sale completo (" + avisos.length + " avisos)");
     check(con("clase", "IPE").length === 1 && hora(con("clase", "IPE")[0]) === "15:05",
       "avisos: cada clase avisa 10 minutos antes (15:15 → 15:05)");
+    check(con("clase").every((a) => /en 10 min$/.test(a.titulo)) && con("clase", "IPE")[0].titulo === "IPE en 10 min",
+      "avisos: el título de la clase lleva el módulo, que es lo primero que se lee en la bandeja");
+    check(/AULA 1NF3/.test(con("clase", "IPE")[0].cuerpo) && /empieza a las 15:15/.test(con("clase", "IPE")[0].cuerpo),
+      "avisos: el cuerpo de la clase lleva el aula y la hora de entrada");
     check(con("clase", "DIG").length === 1 && con("clase").every((a) => hora(a).endsWith("5") || hora(a).endsWith("55")),
       "avisos: la segunda clase del día también avisa 10 minutos antes");
     check(con("clase").every((a) => a.cuando.getDate() !== 15), "avisos: un día festivo no programa clases (ni aunque tuviera horario)");
@@ -1574,18 +1593,24 @@ async function testAuditoria() {
           createChannel: async (c) => llamadas.push(["canal", c.id]),
           getPending: async () => ({ notifications: [{ id: 7 }, { id: 8 }] }),
           cancel: async (o) => llamadas.push(["cancelar", o.notifications.length]),
-          schedule: async (o) => llamadas.push(["programar", o.notifications.length, o.notifications[0].channelId, o.notifications.map((n) => n.schedule && n.schedule.allowWhileIdle)]),
+          schedule: async (o) => llamadas.push(["programar", o.notifications.length, o.notifications[0].channelId,
+            o.notifications.map((n) => n.schedule && n.schedule.allowWhileIdle),
+            o.notifications.map((n) => [n.smallIcon, n.largeIcon, n.iconColor, n.largeBody === n.body])]),
         },
       },
     };
     check(AV.disponible() === true, "avisos: dentro del APK el módulo se declara disponible");
     const r2 = await AV.sincronizar({ datos, ahora });
     check(r2.nativo === true && r2.permiso === true && r2.programados === 9, "avisos: se programan los 9 avisos del plan en Android");
-    check(JSON.stringify(llamadas) === JSON.stringify([["canal", "aula-smr"], ["cancelar", 2], ["programar", 9, "aula-smr", Array(9).fill(true)]]),
+    check(JSON.stringify(llamadas) === JSON.stringify([["canal", "aula-smr"], ["cancelar", 2], ["programar", 9, "aula-smr", Array(9).fill(true),
+      Array.from({ length: 9 }, () => ["ic_noti", "ic_noti_l", "#DA7419", true])]]),
       "avisos: antes de programar se cancelan los viejos y se prepara el canal de Android (" + JSON.stringify(llamadas) + ")");
     const programadosR2 = (llamadas.find((l) => l[0] === "programar") || [])[3] || [];
     check(programadosR2.length === 9 && programadosR2.every((v) => v === true),
       "avisos: todos se programan con «sonar aunque el móvil esté en reposo» (allowWhileIdle: true)");
+    const iconosR2 = (llamadas.find((l) => l[0] === "programar") || [])[4] || [];
+    check(iconosR2.length === 9 && iconosR2.every((i) => i[0] === "ic_noti" && i[1] === "ic_noti_l" && i[2] === "#DA7419" && i[3] === true),
+      "avisos: cada aviso lleva la silueta del dragón, el icono a color, el acento de la marca y el texto expandible (no el icono genérico del sistema)");
     // v64: aviso de prueba (suena a los 5 segundos) y toques que abren la vista
     let programadoPrueba = null;
     env.window.Capacitor.Plugins.LocalNotifications.schedule = async (o) => { programadoPrueba = o.notifications[0]; };
@@ -1597,6 +1622,9 @@ async function testAuditoria() {
       "avisos: el aviso de prueba abre Ajustes al tocarlo");
     check(programadoPrueba && programadoPrueba.schedule && programadoPrueba.schedule.allowWhileIdle === true,
       "avisos: el aviso de prueba también se programa para sonar con el móvil en reposo");
+    check(programadoPrueba && programadoPrueba.smallIcon === "ic_noti" && programadoPrueba.largeIcon === "ic_noti_l"
+      && programadoPrueba.iconColor === "#DA7419",
+      "avisos: la prueba suena con el mismo aspecto que los avisos de verdad (icono de la app, no el genérico)");
 
     let escucha = null;
     env.window.Capacitor.Plugins.LocalNotifications.addListener = (evento, cb) => { escucha = { evento, cb }; };
@@ -3051,10 +3079,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.13\.0"/.test(app), "versión: js/app.js dice v67.13.0");
-    check(pkg.version === "67.13.0", "versión: package.json dice v67.13.0");
-    check(lock.version === "67.13.0" && lock.packages[""].version === "67.13.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.13\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.14\.0"/.test(app), "versión: js/app.js dice v67.14.0");
+    check(pkg.version === "67.14.0", "versión: package.json dice v67.14.0");
+    check(lock.version === "67.14.0" && lock.packages[""].version === "67.14.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.14\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }

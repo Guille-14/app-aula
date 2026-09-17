@@ -164,6 +164,14 @@ ok("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" in man_txt, "permiso de exención de o
 ok(b"verBateria" in dex or any(b"verBateria" in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex")),
    "método verBateria del plugin AulaWidget dentro del APK (diálogo de batería)")
 
+# v67.13.1: los avisos llevan su icono (silueta del dragón + acento de la marca) y el
+# lanzador usa capas adaptativas de verdad. Los nombres de los drawable viven en la clase
+# R del dex (minify off: la clase R entera va dentro), así que se buscan ahí.
+ok(b"ic_noti" in dex or any(b"ic_noti" in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex")),
+   "icono de notificación ic_noti dentro del APK (sin él, los avisos usan el icono genérico)")
+ok(b"ic_dragon_fg" in dex or any(b"ic_dragon_fg" in z.read(n) for n in nombres if n.startswith("classes") and n.endswith(".dex")),
+   "capas adaptativas del icono (ic_*_bg/fg): sin ellas el launcher enmascara el arte a sangre y sale «con zoom»")
+
 # ---------------------------------------------------------------- datos
 sha = hashlib.sha256(Path(apk).read_bytes()).hexdigest()
 mb = "%.1f" % (os.path.getsize(apk) / 1048576)
