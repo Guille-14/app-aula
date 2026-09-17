@@ -164,14 +164,29 @@ jobs:
             notas.md
           echo "" >> notas.md
           echo "Compilado desde el commit \`${GITHUB_SHA:0:7}\`." >> notas.md
+          # Si la publicación falla, el motivo se ve como anotación (el log del paso no
+          # siempre es accesible desde fuera): se guarda el output y se repite el final.
+          set +e
+          set -o pipefail
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" "$ASSET" "Aula-SMR.apk" --clobber
-            gh release edit "$TAG" --latest --title "Aula SMR v$VERSION · APK" --notes-file notas.md
+            { gh release upload "$TAG" "$ASSET" "Aula-SMR.apk" --clobber
+              gh release edit "$TAG" --latest --title "Aula SMR v$VERSION · APK" --notes-file notas.md
+            } 2>&1 | tee release.log
+            R=$?
           else
             gh release create "$TAG" "$ASSET" "Aula-SMR.apk" \
               --target "$GITHUB_SHA" \
               --title "Aula SMR v$VERSION · APK" \
               --notes-file notas.md \
-              --latest
+              --latest 2>&1 | tee release.log
+            R=$?
+          fi
+          set +o pipefail
+          set -e
+          if [ "$R" != "0" ]; then
+            tail -20 release.log | while IFS= read -r l; do
+              echo "::error title=Publicar la Release::$(printf '%s' "$l" | cut -c1-300)"
+            done
+            exit 1
           fi
           echo "Release: $(gh release view "$TAG" --json url -q .url)"
