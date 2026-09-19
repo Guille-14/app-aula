@@ -3082,10 +3082,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.15\.0"/.test(app), "versión: js/app.js dice v67.15.0");
-    check(pkg.version === "67.15.0", "versión: package.json dice v67.15.0");
-    check(lock.version === "67.15.0" && lock.packages[""].version === "67.15.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.15\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.16\.0"/.test(app), "versión: js/app.js dice v67.16.0");
+    check(pkg.version === "67.16.0", "versión: package.json dice v67.16.0");
+    check(lock.version === "67.16.0" && lock.packages[""].version === "67.16.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.16\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
