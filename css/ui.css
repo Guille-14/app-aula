@@ -19,6 +19,13 @@
   --pad: 18px;
   --bar-h: 0px;
 
+  /* Escala de espaciado (4 · 8 · 12 · 16 · 24 px) */
+  --gap-xs: 4px;
+  --gap-s: 8px;
+  --gap-m: 12px;
+  --gap-l: 16px;
+  --gap-xl: 24px;
+
   --radius-sm: max(8px, calc(var(--radius, 16px) - 8px));
   --radius-xs: max(6px, calc(var(--radius, 16px) - 12px));
   --radius-lg: calc(var(--radius, 16px) + 6px);
@@ -149,8 +156,16 @@ html[data-theme="light"] {
 }
 
 /* ------------------------------------------------- 2. Base y tipografía */
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+* {
+  box-sizing: border-box
+  flex: 0 0 auto
+  min-width: 0
+  margin-block: 0 !important
+  animation: none !important
+  transition: none !important
+  position: relative
+  opacity: .62
+}html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { height: 100%; }
 body {
   margin: 0;
@@ -214,8 +229,11 @@ body.hub-body {
   body.hub-body { background: #050506; }
   .bento { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .soon-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-  .week-pills { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
-  .course-soon { gap: 12px; }
+  .week-pills {
+  display: grid
+  grid-template-columns: repeat(7, minmax(0, 1fr))
+  gap: 6px
+}  .course-soon { gap: 12px; }
   .hub-header h1 { font-size: 32px; }
 }/* ------------------------------------------------------------- 4. Cabecera */.hub-header { flex: 0 0 auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: calc(env(safe-area-inset-top, 0px) + 18px) var(--pad) 12px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(18px) saturate(160%); -webkit-backdrop-filter: blur(18px) saturate(160%); z-index: 12;; border-bottom: 1px solid transparent; }
 .hub-title-block { min-width: 0; }
@@ -271,8 +289,7 @@ body.hub-body {
   flex-direction: column;
   gap: 18px;
   animation: viewIn .32s cubic-bezier(.16, 1, .3, 1) both;
-}.hub-scroll > * { flex: 0 0 auto; min-width: 0;; margin-block: 0 !important; }
-@keyframes viewIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+}.hub-scroll > @keyframes viewIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* ------------------------------------------------------------ 6. Títulos */
@@ -328,8 +345,12 @@ body.hub-body {
   border-radius: var(--radius);
   padding: 18px;
 }
-.card { margin: 0; }
-.grid { display: grid; gap: 12px; }
+.card {
+  margin: 0
+  border-color: #ddd
+  break-inside: avoid
+  padding: 13px 15px
+}.grid { display: grid; gap: 12px; }
 .grid-2, .grid-3, .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid-3, .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .stat { padding: 16px; }
@@ -352,8 +373,14 @@ body.hub-body {
   color: var(--muted);
   font-size: 13px;
 }
-.empty b { display: block; color: var(--ink); font-size: 15px; margin-bottom: 6px; font-weight: 640; }
-.empty p { margin: 0 0 14px; }
+.empty b {
+  display: block
+  color: var(--ink)
+  font-size: 15px
+  margin-bottom: 6px
+  font-weight: 640
+  letter-spacing: -0.02em
+}.empty p { margin: 0 0 14px; }
 .idle-note {
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -497,8 +524,7 @@ body.hub-body {
 
 /* --------------------------------------------------- 10. Formularios */
 .field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 14px; }
-.field > * { min-width: 0; }
-input, select, textarea { min-width: 0; }
+.field > input, select, textarea { min-width: 0; }
 .field label {
   font-size: 11px;
   font-weight: 620;
@@ -529,8 +555,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   border-color: var(--line-2);
   box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--ink) 10%, transparent);
 }
-::placeholder { color: var(--muted-2); opacity: 1; }
-.form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+::placeholder {
+  color: var(--muted-2)
+  opacity: 1
+}.form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .check {
   display: flex;
   align-items: center;
@@ -793,15 +821,17 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
   animation: sheetUp .32s cubic-bezier(.16, 1, .3, 1);
 }
 .modal-card::before {
-  content: "";
-  position: absolute;
-  top: 9px; left: 50%;
-  width: 38px; height: 4px;
-  margin-left: -19px;
-  border-radius: 999px;
-  background: var(--line-2);
-}
-.modal-card h2 {
+  content: ""
+  position: absolute
+  top: 9px
+  left: 50%
+  width: 38px
+  height: 4px
+  margin-left: -19px
+  border-radius: 999px
+  background: var(--line-2)
+  display: none
+}.modal-card h2 {
   margin: 8px 0 12px;
   font-size: 20px;
   font-weight: 660;
@@ -827,8 +857,7 @@ body.onboarding .hub-scroll { padding-bottom: 40px; }
     border-radius: var(--radius-lg);
     padding-top: 24px;
   }
-  .modal-card::before { display: none; }
-}
+  }
 
 /* --------------------------------------------------------- 15. Panel «Más» */
 .sheet {
@@ -999,8 +1028,7 @@ body.timer-on { --bar-h: 46px; }
 
 /* -------------------------------------------------------- 18. Movimiento */
 @media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
-}
+  }
 html[data-reduce-motion="1"] *,
 html[data-reduce-motion="1"] *::before,
 html[data-reduce-motion="1"] *::after { animation: none !important; transition: none !important; }
@@ -1090,7 +1118,6 @@ body.examode .att { display: none !important; }
 .bento-card .lbl { margin-top: 3px; font-size: 11px; font-weight: 580; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .bento-card > div:last-child { margin-top: auto; }
 
-.week-pills { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .week-pill {
   display: flex;
   flex-direction: column;
@@ -1267,20 +1294,22 @@ body.examode .att { display: none !important; }
   justify-items: center;
 }
 button.cal-day {
-  position: relative;
-  width: min(100%, 46px);
-  aspect-ratio: 1 / 1;
-  display: grid; place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  overflow: hidden;
-  transition: background .16s ease, transform .14s ease, box-shadow .18s ease;
-}
-button.cal-day .n { font-size: 13px; font-weight: 560; line-height: 1; font-variant-numeric: tabular-nums; }
+  position: relative
+  width: min(100%, 46px)
+  aspect-ratio: 1 / 1
+  display: grid
+  place-items: center
+  padding: 0
+  border: 0
+  border-radius: 999px
+  background: transparent
+  color: var(--ink)
+  font: inherit
+  overflow: hidden
+  transition: background .16s ease, transform .14s ease, box-shadow .18s ease
+  height: 40px
+  min-height: 0
+}button.cal-day .n { font-size: 13px; font-weight: 560; line-height: 1; font-variant-numeric: tabular-nums; }
 /* Relleno del principio y el final del mes: invisible, pero ocupando su hueco.
    El CSS viejo le dejaba 96 px de alto y sin ocultarlo, así que salían píldoras largas
    en la primera y la última fila (en la captura, los días 9 y 12 parecían ovalados). */
@@ -1308,8 +1337,7 @@ button.cal-day.is-hoy {
 }
 button.cal-day.is-hoy .n { font-weight: 700; }
 @supports not (aspect-ratio: 1 / 1) {
-  button.cal-day { height: 40px; }
-}
+  }
 .cal-key {
   display: flex; flex-wrap: wrap; align-items: center;
   gap: 5px 12px;
@@ -1380,25 +1408,25 @@ button.cal-day.is-hoy .n { font-weight: 700; }
 .note-item h4 { margin: 0; font-size: 14px; font-weight: 620; letter-spacing: -0.015em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-item p { margin: 4px 0 0; font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .editor { display: flex; flex-direction: column; gap: 12px; }
-.editor-title {
+.editor .editor-title {
   width: 100%;
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  min-height: 0 !important;
-  font-size: 22px !important;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  min-height: 0;
+  font-size: 22px;
   font-weight: 660;
   letter-spacing: -0.03em;
 }
-.editor-body {
+.editor .editor-body {
   width: 100%;
   min-height: 320px;
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  font-size: 15px !important;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  font-size: 15px;
   line-height: 1.62;
   resize: vertical;
 }
@@ -1456,8 +1484,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
   background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--c, var(--ink)) 15%, transparent), transparent 62%);
   pointer-events: none;
 }
-.subject-card > * { position: relative; }
-.subject-card:hover { background: var(--surface-2); }
+.subject-card > .subject-card:hover { background: var(--surface-2); }
 .subj-code {
   grid-area: code;
   width: 46px; height: 46px;
@@ -1823,8 +1850,7 @@ button.cal-day.is-hoy .n { font-weight: 700; }
   .hub-nav, .hub-header, .toasts, .timer-bar, .focus-fab { display: none !important; }
   .phone, .hub-scroll { height: auto; max-width: none; overflow: visible; padding: 0; border: 0; }
   body { background: #fff; color: #000; }
-  .card { border-color: #ddd; break-inside: avoid; }
-}
+  }
 
 /* ---------------------------------------- 33. Detalles que faltaban por cubrir */
 .chart-box { width: 100%; height: 190px; }
@@ -1910,8 +1936,7 @@ html[data-ui-size="lg"] :is(.card h3, .sec-head h2, .row b, .cal-item b) { font-
 html[data-ui-size="sm"] :is(.btn, input, select, textarea, .nav-lbl) { font-size: 13px; }
 html[data-ui-size="lg"] :is(.btn, input, select, textarea, .nav-lbl) { font-size: 16px; }
 
-html[data-compact="1"] .card { padding: 13px 15px; }
-html[data-compact="1"] .hub-scroll { padding-top: 0; gap: 12px; }
+html[data-compact="1"] html[data-compact="1"] .hub-scroll { padding-top: 0; gap: 12px; }
 html[data-compact="1"] .stat .v { font-size: 22px; }
 html[data-compact="1"] .row { padding-block: 8px; }
 
@@ -1939,10 +1964,10 @@ body.guest-mode .hub-avatar { box-shadow: 0 0 0 2px var(--amber); }
 .phone.more-open #nav-more,
 .phone.more-open #nav-more .nav-lbl { color: var(--ink); }
 .phone.more-open #nav-more {
-  background: transparent;
-  box-shadow: none;
-}
-.phone.more-open #nav-more::after {
+  background: transparent
+  box-shadow: none
+  color: var(--nav-active-fg, var(--ink))
+}.phone.more-open #nav-more::after {
   content: "";
   position: absolute;
   bottom: 3px; left: 50%;
@@ -1968,7 +1993,6 @@ img.is-loading {
 /* En táctil: más área para pulsar y sin hover pegajoso */
 /* v67.4: la casilla del día salía ovalada porque el CSS viejo (css/styles.css) le dejaba
    `min-height: 96px` (y 46 px en táctil) mientras el ancho es de ~40 px. Aquí manda el círculo. */
-button.cal-day { min-height: 0; }
 html.is-touch .cal, html.is-touch .cal-weekdays { gap: 2px; }
 html.is-touch .cal-day { border-radius: 999px; }
 html.is-touch .week-pill { min-height: 52px; }
@@ -1994,7 +2018,6 @@ html.is-touch :is(.btn, .sheet-grid button, .cal-day, .cal-item, .week-pill):hov
   box-shadow: inset 0 0 0 1px var(--nav-active-line, var(--line));
 }
 /* El panel «Más» abierto se marca con el icono encendido y un punto, no con el relleno de activo */
-.phone.more-open #nav-more { color: var(--nav-active-fg, var(--ink)); background: transparent; box-shadow: none; }
 /* Ganchos de la barra lateral y la cabecera viejas, recolocados aquí */
 html[data-skin="gameboy"] .hub-title-block h1 { text-transform: uppercase; font-size: 18px; letter-spacing: .12em; }
 html[data-skin="cyberpunk"] .hub-title-block h1 { text-transform: uppercase; letter-spacing: .08em; font-size: 22px; }
@@ -2032,8 +2055,6 @@ html[data-skin="redteam"] .hub-title-block h1::before { content: "⚠ "; color: 
 }
 .field :is(input, select, textarea):focus-visible,
 .cmdk-box input:focus-visible { outline-offset: 0; }
-::placeholder { color: var(--muted-2); opacity: 1; }
-
 /* — Todo lo pulsable responde igual — */
 :where(.chip, .icon-btn, .cal-item, .today-row, .soon-row, .tool-back, .note-item,
 .review-item, .ach-card, .kv, .sheet-grid button, .bento-card, .week-pill,
@@ -2048,7 +2069,6 @@ html[data-skin="redteam"] .hub-title-block h1::before { content: "⚠ "; color: 
   border-color: var(--line-2);
   padding: 28px 18px;
 }
-.empty b { font-size: 15px; letter-spacing: -0.02em; }
 .empty .btn { margin-top: 2px; }
 
 /* Estado vacío con icono (v67.4): una sola pieza por vista en lugar de tarjeta + ceros + caja. */
@@ -2086,8 +2106,11 @@ html[data-skin="redteam"] .hub-title-block h1::before { content: "⚠ "; color: 
   -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 @supports not (backdrop-filter: blur(1px)) {
-  .hub-nav, .hub-header { background: var(--bg); }
-}/* — Cabecera: sombra al separarse del contenido — */
+  .hub-nav, .hub-header {
+  background: var(--bg)
+  backdrop-filter: none
+  -webkit-backdrop-filter: none
+}}/* — Cabecera: sombra al separarse del contenido — */
 body.scrolled .hub-header { border-bottom-color: var(--card-bd, var(--line)); }
 
 /* — Formularios: campos con relieve suave — */
@@ -2102,8 +2125,7 @@ html[data-theme="light"] .toast { box-shadow: var(--card-sh, none), 0 12px 30px 
 .row.is-tap { cursor: pointer; }
 .subj-accent { box-shadow: inset 3px 0 0 var(--c, transparent); }
 @media (prefers-reduced-transparency: reduce) {
-  .hub-nav, .hub-header { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
-}
+  }
 @media (min-width: 640px) {
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
@@ -2275,9 +2297,7 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 .exam-fila.is-hoy { box-shadow: inset 3px 0 0 var(--red); }
 /* v67.7: la fila va dentro de un cajón deslizable, así que el atenuado se aplica a lo que hay
    DENTRO (antes era a la fila entera). Si se atenuara la fila, se vería la franja de detrás. */
-.exam-fila.is-fuera > * { opacity: .62; }
-
-/* — Agenda: deslizar la fila (v67.7) —
+.exam-fila.is-fuera > /* — Agenda: deslizar la fila (v67.7) —
    El cajón (`.swipe`) es lo que recorta: la fila se mueve dentro y deja ver la franja que hay
    debajo. La fila lleva su propio fondo opaco, que si no se transparentaría la franja en reposo. */
 .swipe { position: relative; overflow: hidden; }
@@ -2586,3 +2606,8 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 /* Agenda: segundo filtro (exámenes / trabajos) */
 .filters-tipo { margin-top: -2px; }
 .filters-tipo .chip { font-size: 12px; }
+
+/* Chat: indicador de carga mientras la IA piensa */
+.chat-thinking pre {
+  animation: pulse 1.4s ease-in-out infinite;
+}

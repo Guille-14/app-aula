@@ -2047,3 +2047,69 @@ grep -rni "servidor\|sync-" index.html js/*.js css/ | grep -v "servidor web\|ser
 ---
 
 **Conclusión honesta:** la app tiene muchísimo producto dentro (28 vistas en el momento de la auditoría, 37 herramientas, 33 temas, XP, hábitos, sync, widgets Android) construido encima de una base frágil: un único fichero de 189 KB, sin validación de datos, sin tests y con un `save()` que miente. No hay que rehacerla: hay que **blindar la capa de datos** (Sprint 1) y **terminar de conectar lo que ya está programado** (Sprint 2). Con eso se pasa de "demo muy ambiciosa" a "app que puedes usar todo el curso sin miedo".
+
+## Ronda v68.0.0 · Pulido de accesibilidad, rendimiento y organización
+
+### 1. Agenda: orden de secciones por módulos (no por fecha)
+`renderExams()` agrupaba exámenes por orden de aparición en la lista ordenada por fecha: si un
+módulo con fecha lejana aparecía primero, su sección se colaba antes de otro con examen hoy.
+Ahora `grupos` se ordena por el orden de inserción en `state.subjects`, igual que en el resto
+de la app. **3 pruebas arregladas** (757 ✓).
+
+### 2. Chat: indicador de carga mientras la IA piensa
+Al enviar un mensaje, aparece «Pensando…» con pulso animado hasta que la IA responde. Se puede
+tocar para descartar. Antes, la UI se quedaba muda durante los 45 s de timeout.
+
+### 3. Modales: trampa de foco y Escape
+Los modales ahora atrapan Tab/Shift+Tab (el foco no se escapa al fondo) y Escape los cierra.
+Ya tenían `role="dialog"` y `aria-modal="true"`, pero el teclado se perdía.
+
+### 4. Avisos: programación diferencial (diff)
+`sincronizar()` ya no cancela los 64 avisos y reprograma desde cero en cada apertura. Compara
+el plan nuevo con los ya pendientes en el dispositivo: solo cancela los que ya no sirven y
+programa los que faltan. En una apertura normal, 0 operaciones nativas en vez de 128.
+
+### 5. Accesibilidad: anuncio de cambio de vista
+Un `aria-live="assertive"` oculto anuncia el nombre de la vista al navegar (lectores de pantalla).
+El contenedor `#a11y-announce` lleva `class="sr-only"` y se actualiza al entrar en cada pantalla.
+
+### 6. CSS: tokens de espaciado
+Nuevas variables en `:root`: `--gap-xs` (4px), `--gap-s` (8px), `--gap-m` (12px), `--gap-l`
+(16px), `--gap-xl` (24px). Son la escala más usada en el CSS (43× gap:8px, 27× gap:12px, etc.)
+y están listas para usar en código nuevo.
+
+### 7. Organización: secciones en app.js
+11 cabeceras de sección (`// ===== UTILIDADES Y CONSTANTES =====`, `// ===== ESTADO: CARGAR / GUARDAR =====`, etc.)
+marcan las zonas lógicas del fichero de 6.200+ líneas. Navegable con búsqueda de texto.
+
+**Pruebas: 757 ✓** (sin cambios, las mejoras son de comportamiento o documentación).
+
+## Ronda v68.0.0 (2.ª pasada) · CSS, atajos y tema automático
+
+### 8. CSS: 15 bloques duplicados eliminados
+De 31 selectores duplicados a 19 (los 19 restantes son overrides intencionales de responsive/tema).
+Bloques fusionados: `*`, `.card`, `.empty b`, `.hub-nav, .hub-header`, `.modal-card::before`,
+`.phone.more-open #nav-more`, `.week-pills`, `::placeholder`, `button.cal-day`.
+
+### 9. CSS: 11 `!important` eliminados del editor
+`.editor-title` y `.editor-body` usaban `!important` para limpiar estilos de `.field input`.
+Ahora usan `.editor .editor-title` (especificidad 0,2,0 > 0,1,1) en vez de machacar con
+`!important`. Total `!important`: 23 → 13 (todas justificadas: reduced-motion, `[hidden]`,
+print, exam-lock).
+
+### 10. Atajo Cmd+S / Ctrl+S para guardar
+Fuerza un `flushSave()` inmediato y muestra «Guardado». Antes no había forma de guardar
+manualmente sin navegar.
+
+### 11. Tema automático: respeta `prefers-color-scheme`
+El modo «Auto» ahora primero mira la preferencia del sistema (Android, macOS, Windows) antes
+de caer en la regla horaria (21:00–08:00). Si el usuario tiene el sistema en oscuro, la app
+se oscurece aunque sean las 14:00. Además, escucha cambios en tiempo real (si el usuario
+cambia el tema del sistema, la app reacciona sin recargar).
+
+### 12. Eliminada trampa de foco duplicada
+La trampa de Tab en modales estaba implementada dos veces: una dentro de `openModal()` y otra
+en el keydown global. Se eliminó la de `openModal()` (la global ya la cubre y además maneja
+Escape, Cmd+K, Cmd+Z, etc.).
+
+**Pruebas: 757 ✓** (sin cambios).

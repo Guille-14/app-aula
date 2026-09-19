@@ -69,6 +69,10 @@
     { id: "zekrom", src: "assets/avatars/zekrom.jpg" },
   ];
 
+
+  // ================================================================
+  // UTILIDADES Y CONSTANTES
+  // ================================================================
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now());
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -950,6 +954,10 @@
     return aviso;
   }
 
+  // ================================================================
+  // ESTADO: CARGAR / GUARDAR / MIGRAR
+  // ================================================================
+
   function load() {
     let raw = null;
     try { raw = localStorage.getItem(KEY); } catch { return seedDemo(); }
@@ -1136,10 +1144,12 @@
     document.documentElement.setAttribute("data-skin", id);
     let theme = state.settings.uiTheme;
     if (theme !== "light" && theme !== "dark") theme = LIGHT.has(id) ? "light" : "dark";
-    // Tema automático: de noche se oscurece aunque la plantilla sea clara.
+    // Tema automático: primero mira la preferencia del sistema (prefers-color-scheme),
+    // y si no hay, cae a la hora del día (oscuro de 21:00 a 08:00).
     if (state.settings.autoTheme) {
+      const sysDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
       const h = new Date().getHours();
-      if ((h < 8 || h >= 21) && LIGHT.has(id)) theme = "dark";
+      if ((sysDark || h < 8 || h >= 21) && LIGHT.has(id)) theme = "dark";
     }
     document.documentElement.setAttribute("data-theme", theme);
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -1715,6 +1725,11 @@
     return out.join("");
   }
 
+
+  // ================================================================
+  // RENDERIZADO Y NAVEGACIÓN
+  // ================================================================
+
   function render() {
     applyTheme();
     const bc = $("#brand-course"); if (bc) bc.textContent = state.settings.courseName || "SMR";
@@ -1825,6 +1840,11 @@
     if (h < 20) return "Buenas tardes";
     return "Buenas noches";
   }
+
+  // ================================================================
+  // LOGROS, XP Y NIVELES
+  // ================================================================
+
   function ensureProgress() {
     if (!state.progress) state.progress = { bonusXp: 0, unlocked: {}, daily: "", log: [] };
     state.progress.unlocked = state.progress.unlocked || {};
@@ -2135,6 +2155,11 @@
       <button class="btn btn-primary btn-block" data-action="on-finish">Entrar a Inicio</button>
     </div>`;
   }
+
+  // ================================================================
+  // VISTA: INICIO (DASHBOARD)
+  // ================================================================
+
   function renderDashboard() {
     const today = todayISO();
     const todayMins = state.sessions.filter((x) => x.date === today).reduce((a, b) => a + b.minutes, 0);
@@ -2407,6 +2432,11 @@
     const b = new Date(iso + "T12:00:00");
     return Math.round((b - a) / (7 * 86400000));
   }
+
+  // ================================================================
+  // VISTA: HORARIO Y CALENDARIO
+  // ================================================================
+
   function renderSchedule() {
     const daysN = state.settings.includeSaturday ? 6 : 5;
     const hoy = todayISO();
@@ -2632,6 +2662,11 @@
       </button>`;
     }).join("");
   }
+
+
+  // ================================================================
+  // VISTA: APUNTES
+  // ================================================================
 
   function renderNotes() {
     const notes = notasFiltradas();
@@ -3092,6 +3127,11 @@
     });
   }
 
+
+  // ================================================================
+  // VISTA: AGENDA (EXÁMENES Y ENTREGAS)
+  // ================================================================
+
   function renderExams() {
     /* La Agenda, organizada como la del instituto: lo siguiente que toca arriba, y luego cada
        módulo con sus cosas (exámenes y entregas) en orden de fecha. Los exámenes van de una hora
@@ -3193,13 +3233,15 @@
         </div>`;
     }
 
-    // Cada módulo, con sus cosas (el orden de los módulos, por lo que toca primero)
+    // Cada módulo, con sus cosas (el orden de los módulos, por su orden en la lista de módulos)
+    const subOrden = new Map(state.subjects.map((s, i) => [s.id, i]));
     const grupos = [];
     lista.forEach((e) => {
       let g = grupos.find((x) => x.id === e.subjectId);
       if (!g) { g = { id: e.subjectId, items: [] }; grupos.push(g); }
       g.items.push(e);
     });
+    grupos.sort((a, b) => (subOrden.get(a.id) ?? 999) - (subOrden.get(b.id) ?? 999));
 
     // El consejo del deslizamiento se enseña una sola vez: en cuanto lo usas, se apunta en el
     // estado y ya no vuelve a salir (nadie quiere un cartel fijo encima de su lista).
@@ -3338,6 +3380,11 @@
   document.addEventListener("touchcancel", soltarSwipe, { passive: true });
   // Al levantar el dedo después de deslizar, el navegador suelta un clic sobre la fila. Se traga
   // en la fase de captura para que no llegue al manejador que abre la ficha.
+
+  // ================================================================
+  // DELEGACIÓN DE EVENTOS
+  // ================================================================
+
   document.addEventListener("click", (e) => {
     if (!swipeTapado) return;
     if (Date.now() - swipeTapado > SWIPE_TAPA_CLIC) { swipeTapado = 0; return; }
@@ -3682,6 +3729,11 @@
     inp.click();
   }
   let mediaInfo = { n: 0, bytes: 0 };
+
+  // ================================================================
+  // VISTA: AJUSTES
+  // ================================================================
+
   function renderSettings() {
     const st = state.settings;
     const kb = (storageBytes() / 1024).toFixed(0);
@@ -4629,6 +4681,13 @@
     } catch {}
     render();
     window.scrollTo(0, 0);
+    // Anunciar cambio de vista para lectores de pantalla
+    const ann = document.getElementById("a11y-announce");
+    if (ann && anterior !== v) {
+      const t = titles[v] || titles.dashboard;
+      ann.textContent = "";  // force re-announce
+      requestAnimationFrame(() => { ann.textContent = t ? t[0] : v; });
+    }
   }
   function quickAdd() {
     const map = { dashboard: openCapture, schedule: () => addEvent(), notes: addNote, cards: () => addCard(), timer: logSession, inbox: openCapture, subjects: () => addSubject(), subject: addNote };
@@ -5422,6 +5481,7 @@
       }
     }
     if (e.key === "Escape") { closeModal(); closeCmd(); closeCapture(); closeMore(); document.body.classList.remove("focus-mode"); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); flushSave(); toast("Guardado"); return; }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
       const tag = (e.target.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea") return;
@@ -6195,6 +6255,11 @@
       remain.textContent = "En " + (mins > 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`);
     }
   }
+
+  // ================================================================
+  // BUCLE PRINCIPAL (15 s) Y VISIBILIDAD
+  // ================================================================
+
   setInterval(() => {
     // Si el móvil ha dormido la pestaña, el cronómetro se pone al día aquí
     if (timer.running && timer.endsAt) {
@@ -6234,6 +6299,14 @@
       try { navigator.wakeLock.request("screen").then((s) => { wakeLock = s; }).catch(() => {}); } catch {}
     }
   });
+  // Escuchar cambios de tema del sistema (por ejemplo, el usuario activa modo oscuro en Android)
+  if (window.matchMedia) {
+    try {
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+        if (state.settings.autoTheme) { applyTheme(); render(); }
+      });
+    } catch {}
+  }
   setTimeout(() => pushWidgets(), 800);
 })();
 

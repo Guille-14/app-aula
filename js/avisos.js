@@ -250,17 +250,27 @@
     } catch { permiso = false; }
     if (!permiso) return { nativo: true, programados: 0, permiso: false };
     await canal(P);
-    // Fuera lo viejo: el plan nuevo refleja los exámenes y el horario de ahora mismo
+    // Diferencia entre el plan nuevo y los avisos ya programados: solo se cancelan
+    // los que ya no sirven y se programan los nuevos. Así se evita el ciclo completo
+    // de 64 cancelar + 64 reprogramar en cada apertura de la app.
+    const avisos = plan(d, o.ahora || new Date());
+    const nuevosIds = new Set(avisos.map((a) => a.id));
+    let viejosIds = new Set();
     try {
       const viejos = await P.getPending();
-      const ids = (viejos.notifications || []).map((n) => ({ id: n.id }));
-      if (ids.length) await P.cancel({ notifications: ids });
-    } catch { /* si no se puede limpiar, programar igualmente es mejor que nada */ }
-    const avisos = plan(d, o.ahora || new Date());
-    if (avisos.length) {
+      viejosIds = new Set((viejos.notifications || []).map((n) => String(n.id)));
+    } catch { /* si no se pueden leer, se programa todo desde cero */ }
+    // Cancelar los que ya no están en el plan (vencidos, borrados, etc.)
+    const aCancelar = [...viejosIds].filter((id) => !nuevosIds.has(id));
+    if (aCancelar.length) {
+      try { await P.cancel({ notifications: aCancelar.map((id) => ({ id })) }); } catch {}
+    }
+    // Programar solo los que no están ya en el dispositivo
+    const aProgramar = avisos.filter((a) => !viejosIds.has(a.id));
+    if (aProgramar.length) {
       try {
         await P.schedule({
-          notifications: avisos.map((a) => cosido({
+          notifications: aProgramar.map((a) => cosido({
             id: a.id, title: a.titulo, body: a.cuerpo, channelId: CANAL,
             extra: { vista: a.vista },
             // allowWhileIdle: true es lo que hace sonar el aviso aunque el móvil esté

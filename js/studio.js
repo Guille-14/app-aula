@@ -29,6 +29,8 @@
   const checkAchievements = () => F("checkAchievements")();
   const subjectOptions = (s) => F("subjectOptions")(s);
 
+  let _chatAbort = null;  // AbortController para cancelar peticiones largas
+
   // El chat se guarda dentro del estado: se queda con los últimos 40 mensajes
   function recortarChat() {
     const c = st()._chat;
@@ -414,7 +416,21 @@ Semana del ${fmtDate(wr.from)} al ${fmtDate(wr.to)}. ${todayStudyHint()}`;
     st()._chat.push({ role: "user", text: q });
     recortarChat();
     render();
-    const finish = (text) => { st()._chat.push({ role: "bot", text }); recortarChat(); render(); };
+    // Indicador de carga: «Pensando...» mientras la IA responde
+    const logEl = document.getElementById("chat-log");
+    if (logEl) {
+      const throb = document.createElement("div");
+      throb.className = "chat-msg bot chat-thinking";
+      throb.id = "chat-thinking";
+      throb.innerHTML = "<b>Aula</b><pre class='hint'>Pensando… <small>(tocar para cancelar)</small></pre>";
+      throb.addEventListener("click", () => { throb.remove(); /* user dismissed */ });
+      logEl.appendChild(throb);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    const finish = (text) => {
+      const th = document.getElementById("chat-thinking"); if (th) th.remove();
+      st()._chat.push({ role: "bot", text }); recortarChat(); render();
+    };
     askOllama(q).then((t) => { st()._ollamaOk = true; finish(t); }).catch(async (e) => {
       st()._ollamaOk = false;
       // Antes era siempre «Ollama no respondió»: ahora se dice qué ha pasado y qué mirar
