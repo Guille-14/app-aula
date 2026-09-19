@@ -115,7 +115,7 @@ def paint_adaptive_layers(src: Path, dest_dir: Path, name: str, size: int = 432)
     centrados. Con el arte a sangre como capa de fondo (como se hacía antes), lo
     visible era el 61 % central: el icono se veía «con zoom» y cortado. Ahora:
       · fondo  = el arte difuminado (llena la máscara con sus colores, sin borde duro)
-      · frente = el arte al 62 % centrado, que cabe en la zona segura (esquinas a
+      · frente = el arte al 72 % centrado, que cabe en la zona segura (esquinas a
         0,44 del radio: ni siquiera una máscara circular completa las recorta)
     432 px = 108 dp a 4x → se meten en drawable-xxxhdpi.
     """
@@ -129,7 +129,7 @@ def paint_adaptive_layers(src: Path, dest_dir: Path, name: str, size: int = 432)
         (size, size), Image.Resampling.LANCZOS
     )
     bg = cover.filter(ImageFilter.GaussianBlur(radius=size * 0.035))
-    fg_size = int(size * 0.62)
+    fg_size = int(size * 0.72)
     art = cover.resize((fg_size, fg_size), Image.Resampling.LANCZOS)
     fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     off = (size - fg_size) // 2

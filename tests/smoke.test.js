@@ -1215,8 +1215,8 @@ async function testAuditoria() {
     check(fs.existsSync(path.join(ROOT, "apk-overlay/drawable/ic_noti.png"))
       && fs.existsSync(path.join(ROOT, "apk-overlay/drawable/ic_noti_l.png")),
       "avisos: la silueta y el dragón a color para las notificaciones van en el overlay");
-    check(/ic_%s_bg/.test(apply) && /ic_%s_fg/.test(apply) && /0\.62/.test(apply),
-      "icono: el overlay genera las capas adaptativas (fondo difuminado + arte al 62 %, dentro de la zona segura)");
+    check(/ic_%s_bg/.test(apply) && /ic_%s_fg/.test(apply) && /0\.72/.test(apply),
+      "icono: el overlay genera las capas adaptativas (fondo difuminado + arte al 72 %, dentro de la zona segura)");
     const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, "capacitor.config.json"), "utf8"));
     check(cfg.plugins && cfg.plugins.LocalNotifications && cfg.plugins.LocalNotifications.smallIcon === "ic_noti"
       && /^#[0-9A-F]{6}$/i.test(cfg.plugins.LocalNotifications.iconColor || ""),
@@ -3082,10 +3082,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.16\.0"/.test(app), "versión: js/app.js dice v67.16.0");
-    check(pkg.version === "67.16.0", "versión: package.json dice v67.16.0");
-    check(lock.version === "67.16.0" && lock.packages[""].version === "67.16.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.16\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.17\.0"/.test(app), "versión: js/app.js dice v67.17.0");
+    check(pkg.version === "67.17.0", "versión: package.json dice v67.17.0");
+    check(lock.version === "67.17.0" && lock.packages[""].version === "67.17.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.17\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }

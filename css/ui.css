@@ -2598,3 +2598,9 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
 .chat-thinking pre {
   animation: pulse 1.4s ease-in-out infinite;
 }
+
+/* Swipe entre vistas: transición suave al volver */
+.hub-scroll {
+  transition: transform .15s ease-out;
+  will-change: transform;
+}

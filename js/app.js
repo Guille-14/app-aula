@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.16.0";
+  const APP_VERSION = "v67.17.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -6255,6 +6255,66 @@
       remain.textContent = "En " + (mins > 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`);
     }
   }
+
+  // ================================================================
+  // SWIPE ENTRE VISTAS PRINCIPALES
+  // ================================================================
+  /* Deslizar el dedo horizontalmente en la zona de contenido cambia de pestaña.
+     Solo funciona entre las vistas de la barra inferior (no en las de «Más»).
+     No interfiere con el swipe de la agenda (que va en .swipe, dentro de #view). */
+  const NAV_VIEWS = ["dashboard", "schedule", "exams", "rendimiento"];
+  const VIEW_SWIPE_UMBRAL = 60;
+  let viewSwipe = null;
+
+  function navSwipeStart(e) {
+    // No interceptar si el toque es en la barra de abajo, en un modal, en un swipe de agenda, etc.
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if (t.closest("#bottom-nav") || t.closest(".modal") || t.closest(".sheet") || t.closest(".swipe") || t.closest(".cmdk")) return;
+    if (!NAV_VIEWS.includes(view)) return;
+    const touch = e.touches ? e.touches[0] : e;
+    viewSwipe = { x0: touch.clientX, y0: touch.clientY, dir: "" };
+  }
+  function navSwipeMove(e) {
+    if (!viewSwipe) return;
+    const touch = e.touches ? e.touches[0] : e;
+    const dx = touch.clientX - viewSwipe.x0;
+    const dy = touch.clientY - viewSwipe.y0;
+    if (!viewSwipe.dir) {
+      if (Math.abs(dx) >= 12 && Math.abs(dx) >= 1.3 * Math.abs(dy)) {
+        viewSwipe.dir = dx > 0 ? "left" : "right";  // invertido: swipe derecha = vista anterior
+      } else if (Math.abs(dy) >= 12) {
+        viewSwipe = null; return;  // es scroll vertical
+      } else return;
+    }
+    if (typeof e.preventDefault === "function" && e.cancelable !== false) e.preventDefault();
+    // Feedback visual: desplazar ligeramente el contenido
+    const scroller = document.getElementById("view");
+    const clamped = clamp(dx, -120, 120);
+    if (scroller) scroller.style.transform = "translateX(" + clamped + "px)";
+    scroller.style.transition = "none";
+  }
+  function navSwipeEnd(e) {
+    if (!viewSwipe) return;
+    const touch = e.changedTouches ? e.changedTouches[0] : e;
+    const dx = touch.clientX - viewSwipe.x0;
+    viewSwipe = null;
+    const scroller = document.getElementById("view");
+    if (scroller) { scroller.style.transform = ""; scroller.style.transition = ""; }
+    if (Math.abs(dx) < VIEW_SWIPE_UMBRAL) return;
+    const idx = NAV_VIEWS.indexOf(view);
+    if (idx < 0) return;
+    const next = dx > 0 ? NAV_VIEWS[idx - 1] : NAV_VIEWS[idx + 1];
+    if (next) { vibrar("suave"); go(next); }
+  }
+  document.addEventListener("touchstart", navSwipeStart, { passive: true });
+  document.addEventListener("touchmove", navSwipeMove, { passive: false });
+  document.addEventListener("touchend", navSwipeEnd, { passive: true });
+  document.addEventListener("touchcancel", () => {
+    viewSwipe = null;
+    const scroller = document.getElementById("view");
+    if (scroller) { scroller.style.transform = ""; scroller.style.transition = ""; }
+  }, { passive: true });
 
   // ================================================================
   // BUCLE PRINCIPAL (15 s) Y VISIBILIDAD
