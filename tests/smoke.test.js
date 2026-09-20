@@ -3083,17 +3083,17 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.18\.0"/.test(app), "versión: js/app.js dice v67.18.0");
-    check(pkg.version === "67.18.0", "versión: package.json dice v67.18.0");
-    check(lock.version === "67.18.0" && lock.packages[""].version === "67.18.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.18\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.19\.0"/.test(app), "versión: js/app.js dice v67.19.0");
+    check(pkg.version === "67.19.0", "versión: package.json dice v67.19.0");
+    check(lock.version === "67.19.0" && lock.packages[""].version === "67.19.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.19\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
 
 // --------- 25. v67.7.1: cambiar el icono de la app (el lanzador de Android)
 /* El fallo: la plantilla de Capacitor trae MainActivity con SU PROPIO intent-filter
-   MAIN/LAUNCHER. apply.py añadía 23 activity-alias encima, así que en el escritorio convivían
+   MAIN/LAUNCHER. apply.py añadía 27 activity-alias encima, así que en el escritorio convivían
    24 lanzadores; IconSwitch solo enciende y apaga los alias y nunca toca MainActivity, cuyo
    icono (ic_launcher) es siempre el dragón. Tocas Mewtwo, el plugin dice que sí, y el
    escritorio no se mueve.
@@ -3119,14 +3119,14 @@ function testIconoApp() {
     const crudo = execFileSync("python3", [guion, path.join(ROOT, "apk-overlay"), plantilla], { encoding: "utf8" });
     const r = JSON.parse(crudo.trim().split("\n").pop());
 
-    check(r.aliases === 23, "icono: se declaran los 23 activity-alias (leído: " + r.aliases + ")");
-    check(r.total === 23, "icono: y hay 23 lanzadores en total, no 24 (leído: " + r.total + ")");
+    check(r.aliases === 27, "icono: se declaran los 27 activity-alias (leído: " + r.aliases + ")");
+    check(r.total === 27, "icono: y hay 27 lanzadores en total, no 24 (leído: " + r.total + ")");
     check(r.main_sigue === true, "icono: MainActivity sigue declarada (los widgets la abren con un Intent explícito)");
     check(r.main_con_lanzador === false, "icono: MainActivity YA NO declara lanzador — sin esto el icono no cambiaba nunca");
     check(r.main_exported === true, "icono: y sigue siendo exported");
     check(r.activos.join("|") === "IcoDragon", "icono: el único lanzador activo de salida es el dragón (leído: " + r.activos.join("|") + ")");
     check(r.alias_dragon === "IcoDragon", "icono: alias_de('dragon') da IcoDragon");
-    check(r.idempotente === 23, "icono: pasar apply.py dos veces no duplica los alias (leído: " + r.idempotente + ")");
+    check(r.idempotente === 27, "icono: pasar apply.py dos veces no duplica los alias (leído: " + r.idempotente + ")");
 
     // 3. Las tres listas de iconos tienen que ser la misma, o el alias no existe y Android
     //    se traga el setComponentEnabledSetting en silencio (falla sin decir nada)

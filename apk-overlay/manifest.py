@@ -26,6 +26,7 @@ ICONS = [
     "deoxys", "espeon", "gengar", "giratina", "groudon", "kyogre",
     "lucario", "lugia", "metagross", "mewtwo", "rayquaza", "salamence",
     "tyranitar", "umbreon", "venusaur", "zekrom",
+    "snivy", "cyndaquil", "froakie", "oshawott",
 ]
 
 
