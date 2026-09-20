@@ -631,47 +631,7 @@
         <div class="info-row"><b>*/15 * * * *</b><span>cada 15 min</span></div>
         <div class="info-row"><b>0 2 * * 0</b><span>domingos 02:00</span></div>
       </div>`));
-    if (id === "faltas") {
-      const saved = (() => { try { return JSON.parse(localStorage.getItem("aula_smr_faltas_calc") || "{}"); } catch { return {}; } })();
-      const horas = saved.horas || 132;
-      const duracion = saved.duracion || 1.5;
-      const limite = saved.limite || 20;
-      const faltas = saved.faltas || 0;
-      const modo = saved.modo || "clases";
-      const chip = (label, field, val, active) => `<button type="button" class="chip ${active ? "is-on" : ""}" data-action="faltas-chip" data-field="${field}" data-val="${val}">${label}</button>`;
-      const chipRow = (field, vals, current) => vals.map((v) => chip(typeof v === "number" && v % 1 ? v + "" : v + "", field, v, Math.abs(current - v) < 0.01)).join("");
-      return wrap("Calculadora de Faltas", `
-        <div class="card" id="faltas-card">
-          <p class="hint" style="margin-top:0">Horas totales del módulo</p>
-          <div class="chips-row">${chipRow("horas", [33, 66, 99, 132, 165, 200], horas)}</div>
-          <div class="field" style="margin-top:6px"><label>Horas exactas</label><input id="ft-horas" type="number" min="1" max="999" value="${horas}" /></div>
-
-          <p class="hint">Duración de cada clase</p>
-          <div class="chips-row">${chipRow("duracion", [1, 1.5, 2, 3], duracion)}</div>
-          <div class="field" style="margin-top:6px"><label>Horas / clase</label><input id="ft-duracion" type="number" min="0.5" max="8" step="0.5" value="${duracion}" /></div>
-
-          <p class="hint">Límite de faltas (% del total)</p>
-          <div class="chips-row">${chipRow("limite", [15, 20, 25, 30], limite)}</div>
-          <div class="field" style="margin-top:6px"><label>Porcentaje límite</label><input id="ft-limite" type="number" min="1" max="100" value="${limite}" /></div>
-
-          <p class="hint">Faltas acumuladas</p>
-          <div class="faltas-modo seg" role="group" aria-label="Modo de conteo">
-            <button type="button" class="${modo === "clases" ? "is-on" : ""}" data-action="faltas-modo" data-modo="clases">Clases</button>
-            <button type="button" class="${modo === "horas" ? "is-on" : ""}" data-action="faltas-modo" data-modo="horas">Horas</button>
-          </div>
-          <div class="faltas-counter">
-            <button type="button" class="faltas-btn" data-action="faltas-minus" aria-label="Restar falta">−</button>
-            <div class="faltas-num" id="ft-faltas">${faltas}</div>
-            <button type="button" class="faltas-btn" data-action="faltas-plus" aria-label="Sumar falta">+</button>
-          </div>
-          <p class="hint" style="text-align:center" id="ft-modo-lbl">${modo === "clases" ? "clases faltadas" : "horas faltadas"}</p>
-        </div>
-        <div id="ft-resultado"></div>
-        <details class="card" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;font-size:14px">Ver desglose del cálculo</summary>
-          <div id="ft-desglose" style="margin-top:10px"></div>
-        </details>
-      `);
-    }
+    if (id === "faltas") return wrap("Calculadora de Faltas", faltasBody());
     return home();
   }
 
@@ -787,6 +747,50 @@
   /* ================================================================
      CALCULADORA DE FALTAS — Evaluación continua FP/Bachillerato
      ================================================================ */
+  /* El cuerpo de la calculadora, sin el «wrap» de Herramientas: lo pinta tanto el
+     panel de Herramientas como su propia vista (la hoja «Más» tiene un apartado
+     directo). Mismo HTML, mismas cifras, mismo estado guardado. */
+  function faltasBody() {
+    const saved = faltasState();
+    const horas = saved.horas || 132;
+    const duracion = saved.duracion || 1.5;
+    const limite = saved.limite || 20;
+    const faltas = saved.faltas || 0;
+    const modo = saved.modo || "clases";
+    const chip = (label, field, val, active) => `<button type="button" class="chip ${active ? "is-on" : ""}" data-action="faltas-chip" data-field="${field}" data-val="${val}">${label}</button>`;
+    const chipRow = (field, vals, current) => vals.map((v) => chip(typeof v === "number" && v % 1 ? v + "" : v + "", field, v, Math.abs(current - v) < 0.01)).join("");
+    return `
+      <div class="card" id="faltas-card">
+        <p class="hint" style="margin-top:0">Horas totales del módulo</p>
+        <div class="chips-row">${chipRow("horas", [33, 66, 99, 132, 165, 200], horas)}</div>
+        <div class="field" style="margin-top:6px"><label>Horas exactas</label><input id="ft-horas" type="number" min="1" max="999" value="${horas}" /></div>
+
+        <p class="hint">Duración de cada clase</p>
+        <div class="chips-row">${chipRow("duracion", [1, 1.5, 2, 3], duracion)}</div>
+        <div class="field" style="margin-top:6px"><label>Horas / clase</label><input id="ft-duracion" type="number" min="0.5" max="8" step="0.5" value="${duracion}" /></div>
+
+        <p class="hint">Límite de faltas (% del total)</p>
+        <div class="chips-row">${chipRow("limite", [15, 20, 25, 30], limite)}</div>
+        <div class="field" style="margin-top:6px"><label>Porcentaje límite</label><input id="ft-limite" type="number" min="1" max="100" value="${limite}" /></div>
+
+        <p class="hint">Faltas acumuladas</p>
+        <div class="faltas-modo seg" role="group" aria-label="Modo de conteo">
+          <button type="button" class="${modo === "clases" ? "is-on" : ""}" data-action="faltas-modo" data-modo="clases">Clases</button>
+          <button type="button" class="${modo === "horas" ? "is-on" : ""}" data-action="faltas-modo" data-modo="horas">Horas</button>
+        </div>
+        <div class="faltas-counter">
+          <button type="button" class="faltas-btn" data-action="faltas-minus" aria-label="Restar falta">−</button>
+          <div class="faltas-num" id="ft-faltas">${faltas}</div>
+          <button type="button" class="faltas-btn" data-action="faltas-plus" aria-label="Sumar falta">+</button>
+        </div>
+        <p class="hint" style="text-align:center" id="ft-modo-lbl">${modo === "clases" ? "clases faltadas" : "horas faltadas"}</p>
+      </div>
+      <div id="ft-resultado"></div>
+      <details class="card" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;font-size:14px">Ver desglose del cálculo</summary>
+        <div id="ft-desglose" style="margin-top:10px"></div>
+      </details>
+    `;
+  }
   function faltasState() {
     try { return JSON.parse(localStorage.getItem("aula_smr_faltas_calc") || "{}"); } catch { return {}; }
   }
@@ -801,7 +805,8 @@
     const faltasInput = Number(s.faltas) || 0;
     const modo = s.modo || "clases";
 
-    const horasMaximas = horas * (limite / 100);
+    // Redondeo a un decimal: sin él, 132 h al 20 % salía en pantalla como «26.400000000000002 h»
+    const horasMaximas = Math.round(horas * (limite / 100) * 10) / 10;
     const clasesMaximas = Math.floor(horasMaximas / duracion);
 
     let horasFaltadas = 0, clasesFaltadas = 0;
@@ -1245,9 +1250,13 @@
 
   window.AulaTools = {
     view() { return st()._tool ? panel() : home(); },
+    // La calculadora de faltas tiene además apartado propio en la hoja «Más»:
+    // misma calculadora y mismas cifras, sin pasar por Herramientas.
+    faltasView: faltasBody,
+    faltasRender,
     click,
     // Funciones puras de cálculo, expuestas para poder probarlas sin tocar la UI
-    calc: { calcSubnet, parseIp, intToIp, expandV6, compressV6 },
+    calc: { calcSubnet, parseIp, intToIp, expandV6, compressV6, faltasCalc },
     // Catálogo plano para el buscador global (Ctrl/Cmd + K)
     catalog() {
       const out = [];

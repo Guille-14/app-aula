@@ -158,7 +158,7 @@ async function hasta(cond, ms = 4000) {
   try { return !!cond(); } catch { return false; }
 }
 
-const VIEWS = ["dashboard", "schedule", "notes", "cards", "timer", "stats", "subjects", "settings", "inbox", "review", "achievements", "agenda", "chatbot", "habits", "glossary", "examode", "quickreview", "admin", "rendimiento", "tools"];
+const VIEWS = ["dashboard", "schedule", "notes", "cards", "timer", "stats", "subjects", "settings", "inbox", "review", "achievements", "agenda", "chatbot", "habits", "glossary", "examode", "quickreview", "admin", "rendimiento", "tools", "faltas"];
 
 // ------------------------------------------------------- 1. arranque y vistas
 {
@@ -1185,6 +1185,12 @@ async function testAuditoria() {
     check(sinPrecache.length === 0, "service worker: todo lo que carga index.html está en el precache (" + (sinPrecache.join(", ") || "todo") + ")");
     check(precacheados.has("index.html") && precacheados.has("js/avisos.js") && precacheados.has("js/tema.js"),
       "service worker: el precache lleva la app shell, el tema y los avisos");
+    // v67.20: los cuatro avatares nuevos se quedaron fuera del precache y sin conexión
+    // salían rotos. Esto avisa si vuelve a pasar con cualquiera del paquete.
+    const avatares = fs.readdirSync(path.join(ROOT, "assets", "avatars"));
+    const avataresSinCache = avatares.filter((a) => !precacheados.has("assets/avatars/" + a));
+    check(avatares.length > 20 && avataresSinCache.length === 0,
+      "service worker: todos los avatares del paquete están en el precache (" + avatares.length + " avatares" + (avataresSinCache.length ? ", faltan: " + avataresSinCache.join(", ") : "") + ")");
 
     // CSP: nada de scripts en línea (por eso el tema vive en js/tema.js)
     const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || "";
@@ -2039,6 +2045,50 @@ async function testAuditoria() {
     act(env, "tool-subnet");
     const sn = P("sn-out").textContent;
     check(/192\.168\.10\.128/.test(sn) && /192\.168\.10\.190/.test(sn), "herramientas: el subnetting sigue bien (red .128, último .190)");
+  }
+
+  // --- v67.20: la calculadora de faltas tiene apartado propio en «Más» ---
+  {
+    const env = boot();
+    ready(env.A);
+    const P = (id) => env.doc.getElementById(id);
+    const apartado = env.doc.querySelector('#more-sheet button[data-view="faltas"]');
+    check(!!apartado && /Calculadora de faltas/i.test(apartado.textContent),
+      "faltas: la hoja «Más» tiene el apartado Calculadora de faltas");
+    env.A.go("faltas");
+    check(env.doc.getElementById("view-title").textContent === "Calculadora de faltas",
+      "faltas: la vista propia pone su título en la cabecera");
+    check(!!P("ft-horas") && P("ft-horas").value === "132" && !!P("ft-faltas"),
+      "faltas: la vista arranca con el formulario (horas, límite, contador)");
+    check(!!P("ft-resultado") && /clases restantes/i.test(P("ft-resultado").textContent),
+      "faltas: el resultado se pinta al entrar, sin tocar nada");
+    check(!/00000000/.test(P("ft-resultado").textContent + P("view").textContent),
+      "faltas: 132 h al 20 % sale como 26.4 h, sin ruido de coma flotante");
+    // El motor, con cifras conocidas: 132 h, clases de 1.5 h, límite 20 %
+    const F = () => env.window.AulaTools.calc.faltasCalc();
+    env.window.localStorage.setItem("aula_smr_faltas_calc", JSON.stringify({ horas: 132, duracion: 1.5, limite: 20, faltas: 10, modo: "clases" }));
+    const r = F();
+    check(r.horasMaximas === 26.4 && r.clasesMaximas === 17,
+      "faltas: 132 h al 20 % son 26.4 h y 17 clases faltables (" + r.horasMaximas + " h / " + r.clasesMaximas + " clases)");
+    check(r.clasesRestantes === 7 && r.estado === "ZONA SEGURA",
+      "faltas: con 10 clases faltadas quedan 7 y estás en zona segura");
+    env.window.localStorage.setItem("aula_smr_faltas_calc", JSON.stringify({ horas: 132, duracion: 1.5, limite: 20, faltas: 18, modo: "clases" }));
+    const r2 = F();
+    check(r2.estado === "PERDIDA" && /evaluación continua/i.test(r2.msg),
+      "faltas: 18 clases (27 h) superan el límite y pierdes la continua");
+    // Interacción en la vista propia: el contador suma y el resultado se recalcula
+    env.window.localStorage.removeItem("aula_smr_faltas_calc");
+    env.A.go("faltas");
+    act(env, "faltas-plus");
+    check(P("ft-faltas").textContent === "1" && /1\.5 h faltadas/.test(P("ft-resultado").textContent),
+      "faltas: tocar «+» sube el contador y recalcula al momento");
+    act(env, "faltas-modo", { modo: "horas" });
+    check(P("ft-modo-lbl").textContent === "horas faltadas" && /horas restantes/i.test(P("ft-resultado").textContent),
+      "faltas: el modo «Horas» cambia el conteo y la lectura del resultado");
+    // El panel de Herramientas sigue llevando a la misma calculadora (mismo estado)
+    act(env, "tool-open", { id: "faltas" });
+    check(!!P("ft-horas") && !!env.doc.querySelector('[data-action="tool-back"]'),
+      "faltas: Herramientas sigue abriendo la misma calculadora, con su volver");
   }
 
   // --- Fichas: al escribir la respuesta, la tarjeta avanza ---
@@ -3083,10 +3133,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.19\.0"/.test(app), "versión: js/app.js dice v67.19.0");
-    check(pkg.version === "67.19.0", "versión: package.json dice v67.19.0");
-    check(lock.version === "67.19.0" && lock.packages[""].version === "67.19.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.19\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.20\.0"/.test(app), "versión: js/app.js dice v67.20.0");
+    check(pkg.version === "67.20.0", "versión: package.json dice v67.19.0");
+    check(lock.version === "67.20.0" && lock.packages[""].version === "67.20.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.20\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }

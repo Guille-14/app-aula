@@ -1,4 +1,4 @@
-const CACHE = "aula-smr-v67.19.0";
+const CACHE = "aula-smr-v67.20.0";
 const ICON_CACHE = "aula-app-icon";
 const PRECACHE = [
   "./",
@@ -40,6 +40,12 @@ const PRECACHE = [
   "./assets/avatars/umbreon.jpg",
   "./assets/avatars/venusaur.jpg",
   "./assets/avatars/zekrom.jpg",
+  // Los cuatro de la v67.19 (Snivy, Cyndaquil, Froakie, Oshawott) se quedaron fuera
+  // del precache: sin conexión, el selector de avatar los mostraba rotos.
+  "./assets/avatars/snivy.jpg",
+  "./assets/avatars/cyndaquil.jpg",
+  "./assets/avatars/froakie.jpg",
+  "./assets/avatars/oshawott.jpg",
 ];
 
 // Rutas del precache, normalizadas a «pathname»: se usan para decidir cuándo servir

@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.19.0";
+  const APP_VERSION = "v67.20.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -1708,6 +1708,7 @@
     exams: ["Agenda", "Exámenes, trabajos y entregas"],
     notes: ["Apuntes", "Texto del ciclo"],
     tools: ["Herramientas", "Hub técnico, estudio y sistema"],
+    faltas: ["Calculadora de faltas", "Horas, límite y evaluación continua"],
   };
 
   function bannersHTML() {
@@ -1788,6 +1789,9 @@
       tools: () => (window.AulaTools && typeof window.AulaTools.view === "function")
         ? window.AulaTools.view()
         : (cargarTools(), `<div class="empty"><b>Herramientas SMR</b><p>Cargando el hub técnico…</p></div>`),
+      faltas: () => (window.AulaTools && typeof window.AulaTools.faltasView === "function")
+        ? window.AulaTools.faltasView()
+        : (cargarTools(), `<div class="empty"><b>Calculadora de faltas</b><p>Cargando la calculadora…</p></div>`),
     };
     // Una vista que falle no debe dejar la app en blanco: se enseña el aviso y se sigue.
     let cuerpo = "";
@@ -1802,6 +1806,10 @@
     // del scroll y parecía que no había contestado.
     if (view === "chatbot" && window.AulaStudio && typeof window.AulaStudio.montarChat === "function") {
       try { window.AulaStudio.montarChat(); } catch {}
+    }
+    // La calculadora de faltas trae su bloque de resultado vacío: se pinta al entrar
+    if (view === "faltas" && window.AulaTools && typeof window.AulaTools.faltasRender === "function") {
+      try { window.AulaTools.faltasRender(); } catch {}
     }
     marcarScroll();
     if (view === "stats") drawStats();
@@ -4638,6 +4646,7 @@
     acc("Repaso rápido", () => go("quickreview"));
     acc("Concentración", () => go("examode"));
     acc("Herramientas SMR", () => go("tools"));
+    acc("Calculadora de faltas", () => go("faltas"));
     acc("Ajustes", () => go("settings"));
     acc("Deshacer el último cambio", undo);
     acc("Cambiar a tema claro/oscuro", () => { state.settings.uiTheme = state.settings.uiTheme === "light" ? "dark" : "light"; applyTheme(); save(); toast(state.settings.uiTheme === "light" ? "Tema claro" : "Tema oscuro"); });
@@ -6155,12 +6164,12 @@
     const etiqueta = document.createElement("script");
     etiqueta.src = "js/tools.js";
     etiqueta.async = true;
-    etiqueta.onload = () => { toolsPidiendo = false; if (view === "tools") { try { render(); } catch {} } };
+    etiqueta.onload = () => { toolsPidiendo = false; if (view === "tools" || view === "faltas") { try { render(); } catch {} } };
     etiqueta.onerror = () => { toolsPidiendo = false; toast("No se pudieron cargar las herramientas"); };
     document.head.appendChild(etiqueta);
   }
 
-  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, habits: 1, glossary: 1, examode: 1, quickreview: 1, admin: 1, achievements: 1, rendimiento: 1, tools: 1, exams: 1 };
+  const EXTRA_VIEWS = { agenda: 1, chatbot: 1, habits: 1, glossary: 1, examode: 1, quickreview: 1, admin: 1, achievements: 1, rendimiento: 1, tools: 1, exams: 1, faltas: 1 };
   const esVista = (v) => !!(v && (titles[v] || EXTRA_VIEWS[v]));
   const hash = (location.hash || "").replace("#", "");
   if (esVista(hash)) view = hash;
