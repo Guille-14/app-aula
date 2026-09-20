@@ -11,8 +11,7 @@ public final class IconSwitch {
     "arcanine", "arceus", "blastoise", "charizard", "gyarados", "garchomp",
     "deoxys", "espeon", "gengar", "giratina", "groudon", "kyogre",
     "lucario", "lugia", "metagross", "mewtwo", "rayquaza", "salamence",
-    "tyranitar", "umbreon", "venusaur", "zekrom",
-    "snivy", "cyndaquil", "froakie", "oshawott"
+    "tyranitar", "umbreon", "venusaur", "zekrom"
   };
   private static final String PREF = "aula_icon";
   private static final String KEY = "id";
