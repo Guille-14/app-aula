@@ -129,6 +129,7 @@
     list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 7h12M8 12h12M8 17h12M4 7h.01M4 12h.01M4 17h.01"/></svg>`,
     bolt: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 3 6 13h6l-1 8 8-12h-6l1-6Z"/></svg>`,
     box: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8l9-4 9 4v8l-9 4-9-4V8Z"/><path d="M12 12v8M3 8l9 4 9-4"/></svg>`,
+    alert: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>`,
   };
 
   function ipToInt(a, b, c, d) { return ((a << 24) >>> 0) + (b << 16) + (c << 8) + d; }
@@ -281,6 +282,7 @@
       ["regex", "violet", "hash", "Regex", "Probar una expresión"],
       ["uuid", "violet", "chip", "UUID", "Identificador aleatorio"],
       ["cron", "amber", "calc", "Cron", "Min hora día mes sem"],
+      ["faltas", "red", "alert", "Calculadora de Faltas", "Límite y pérdida de continua"],
     ]],
   ];
 
@@ -629,6 +631,47 @@
         <div class="info-row"><b>*/15 * * * *</b><span>cada 15 min</span></div>
         <div class="info-row"><b>0 2 * * 0</b><span>domingos 02:00</span></div>
       </div>`));
+    if (id === "faltas") {
+      const saved = (() => { try { return JSON.parse(localStorage.getItem("aula_smr_faltas_calc") || "{}"); } catch { return {}; } })();
+      const horas = saved.horas || 132;
+      const duracion = saved.duracion || 1.5;
+      const limite = saved.limite || 20;
+      const faltas = saved.faltas || 0;
+      const modo = saved.modo || "clases";
+      const chip = (label, field, val, active) => `<button type="button" class="chip ${active ? "is-on" : ""}" data-action="faltas-chip" data-field="${field}" data-val="${val}">${label}</button>`;
+      const chipRow = (field, vals, current) => vals.map((v) => chip(typeof v === "number" && v % 1 ? v + "" : v + "", field, v, Math.abs(current - v) < 0.01)).join("");
+      return wrap("Calculadora de Faltas", `
+        <div class="card" id="faltas-card">
+          <p class="hint" style="margin-top:0">Horas totales del módulo</p>
+          <div class="chips-row">${chipRow("horas", [33, 66, 99, 132, 165, 200], horas)}</div>
+          <div class="field" style="margin-top:6px"><label>Horas exactas</label><input id="ft-horas" type="number" min="1" max="999" value="${horas}" /></div>
+
+          <p class="hint">Duración de cada clase</p>
+          <div class="chips-row">${chipRow("duracion", [1, 1.5, 2, 3], duracion)}</div>
+          <div class="field" style="margin-top:6px"><label>Horas / clase</label><input id="ft-duracion" type="number" min="0.5" max="8" step="0.5" value="${duracion}" /></div>
+
+          <p class="hint">Límite de faltas (% del total)</p>
+          <div class="chips-row">${chipRow("limite", [15, 20, 25, 30], limite)}</div>
+          <div class="field" style="margin-top:6px"><label>Porcentaje límite</label><input id="ft-limite" type="number" min="1" max="100" value="${limite}" /></div>
+
+          <p class="hint">Faltas acumuladas</p>
+          <div class="faltas-modo seg" role="group" aria-label="Modo de conteo">
+            <button type="button" class="${modo === "clases" ? "is-on" : ""}" data-action="faltas-modo" data-modo="clases">Clases</button>
+            <button type="button" class="${modo === "horas" ? "is-on" : ""}" data-action="faltas-modo" data-modo="horas">Horas</button>
+          </div>
+          <div class="faltas-counter">
+            <button type="button" class="faltas-btn" data-action="faltas-minus" aria-label="Restar falta">−</button>
+            <div class="faltas-num" id="ft-faltas">${faltas}</div>
+            <button type="button" class="faltas-btn" data-action="faltas-plus" aria-label="Sumar falta">+</button>
+          </div>
+          <p class="hint" style="text-align:center" id="ft-modo-lbl">${modo === "clases" ? "clases faltadas" : "horas faltadas"}</p>
+        </div>
+        <div id="ft-resultado"></div>
+        <details class="card" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;font-size:14px">Ver desglose del cálculo</summary>
+          <div id="ft-desglose" style="margin-top:10px"></div>
+        </details>
+      `);
+    }
     return home();
   }
 
@@ -740,11 +783,136 @@
     return out.join(":");
   }
 
+
+  /* ================================================================
+     CALCULADORA DE FALTAS — Evaluación continua FP/Bachillerato
+     ================================================================ */
+  function faltasState() {
+    try { return JSON.parse(localStorage.getItem("aula_smr_faltas_calc") || "{}"); } catch { return {}; }
+  }
+  function faltasSave(s) {
+    try { localStorage.setItem("aula_smr_faltas_calc", JSON.stringify(s)); } catch {}
+  }
+  function faltasCalc() {
+    const s = faltasState();
+    const horas = Number(s.horas) || 132;
+    const duracion = Number(s.duracion) || 1.5;
+    const limite = Number(s.limite) || 20;
+    const faltasInput = Number(s.faltas) || 0;
+    const modo = s.modo || "clases";
+
+    const horasMaximas = horas * (limite / 100);
+    const clasesMaximas = Math.floor(horasMaximas / duracion);
+
+    let horasFaltadas = 0, clasesFaltadas = 0;
+    if (modo === "clases") {
+      clasesFaltadas = faltasInput;
+      horasFaltadas = clasesFaltadas * duracion;
+    } else {
+      horasFaltadas = faltasInput;
+      clasesFaltadas = Math.floor(horasFaltadas / duracion);
+    }
+
+    const clasesRestantes = Math.max(0, clasesMaximas - clasesFaltadas);
+    const horasRestantes = Math.max(0, horasMaximas - horasFaltadas);
+    const porcentajeConsumido = horasMaximas > 0 ? (horasFaltadas / horasMaximas) * 100 : 0;
+
+    let estado, badge, color, msg;
+    if (porcentajeConsumido < 70) {
+      estado = "ZONA SEGURA"; badge = "🟢 ZONA SEGURA"; color = "var(--green)";
+      msg = "Estás dentro del margen permitido.";
+    } else if (porcentajeConsumido < 90) {
+      estado = "PRECAUCIÓN"; badge = "⚠️ PRECAUCIÓN"; color = "var(--amber)";
+      msg = "Has consumido más del 70% de tus faltas disponibles.";
+    } else if (porcentajeConsumido < 100) {
+      estado = "ALERTA CRÍTICA"; badge = "🚨 ALERTA CRÍTICA"; color = "var(--acc-orange)";
+      msg = "Una falta más y perderás el derecho a la evaluación continua.";
+    } else {
+      estado = "PERDIDA"; badge = "⛔ EVALUACIÓN CONTINUA PERDIDA"; color = "var(--red)";
+      const exceso = Math.round((horasFaltadas - horasMaximas) * 10) / 10;
+      const excesoC = Math.max(0, clasesFaltadas - clasesMaximas);
+      msg = `¡Has perdido la evaluación continua! Te has pasado en ${excesoC} clase(s) (${exceso} h). Habla con tu tutor o jefatura de estudios para justificar faltas o solicitar convocatoria extraordinaria.`;
+    }
+
+    return { horas, duracion, limite, faltasInput, modo, horasMaximas, clasesMaximas,
+      horasFaltadas, clasesFaltadas, clasesRestantes, horasRestantes,
+      porcentajeConsumido, estado, badge, color, msg };
+  }
+  function faltasRender() {
+    const r = faltasCalc();
+    const el = document.getElementById("ft-resultado");
+    if (!el) return;
+    const pct = Math.min(100, Math.round(r.porcentajeConsumido * 10) / 10);
+    const restanteTxt = r.modo === "clases"
+      ? `<span style="font-size:36px;font-weight:900;letter-spacing:-.04em;color:${r.color}">${r.clasesRestantes}</span><br><span style="font-size:14px;color:var(--muted)">clases restantes</span>`
+      : `<span style="font-size:36px;font-weight:900;letter-spacing:-.04em;color:${r.color}">${r.horasRestantes.toFixed(1)}</span><br><span style="font-size:14px;color:var(--muted)">horas restantes</span>`;
+
+    el.innerHTML = `<div class="card" style="border-color:${r.color};border-width:2px;margin-top:10px">
+      <div style="text-align:center;margin-bottom:10px">
+        <span class="badge" style="background:${r.color};color:#fff;font-size:13px;padding:4px 12px;border-radius:999px">${r.badge}</span>
+      </div>
+      <div style="text-align:center;margin:12px 0">${restanteTxt}</div>
+      <div style="background:var(--surface-2);border-radius:999px;height:10px;overflow:hidden;margin:10px 0 4px">
+        <div style="height:100%;width:${pct}%;background:${r.color};border-radius:999px;transition:width .3s ease"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)">
+        <span>${r.horasFaltadas.toFixed(1)} h faltadas</span>
+        <span style="font-weight:700;color:${r.color}">${pct}%</span>
+        <span>Límite: ${r.horasMaximas} h (${r.clasesMaximas} clases)</span>
+      </div>
+      <p style="text-align:center;margin:12px 0 0;font-size:14px;color:var(--ink-2)">${r.msg}</p>
+    </div>`;
+
+    const dg = document.getElementById("ft-desglose");
+    if (dg) {
+      dg.innerHTML = `<div class="info-list">
+        <div class="info-row"><b>Total del módulo</b><span>${r.horas} h</span></div>
+        <div class="info-row"><b>Duración / clase</b><span>${r.duracion} h</span></div>
+        <div class="info-row"><b>Total de clases</b><span>${Math.floor(r.horas / r.duracion)}</span></div>
+        <div class="info-row"><b>Límite</b><span>${r.limite}% = ${r.horasMaximas} h</span></div>
+        <div class="info-row"><b>Clases máx. faltables</b><span>${r.clasesMaximas}</span></div>
+        <div class="info-row"><b>Faltas actuales</b><span>${r.faltasInput} ${r.modo === "clases" ? "clases" : "horas"} = ${r.horasFaltadas.toFixed(1)} h</span></div>
+        <div class="info-row"><b>Consumo</b><span style="color:${r.color};font-weight:700">${pct}%</span></div>
+        <div class="info-row"><b>Justificables (FP)</b><span>Las faltas justificadas no cuentan para perder la continua (normativa general). Consulta tu centro.</span></div>
+      </div>`;
+    }
+  }
+
   function click(action, btn) {
     if (!A()) return;
+
+    // Calculadora de Faltas
+    if (action === "faltas-chip") {
+      const field = btn.dataset.field, val = Number(btn.dataset.val);
+      const s = faltasState(); s[field] = val; faltasSave(s);
+      // Update input
+      const inp = document.getElementById("ft-" + field);
+      if (inp) inp.value = val;
+      // Update chips
+      btn.parentElement.querySelectorAll(".chip").forEach((c) => c.classList.toggle("is-on", Number(c.dataset.val) === val));
+      faltasRender();
+    }
+    if (action === "faltas-modo") {
+      const s = faltasState(); s.modo = btn.dataset.modo; faltasSave(s);
+      btn.parentElement.querySelectorAll("button").forEach((b) => b.classList.toggle("is-on", b.dataset.modo === s.modo));
+      const lbl = document.getElementById("ft-modo-lbl");
+      if (lbl) lbl.textContent = s.modo === "clases" ? "clases faltadas" : "horas faltadas";
+      faltasRender();
+    }
+    if (action === "faltas-plus" || action === "faltas-minus") {
+      const s = faltasState();
+      const cur = Number(s.faltas) || 0;
+      const next = action === "faltas-plus" ? cur + 1 : Math.max(0, cur - 1);
+      s.faltas = next; faltasSave(s);
+      const num = document.getElementById("ft-faltas");
+      if (num) num.textContent = next;
+      faltasRender();
+    }
+
     if (action === "tool-open") {
       st()._tool = btn.dataset.id;
       A().go("tools");
+      if (btn.dataset.id === "faltas") setTimeout(faltasRender, 50);
       if (btn.dataset.id === "chmod") setTimeout(() => click("tool-chmod", btn), 0);
     }
     if (action === "tool-back") { st()._tool = null; A().go("tools"); }
@@ -1053,6 +1221,19 @@
       "bk-gb": ["tool-backup", "bk-out"], "bk-mbps": ["tool-backup", "bk-out"],
       "cv-n": ["tool-conv", "cv-out"], "cv-from": ["tool-conv", "cv-out"], "hs-in": ["tool-hash", "hs-out"],
     };
+    // Faltas: inputs numéricos recalculan al instante
+    if (["ft-horas", "ft-duracion", "ft-limite"].includes(e.target.id)) {
+      const field = { "ft-horas": "horas", "ft-duracion": "duracion", "ft-limite": "limite" }[e.target.id];
+      const s = faltasState(); s[field] = Number(e.target.value) || 0; faltasSave(s);
+      // Sync chips
+      const row = e.target.closest(".card");
+      if (row) {
+        const chips = row.querySelectorAll(`.chip[data-action="faltas-chip"][data-field="${field}"]`);
+        chips.forEach((c) => c.classList.toggle("is-on", Math.abs(Number(c.dataset.val) - (Number(e.target.value) || 0)) < 0.01));
+      }
+      faltasRender();
+      return;
+    }
     const live = LIVE[e.target.id];
     if (live) {
       const out = document.getElementById(live[1]);

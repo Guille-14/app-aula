@@ -2657,7 +2657,8 @@ async function testAgenda() {
   act(env, "close-modal", {});
 
   // ————— Apartados por módulo (cada módulo, con sus cosas)
-  A.state.exams.push({ id: "otro", subjectId: "a2", title: "Proyecto · API de la web", kind: "Trabajo", date: "2026-09-19", estado: "pendiente", puntua: false, createdAt: Date.now() });
+  const manana = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })();
+  A.state.exams.push({ id: "otro", subjectId: "a2", title: "Proyecto · API de la web", kind: "Trabajo", date: manana, estado: "pendiente", puntua: false, createdAt: Date.now() });
   A.go("exams");
   const secciones = [...r.querySelectorAll(".exam-sec")];
   check(secciones.length === 2, "agenda: cada módulo tiene su apartado (" + secciones.length + ")");
@@ -3082,10 +3083,10 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.17\.0"/.test(app), "versión: js/app.js dice v67.17.0");
-    check(pkg.version === "67.17.0", "versión: package.json dice v67.17.0");
-    check(lock.version === "67.17.0" && lock.packages[""].version === "67.17.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.17\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.18\.0"/.test(app), "versión: js/app.js dice v67.18.0");
+    check(pkg.version === "67.18.0", "versión: package.json dice v67.18.0");
+    check(lock.version === "67.18.0" && lock.packages[""].version === "67.18.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.18\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }

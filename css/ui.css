@@ -2604,3 +2604,38 @@ body.focus-mode .hub-scroll { padding-bottom: 28px; }
   transition: transform .15s ease-out;
   will-change: transform;
 }
+
+/* Calculadora de Faltas: contador grande con botones +/- */
+.faltas-counter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  margin: 12px 0 4px;
+}
+.faltas-btn {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background .14s ease, transform .14s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.faltas-btn:active { transform: scale(.9); background: var(--chip); }
+.faltas-num {
+  font-size: 48px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  min-width: 64px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.faltas-modo { margin: 8px 0; }
