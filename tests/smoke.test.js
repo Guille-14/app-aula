@@ -1190,7 +1190,7 @@ async function testAuditoria() {
     // vuelve a pasar con cualquiera del paquete.
     const avatares = fs.readdirSync(path.join(ROOT, "assets", "avatars"));
     const avataresSinCache = avatares.filter((a) => !precacheados.has("assets/avatars/" + a));
-    check(avatares.length > 20 && avataresSinCache.length === 0,
+    check(avatares.length >= 18 && avataresSinCache.length === 0,
       "service worker: todos los avatares del paquete están en el precache (" + avatares.length + " avatares" + (avataresSinCache.length ? ", faltan: " + avataresSinCache.join(", ") : "") + ")");
 
     // CSP: nada de scripts en línea (por eso el tema vive en js/tema.js)
@@ -2659,7 +2659,16 @@ async function testAgenda() {
   check(/16:00 – 17:55/.test(r.querySelector(".exam-fila").textContent), "agenda: la fila enseña «16:00 – 17:55»");
   check(!r.querySelector(".estado-chip"), "agenda: un examen no lleva el desplegable de estado");
 
-  // ————— Un trabajo con plazo: se abre el 14 y se entrega el 21
+  // ————— Un trabajo con plazo: se abre mañana y se entrega la semana que viene.
+  // Las fechas son RELATIVAS a hoy a propósito: con fechas fijas (14→21 de septiembre)
+  // el aviso de la víspera («Entrega mañana») dejaba de programarse en cuanto llegaba
+  // el día señalado, y la prueba caducó sola el 21/09/2026 sin que nadie tocara nada.
+  const enDias = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
+  const isoDe = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const _MES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const _DIA = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+  const fechaLarga = (iso) => { const d = new Date(iso + "T12:00:00"); return _DIA[d.getDay()] + ", " + d.getDate() + " de " + _MES[d.getMonth()] + " de " + d.getFullYear(); };
+  const abreEl = enDias(1), entregEl = enDias(8), cierraImposible = enDias(9);
   act(env, "add-exam", {});
   f = r_form(env);
   f.querySelector('[name="title"]').value = "A1 · Red NAT";
@@ -2675,18 +2684,18 @@ async function testAgenda() {
   const cssUI = fs.readFileSync(path.join(ROOT, "css", "ui.css"), "utf8");
   check(tienePropiedad("[hidden]", "display: none !important", cssUI),
     "css: lo que lleva hidden no se ve nunca (el formulario de la Agenda lo necesita)");
-  f.querySelector('[name="openDate"]').value = "2026-09-14";
+  f.querySelector('[name="openDate"]').value = isoDe(abreEl);
   f.querySelector('[name="openTime"]').value = "20:30";
-  f.querySelector('[name="date"]').value = "2026-09-21";
+  f.querySelector('[name="date"]').value = isoDe(entregEl);
   f.querySelector('[name="time"]').value = "20:30";
   f.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
   const trabajo = A.state.exams[A.state.exams.length - 1];
-  check(trabajo.kind === "Trabajo" && trabajo.estado === "pendiente" && trabajo.openDate === "2026-09-14" && trabajo.openTime === "20:30",
-    "agenda: el plazo de la entrega se guarda (14/09 20:30 → 21/09 20:30)");
+  check(trabajo.kind === "Trabajo" && trabajo.estado === "pendiente" && trabajo.openDate === isoDe(abreEl) && trabajo.openTime === "20:30",
+    "agenda: el plazo de la entrega se guarda (" + isoDe(abreEl) + " 20:30 → " + isoDe(entregEl) + " 20:30)");
   const fila = [...r.querySelectorAll(".exam-fila")].find((x) => /Red NAT/.test(x.textContent));
   check(/Apertura:/.test(fila.textContent) && /Cierre:/.test(fila.textContent) && /20:30/.test(fila.textContent),
     "agenda: la fila de la entrega enseña apertura y cierre, como Aules");
-  check(/lunes, 14 de septiembre de 2026/.test(fila.textContent) && /lunes, 21 de septiembre de 2026/.test(fila.textContent),
+  check(fila.textContent.includes(fechaLarga(isoDe(abreEl))) && fila.textContent.includes(fechaLarga(isoDe(entregEl))),
     "agenda: con la fecha escrita entera (día de la semana incluido)");
 
   // ————— El estado, desde la propia fila
@@ -2724,12 +2733,12 @@ async function testAgenda() {
   // ————— El plazo imposible no se guarda
   act(env, "edit-exam", { id: trabajo.id });
   f = r_form(env);
-  f.querySelector('[name="openDate"]').value = "2026-09-30";   // después del cierre
+  f.querySelector('[name="openDate"]').value = isoDe(cierraImposible);   // después del cierre
   f.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
   check(A.state.exams.find((e) => e.id === trabajo.id).openDate === "", "agenda: un plazo imposible (abre después del cierre) no se guarda");
   act(env, "edit-exam", { id: trabajo.id });
   f = r_form(env);
-  f.querySelector('[name="date"]').value = "2026-09-21";
+  f.querySelector('[name="date"]').value = isoDe(entregEl);
   f.querySelector('[name="time"]').value = "22:00";
   f.querySelector('[name="openDate"]').value = "";
   f.dispatchEvent(new env.window.Event("submit", { bubbles: true, cancelable: true }));
@@ -3134,17 +3143,17 @@ async function testV677() {
     const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
     // Ojo: terser convierte `const APP_VERSION = "v67.7.1"` en `APP_VERSION="v67.7.1"`, así que
     // se aceptan las dos formas (la misma razón por la que el comprobador del APK lo hace).
-    check(/APP_VERSION\s*[:=]\s*"v67\.21\.0"/.test(app), "versión: js/app.js dice v67.21.0");
-    check(pkg.version === "67.21.0", "versión: package.json dice 67.21.0");
-    check(lock.version === "67.21.0" && lock.packages[""].version === "67.21.0", "versión: package-lock.json acompaña");
-    check(/CACHE = "aula-smr-v67\.21\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
+    check(/APP_VERSION\s*[:=]\s*"v67\.22\.0"/.test(app), "versión: js/app.js dice v67.22.0");
+    check(pkg.version === "67.22.0", "versión: package.json dice 67.22.0");
+    check(lock.version === "67.22.0" && lock.packages[""].version === "67.22.0", "versión: package-lock.json acompaña");
+    check(/CACHE = "aula-smr-v67\.22\.0"/.test(sw), "versión: el caché del service worker cambia de nombre (si no, el móvil se queda con la vieja)");
     check(!!((pkg.devDependencies || {})["@capacitor/haptics"]), "versión: @capacitor/haptics está en las dependencias");
   }
 }
 
 // --------- 25. v67.7.1: cambiar el icono de la app (el lanzador de Android)
 /* El fallo: la plantilla de Capacitor trae MainActivity con SU PROPIO intent-filter
-   MAIN/LAUNCHER. apply.py añadía los activity-alias encima (23 ahora; en su día 27), así que en el escritorio
+   MAIN/LAUNCHER. apply.py añade los activity-alias encima (19 ahora; en su día 27), así que en el escritorio
    convivían varios lanzadores; IconSwitch solo enciende y apaga los alias y nunca toca MainActivity, cuyo
    icono (ic_launcher) es siempre el dragón. Tocas Mewtwo, el plugin dice que sí, y el
    escritorio no se mueve.
@@ -3170,14 +3179,14 @@ function testIconoApp() {
     const crudo = execFileSync("python3", [guion, path.join(ROOT, "apk-overlay"), plantilla], { encoding: "utf8" });
     const r = JSON.parse(crudo.trim().split("\n").pop());
 
-    check(r.aliases === 23, "icono: se declaran los 23 activity-alias (leído: " + r.aliases + ")");
-    check(r.total === 23, "icono: y hay 23 lanzadores en total, no 24 (leído: " + r.total + ")");
+    check(r.aliases === 19, "icono: se declaran los 19 activity-alias (leído: " + r.aliases + ")");
+    check(r.total === 19, "icono: y hay 19 lanzadores en total, uno por icono (leído: " + r.total + ")");
     check(r.main_sigue === true, "icono: MainActivity sigue declarada (los widgets la abren con un Intent explícito)");
     check(r.main_con_lanzador === false, "icono: MainActivity YA NO declara lanzador — sin esto el icono no cambiaba nunca");
     check(r.main_exported === true, "icono: y sigue siendo exported");
     check(r.activos.join("|") === "IcoDragon", "icono: el único lanzador activo de salida es el dragón (leído: " + r.activos.join("|") + ")");
     check(r.alias_dragon === "IcoDragon", "icono: alias_de('dragon') da IcoDragon");
-    check(r.idempotente === 23, "icono: pasar apply.py dos veces no duplica los alias (leído: " + r.idempotente + ")");
+    check(r.idempotente === 19, "icono: pasar apply.py dos veces no duplica los alias (leído: " + r.idempotente + ")");
 
     // 3. Las tres listas de iconos tienen que ser la misma, o el alias no existe y Android
     //    se traga el setComponentEnabledSetting en silencio (falla sin decir nada)

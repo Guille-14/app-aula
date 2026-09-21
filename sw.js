@@ -1,4 +1,4 @@
-const CACHE = "aula-smr-v67.21.0";
+const CACHE = "aula-smr-v67.22.0";
 const ICON_CACHE = "aula-app-icon";
 const PRECACHE = [
   "./",
@@ -36,10 +36,6 @@ const PRECACHE = [
   "./assets/avatars/mewtwo.jpg",
   "./assets/avatars/rayquaza.jpg",
   "./assets/avatars/salamence.jpg",
-  "./assets/avatars/tyranitar.jpg",
-  "./assets/avatars/umbreon.jpg",
-  "./assets/avatars/venusaur.jpg",
-  "./assets/avatars/zekrom.jpg",
 ];
 
 // Rutas del precache, normalizadas a «pathname»: se usan para decidir cuándo servir

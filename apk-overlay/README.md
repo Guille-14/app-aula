@@ -7,7 +7,7 @@ Android de [Capacitor](https://capacitorjs.com/) para convertirlo en el Aula SMR
 - **19 widgets nativos** (`WidgetClase`, `WidgetHoy`, `WidgetHorario`, `WidgetFestivos`, `WidgetMedia`, `WidgetMiniRacha`…):
   layouts (`layout/widget_*.xml`), descriptores (`xml/widget_*_info.xml`), los `receiver`
   del `AndroidManifest.xml` y sus textos en `strings.xml`.
-- **Iconos de lanzador intercambiables**: 23 `activity-alias` (uno por cada skin/avatar:
+- **Iconos de lanzador intercambiables**: 19 `activity-alias` (uno por cada skin/avatar:
   dragón, charizard, gengar…) con `mipmap-anydpi-v26` adaptativo. Android solo enciende uno;
   la app los cambia por código (`IconSwitch.java`).
 - **Iconos dibujados a partir de los avatares** de `assets/avatars/` con Pillow (recorte

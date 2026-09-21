@@ -25,7 +25,6 @@ ICONS = [
     "arcanine", "arceus", "blastoise", "charizard", "gyarados", "garchomp",
     "deoxys", "espeon", "gengar", "giratina", "groudon", "kyogre",
     "lucario", "lugia", "metagross", "mewtwo", "rayquaza", "salamence",
-    "tyranitar", "umbreon", "venusaur", "zekrom",
 ]
 
 

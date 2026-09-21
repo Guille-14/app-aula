@@ -43,7 +43,7 @@
   const KEY = "aula.smr.v4";
   const SCHEMA_VERSION = 5;
   const BASE_TITLE = "Aula SMR";
-  const APP_VERSION = "v67.21.0";
+  const APP_VERSION = "v67.22.0";
   const AVATAR_PACK = [
     { id: "arcanine", src: "assets/avatars/arcanine.jpg" },
     { id: "arceus", src: "assets/avatars/arceus.jpg" },
@@ -63,10 +63,6 @@
     { id: "mewtwo", src: "assets/avatars/mewtwo.jpg" },
     { id: "rayquaza", src: "assets/avatars/rayquaza.jpg" },
     { id: "salamence", src: "assets/avatars/salamence.jpg" },
-    { id: "tyranitar", src: "assets/avatars/tyranitar.jpg" },
-    { id: "umbreon", src: "assets/avatars/umbreon.jpg" },
-    { id: "venusaur", src: "assets/avatars/venusaur.jpg" },
-    { id: "zekrom", src: "assets/avatars/zekrom.jpg" },
   ];
 
 
